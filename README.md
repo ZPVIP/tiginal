@@ -19,10 +19,31 @@ npm install
 
 # Start in development mode
 npm start
-
-# Build for distribution
-npm run dist
 ```
+
+## Building Releases
+
+```bash
+# Build for current platform
+npm run dist
+
+# macOS (creates .dmg and .zip)
+npm run dist -- --mac
+
+# Windows (creates .exe installer)
+npm run dist -- --win
+
+# Linux (creates .AppImage and .deb)
+npm run dist -- --linux
+```
+
+Output files are in the `release/` directory.
+
+| Platform | Files |
+|----------|-------|
+| macOS | `Tigi Terminal-x.x.x.dmg`, `Tigi Terminal-x.x.x-mac.zip` |
+| Windows | `Tigi Terminal Setup x.x.x.exe` |
+| Linux | `Tigi Terminal-x.x.x.AppImage`, `tigi-terminal_x.x.x_amd64.deb` |
 
 ## Architecture
 

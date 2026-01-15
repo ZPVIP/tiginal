@@ -2,6 +2,9 @@ import { app, BrowserWindow, Menu, MenuItemConstructorOptions } from 'electron';
 import * as path from 'path';
 import { setupIpcHandlers } from './ipc';
 
+// Set app name for macOS menu bar
+app.name = 'Tigi Terminal';
+
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
