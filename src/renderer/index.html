@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  <title>Tigi Terminal</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
+</head>
+<body>
+  <div id="terminal-container">
+    <div id="terminal"></div>
+  </div>
+  <script>
+    // Setup CommonJS environment and fix module paths
+    const path = require('path');
+    const Module = require('module');
+    
+    // Add node_modules to module search path
+    const projectRoot = path.join(__dirname, '../../');
+    Module.globalPaths.unshift(path.join(projectRoot, 'node_modules'));
+    
+    // Load the renderer script
+    require('../../dist/renderer/renderer/index.js');
+  </script>
+</body>
+</html>
