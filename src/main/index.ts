@@ -29,8 +29,10 @@ function createWindow(): void {
     mainWindow = null;
   });
 
-  // Open DevTools for debugging
-  mainWindow.webContents.openDevTools();
+  // Only open DevTools in development mode
+  if (!app.isPackaged) {
+    mainWindow.webContents.openDevTools();
+  }
 }
 
 function createMenu(): void {
