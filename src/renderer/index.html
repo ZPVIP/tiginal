@@ -9,9 +9,17 @@
   <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
 </head>
 <body>
-  <div id="terminal-container">
-    <div id="terminal"></div>
+  <!-- Tab bar -->
+  <div id="tab-bar">
+    <div id="tabs"></div>
+    <button id="new-tab-btn" title="New Tab (⌘T)">+</button>
   </div>
+  
+  <!-- Terminal container -->
+  <div id="terminal-container">
+    <div id="terminals"></div>
+  </div>
+  
   <script>
     // Setup CommonJS environment and fix module paths
     const path = require('path');

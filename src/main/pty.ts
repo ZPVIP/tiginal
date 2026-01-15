@@ -43,6 +43,10 @@ export function createPty(options: PtyOptions = {}): number {
 
   console.log(`[PTY] Creating shell: ${shell} in ${cwd}`);
 
+  // Inject OSC 7 directory reporting for zsh/bash
+  const osc7Precmd = 'precmd() { print -Pn "\\e]7;file://${HOST}${PWD}\\a" }';
+  const osc7PromptCommand = 'printf "\\e]7;file://%s%s\\a" "$HOSTNAME" "$PWD"';
+
   try {
     const ptyProcess = pty.spawn(shell, args, {
       name: 'xterm-256color',
@@ -51,9 +55,21 @@ export function createPty(options: PtyOptions = {}): number {
       cwd: cwd,
       env: {
         ...process.env,
+        // For zsh: ZDOTDIR trick won't work easily, so we'll inject via init
+        // For bash: PROMPT_COMMAND
+        PROMPT_COMMAND: osc7PromptCommand,
         ...options.env,
       } as Record<string, string>,
     });
+
+    // For zsh, send the precmd function definition after spawn
+    if (shell.includes('zsh')) {
+      setTimeout(() => {
+        ptyProcess.write(`${osc7Precmd}\n`);
+        // Clear the screen and reprint prompt
+        ptyProcess.write('clear\n');
+      }, 100);
+    }
 
     const id = nextPtyId++;
     ptyProcesses.set(id, ptyProcess);
