@@ -1,7 +1,8 @@
 import { app, BrowserWindow, Menu, MenuItemConstructorOptions } from 'electron';
 import * as path from 'path';
 import { setupIpcHandlers } from './ipc';
-
+import { setupAIHandlers } from './ai-handlers';
+import { getDatabase } from '../services/database/database';
 // Set app name for macOS menu bar
 app.name = 'Tiginal';
 
@@ -125,7 +126,13 @@ function createMenu(): void {
 }
 
 app.whenReady().then(() => {
+  // Initialize database
+  getDatabase();
+  
+  // Setup IPC handlers
   setupIpcHandlers();
+  setupAIHandlers();
+  
   createMenu();
   createWindow();
 
