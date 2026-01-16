@@ -34,6 +34,8 @@ export function CommandInput({ onSend }: CommandInputProps) {
     if (!value) return;
     onSend(value, execute);
     setValue('');
+    // Keep focus in textarea after sending
+    textareaRef.current?.focus();
   };
 
   const handlePaste = async () => {
@@ -54,7 +56,7 @@ export function CommandInput({ onSend }: CommandInputProps) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="w-full bg-[#262626] text-gray-200 text-sm font-mono rounded-md p-2 outline-none resize-none border border-transparent focus:border-primary overflow-hidden min-h-[36px]"
+          className="w-full bg-[#262626] text-gray-200 text-sm font-mono rounded-md p-2 outline-none resize-none border border-transparent overflow-hidden min-h-[36px]"
           placeholder="Enter command..."
           rows={1}
         />

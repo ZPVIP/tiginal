@@ -61,7 +61,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
 
   return (
     <div className="p-4 bg-background border-t border-border">
-      <div className="max-w-3xl mx-auto bg-surface border border-border rounded-xl shadow-sm focus-within:ring-1 focus-within:ring-primary focus-within:border-primary transition-all">
+      <div className="max-w-3xl mx-auto bg-surface border border-border rounded-xl shadow-sm transition-all">
         
         {/* Image Previews */}
         {images.length > 0 && (
@@ -89,7 +89,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           placeholder="Ask anything..."
           rows={1}
           disabled={disabled}
-          className="w-full bg-transparent border-0 focus:ring-0 resize-none py-3 px-4 min-h-[50px] max-h-[200px] text-gray-100 placeholder-gray-500"
+          className="w-full bg-transparent border-0 outline-none focus:ring-0 resize-none py-3 px-4 min-h-[50px] max-h-[200px] text-gray-100 placeholder-gray-500"
         />
 
         {/* Toolbar */}

@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './Header';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { EmptyState } from './EmptyState';
-import { AIProvider } from '../Settings/ProviderModal'; // Fix import source
+import { HistoryPanel } from './HistoryPanel';
+import { AIProvider } from '../Settings/ProviderModal';
+import { EyeOff, Trash2 } from 'lucide-react';
 
-// Mock invoke
 const invoke = window.electron?.invoke || (async () => {});
 
 export function Chat() {
@@ -16,6 +17,9 @@ export function Chat() {
   const [selectedModel, setSelectedModel] = useState<string>('');
   
   const [isLoading, setIsLoading] = useState(false);
+  const [isIncognito, setIsIncognito] = useState(false);
+  const [incognitoMessages, setIncognitoMessages] = useState<any[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   useEffect(() => {
     loadProviders();
@@ -44,7 +48,33 @@ export function Chat() {
 
       setIsLoading(true);
 
-      // 1. Create conversation if needed
+      if (isIncognito) {
+          // Incognito mode - don't persist
+          const userMsg = { id: Date.now().toString(), role: 'user', content: text, images };
+          setIncognitoMessages(prev => [...prev, userMsg]);
+
+          try {
+              // Create a transient conversation (will be deleted after)
+              const conv = await invoke('chat:create-conversation', selectedProviderId, true);
+              const res = await invoke('chat:send-message', conv.id, selectedProviderId, text, selectedModel);
+              
+              if (res.error) {
+                  setIncognitoMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Error: ${res.error}` }]);
+              } else {
+                  setIncognitoMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: res.response }]);
+              }
+              
+              // Delete transient conversation
+              await invoke('chat:delete-conversation', conv.id);
+          } catch (err) {
+              setIncognitoMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Error: ${(err as Error).message}` }]);
+          } finally {
+              setIsLoading(false);
+          }
+          return;
+      }
+
+      // Normal mode
       let convId = currentConversationId;
       if (!convId) {
           try {
@@ -58,65 +88,72 @@ export function Chat() {
           }
       }
 
-      // 2. Add local user message
-      const userMsg = {
-          id: Date.now().toString(),
-          role: 'user',
-          content: text,
-          images
-      };
+      const userMsg = { id: Date.now().toString(), role: 'user', content: text, images };
       setMessages(prev => [...prev, userMsg]);
 
-      // 3. Send to backend
       try {
           const res = await invoke('chat:send-message', convId, selectedProviderId, text, selectedModel);
           
           if (res.error) {
-              setMessages(prev => [...prev, {
-                  id: Date.now().toString(),
-                  role: 'assistant',
-                  content: `Error: ${res.error}`
-              }]);
+              setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Error: ${res.error}` }]);
           } else {
-              setMessages(prev => [...prev, {
-                  id: Date.now().toString(),
-                  role: 'assistant',
-                  content: res.response
-              }]);
+              setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: res.response }]);
           }
       } catch (err) {
-          setMessages(prev => [...prev, {
-              id: Date.now().toString(),
-              role: 'assistant',
-              content: `Error: ${(err as Error).message}`
-          }]);
+          setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Error: ${(err as Error).message}` }]);
       } finally {
           setIsLoading(false);
       }
   };
 
-  const handleClear = () => {
-      setMessages([]);
-      setCurrentConversationId(null);
+  const handleNewChat = () => {
+      if (isIncognito) {
+          setIncognitoMessages([]);
+      } else {
+          setMessages([]);
+          setCurrentConversationId(null);
+      }
   };
 
-  // Derived models list for Header
+  const handleIncognitoToggle = () => {
+      // Just toggle view, don't clear anything
+      setIsIncognito(!isIncognito);
+  };
+
+  const handleClearIncognito = () => {
+      setIncognitoMessages([]);
+  };
+
+  const handleSelectConversation = async (id: string) => {
+      setIsHistoryOpen(false);
+      setCurrentConversationId(id);
+      
+      try {
+          const msgs = await invoke('chat:get-messages', id);
+          setMessages(msgs || []);
+      } catch (err) {
+          console.error("Failed to load messages", err);
+      }
+  };
+
+  // Derived models list
   const activeProvider = providers.find(p => p.id === selectedProviderId);
   const rawModels: any[] = activeProvider?.availableModels && activeProvider.availableModels.length > 0 
       ? activeProvider.availableModels 
       : (activeProvider ? [activeProvider.model] : []);
 
-  // Fix React Error #31: Ensure models are strings, not objects
   const availableModels = rawModels.map(m => {
       if (typeof m === 'string') return m;
       if (typeof m === 'object' && m.name) return m.name;
       return 'Unknown Model';
   });
 
-  // Handle model change (might need to switch provider if logic requires, but here we switch model within provider or just model string)
   const handleModelChange = (m: string) => {
       setSelectedModel(m);
   };
+
+  // Determine which messages to show
+  const displayMessages = isIncognito ? incognitoMessages : messages;
 
   return (
     <div className="flex h-full w-full flex-col bg-background relative">
@@ -124,22 +161,48 @@ export function Chat() {
          model={selectedModel}
          models={availableModels}
          onModelChange={handleModelChange}
-         onClear={handleClear}
-         onHistory={() => {}} 
-         onSettings={() => {}}
+         onNewChat={handleNewChat}
+         onHistory={() => setIsHistoryOpen(true)} 
+         onIncognitoToggle={handleIncognitoToggle}
+         isIncognito={isIncognito}
       />
       
-      {messages.length === 0 ? (
+      {/* Incognito Warning Bar */}
+      {isIncognito && (
+          <div className="flex items-center justify-between px-4 py-2 bg-purple-900/30 border-b border-purple-700/50 text-sm">
+              <div className="flex items-center gap-2 text-purple-300">
+                  <EyeOff size={16} />
+                  <span>Incognito Mode - Messages will not be saved</span>
+              </div>
+              <button 
+                 onClick={handleClearIncognito}
+                 className="flex items-center gap-1 text-purple-400 hover:text-purple-200 px-2 py-1 hover:bg-white/5 rounded transition-colors"
+                 title="Clear Incognito Chat"
+              >
+                  <Trash2 size={14} />
+                  <span>Clear</span>
+              </button>
+          </div>
+      )}
+      
+      {displayMessages.length === 0 ? (
           <EmptyState 
              models={availableModels} 
              selectedModel={selectedModel}
              onModelSelect={handleModelChange}
           />
       ) : (
-          <MessageList messages={messages} isStreaming={isLoading} />
+          <MessageList messages={displayMessages} isStreaming={isLoading} />
       )}
 
       <ChatInput onSend={handleSend} disabled={isLoading} />
+
+      {/* History Panel */}
+      <HistoryPanel 
+         isOpen={isHistoryOpen}
+         onClose={() => setIsHistoryOpen(false)}
+         onSelectConversation={handleSelectConversation}
+      />
     </div>
   );
 }

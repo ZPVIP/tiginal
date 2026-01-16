@@ -1,30 +1,38 @@
 import React from 'react';
 import { 
-  Eraser, 
-  History, 
-  Settings, 
   ChevronDown, 
-  Bot, 
-  Zap 
+  Bot,
+  EyeOff,
+  MessageSquarePlus,
+  History
 } from 'lucide-react';
+import { clsx } from 'clsx';
 
 interface HeaderProps {
   model: string;
   onModelChange: (model: string) => void;
-  onClear: () => void;
+  onNewChat: () => void;
   onHistory: () => void;
-  onSettings: () => void;
+  onIncognitoToggle: () => void;
+  isIncognito: boolean;
   models: string[];
 }
 
-export function Header({ model, onModelChange, onClear, onHistory, onSettings, models }: HeaderProps) {
+export function Header({ 
+  model, 
+  onModelChange, 
+  onNewChat, 
+  onHistory, 
+  onIncognitoToggle, 
+  isIncognito,
+  models 
+}: HeaderProps) {
   return (
     <div className="h-14 border-b border-border bg-background/50 backdrop-blur-sm flex items-center justify-between px-4 sticky top-0 z-30">
       <div className="flex items-center gap-2">
-        <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
-            <Zap size={18} fill="currentColor" />
-        </div>
-        <div className="font-semibold text-gray-100">Page Assist</div>
+        {/* Tigi Branding */}
+        <div className="text-2xl">🐱</div>
+        <div className="font-semibold text-gray-100">Tigi</div>
         
         <div className="h-4 w-[1px] bg-border mx-2" />
         
@@ -51,26 +59,36 @@ export function Header({ model, onModelChange, onClear, onHistory, onSettings, m
       </div>
 
       <div className="flex items-center gap-1">
+        {/* Incognito Mode */}
         <button 
-          onClick={onClear}
-          title="Clear Chat"
+          onClick={onIncognitoToggle}
+          title="Incognito Mode"
+          className={clsx(
+              "p-2 rounded-lg transition-colors",
+              isIncognito 
+                  ? "bg-purple-500/20 text-purple-400" 
+                  : "text-gray-400 hover:text-white hover:bg-white/10"
+          )}
+        >
+            <EyeOff size={18} />
+        </button>
+        
+        {/* New Chat */}
+        <button 
+          onClick={onNewChat}
+          title="New Chat"
           className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
         >
-            <Eraser size={18} />
+            <MessageSquarePlus size={18} />
         </button>
+        
+        {/* History */}
         <button 
           onClick={onHistory}
-          title="History"
+          title="Chat History"
           className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
         >
             <History size={18} />
-        </button>
-        <button 
-          onClick={onSettings}
-          title="Settings"
-          className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-        >
-            <Settings size={18} />
         </button>
       </div>
     </div>
