@@ -205,13 +205,16 @@ export function TerminalView() {
                   }}
                   title={tab.cwd || 'Terminal'} // Hover shows full path
                   className={clsx(
-                      "flex items-center px-2 h-full cursor-pointer transition-colors border-r border-border min-w-[140px] max-w-[140px]", // Fixed width
+                      "flex items-center px-2 h-full cursor-pointer transition-colors border-r border-border min-w-[180px] max-w-[180px]", // Increased width
                       activeTabId === tab.id ? "bg-background text-white font-bold" : "text-gray-400 hover:bg-white/5",
                       "whitespace-nowrap"
                   )}
                 >
-                    <span className="truncate w-full text-center">
-                        {formatTitle(tab.cwd || 'Terminal', idx)}
+                    <span 
+                        className="w-full text-center font-mono text-[11px] whitespace-nowrap overflow-hidden"
+                        style={{ direction: 'rtl' }}
+                    >
+                        <bdi>{formatTitle(tab.cwd || 'Terminal', idx)}</bdi>
                     </span>
                     {/* No X button as requested */}
                 </div>

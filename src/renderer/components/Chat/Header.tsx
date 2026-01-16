@@ -7,6 +7,7 @@ import {
   History
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { TigiCat } from '../icons/TigiCat';
 
 interface HeaderProps {
   model: string;
@@ -31,7 +32,7 @@ export function Header({
     <div className="h-14 border-b border-border bg-background/50 backdrop-blur-sm flex items-center justify-between px-4 sticky top-0 z-30">
       <div className="flex items-center gap-2">
         {/* Tigi Branding */}
-        <div className="text-2xl">🐱</div>
+        <TigiCat size={28} />
         <div className="font-semibold text-gray-100">Tigi</div>
         
         <div className="h-4 w-[1px] bg-border mx-2" />

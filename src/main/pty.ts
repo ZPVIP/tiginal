@@ -86,9 +86,9 @@ export function createPty(options: PtyOptions = {}): number {
   };
 
   // For zsh: use ZDOTDIR to load custom zshrc silently
-  // if (shell.includes('zsh')) {
-  //   env.ZDOTDIR = ensureZshConfig();
-  // }
+  if (shell.includes('zsh')) {
+    env.ZDOTDIR = ensureZshConfig();
+  }
 
   try {
     const ptyProcess = pty.spawn(shell, args, {

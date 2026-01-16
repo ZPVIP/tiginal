@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { clsx } from 'clsx';
-import { User, Bot, Copy, Check, ChevronDown, ChevronRight, BrainCircuit } from 'lucide-react';
+import { User, Copy, Check, ChevronDown, ChevronRight, BrainCircuit } from 'lucide-react';
+import { TigiCat } from '../icons/TigiCat';
 
 interface MessageProps {
   role: 'user' | 'assistant';
@@ -30,16 +31,16 @@ export function MessageBubble({ role, content, reasoning, images }: MessageProps
     )}>
        {/* Avatar */}
        <div className={clsx(
-           "w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1",
-           isUser ? "bg-primary/20 text-primary" : "bg-purple-500/20 text-purple-400"
+           "w-8 h-8 flex items-center justify-center shrink-0 mt-1",
+           isUser ? "bg-primary/20 text-primary rounded-full" : ""
        )}>
-           {isUser ? <User size={16} /> : <Bot size={16} />}
+           {isUser ? <User size={16} /> : <TigiCat size={32} />}
        </div>
 
        {/* Content */}
        <div className={clsx("flex-1 min-w-0 space-y-2", isUser && "flex flex-col items-end")}>
            <div className={clsx("font-medium text-sm text-gray-400", isUser && "text-right")}>
-               {isUser ? 'You' : 'Page Assist'}
+               {isUser ? 'You' : 'Tigi'}
            </div>
 
            {/* Images */}
