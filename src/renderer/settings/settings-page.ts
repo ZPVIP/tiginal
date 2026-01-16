@@ -1,4 +1,5 @@
 import { SettingsAI } from './settings-ai';
+import { SettingsServers } from './settings-servers';
 
 type SettingsSection = 'ai' | 'servers' | 'shortcuts' | 'themes';
 
@@ -6,9 +7,11 @@ export class SettingsPage {
   private container: HTMLElement | null = null;
   private activeSection: SettingsSection = 'ai';
   private settingsAI: SettingsAI;
+  private settingsServers: SettingsServers;
 
   constructor() {
     this.settingsAI = new SettingsAI();
+    this.settingsServers = new SettingsServers();
   }
 
   render(container: HTMLElement): void {
@@ -88,7 +91,7 @@ export class SettingsPage {
         this.settingsAI.render(content);
         break;
       case 'servers':
-        content.innerHTML = '<div class="settings-section"><h2>SSH Servers</h2><p class="coming-soon">Coming in Phase 4</p></div>';
+        this.settingsServers.render(content);
         break;
       case 'shortcuts':
         content.innerHTML = '<div class="settings-section"><h2>Keyboard Shortcuts</h2><p class="coming-soon">Coming soon</p></div>';
