@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #1a1a1a;
+  --color-surface: #262626;
+  --color-border: #404040;
+  --color-primary: #3b82f6;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-gray-100 h-screen w-screen overflow-hidden;
+  }
+}
+
+/* Custom scrollbar to match terminal aesthetic */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-700/50 rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-600/50;
+}

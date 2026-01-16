@@ -10,7 +10,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "node",
-    "declaration": false
+    "declaration": false,
+    "jsx": "react-jsx"
   },
   "include": ["src/renderer/**/*", "src/shared/**/*"],
   "exclude": ["node_modules"]

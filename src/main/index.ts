@@ -1,4 +1,18 @@
 import { app, BrowserWindow, Menu, MenuItemConstructorOptions } from 'electron';
+
+// Polyfill global File object for undici (used by cheerio/fetch) in Node 18 environments
+if (typeof global.File === 'undefined') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { File } = require('node:buffer');
+    if (File) {
+      (global as any).File = File;
+    }
+  } catch (e) {
+    console.warn('Failed to polyfill global.File', e);
+  }
+}
+
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -6,6 +20,7 @@ import { setupIpcHandlers } from './ipc';
 import { setupAIHandlers } from './ai-handlers';
 import { setupSSHHandlers } from './ssh-handlers';
 import { setupChatHandlers } from './chat-handlers';
+import { setupSearchHandlers } from './services/search';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
 
@@ -40,7 +55,9 @@ function createWindow(): void {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, '../../../src/renderer/index.html'));
+  // In production (built with Vite), point to dist/renderer/index.html
+  // __dirname is dist/main/main/
+  mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'));
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -150,6 +167,7 @@ app.whenReady().then(() => {
   setupAIHandlers();
   setupSSHHandlers();
   setupChatHandlers();
+  setupSearchHandlers();
   
   // Try to auto-unlock crypto using saved key
   const autoUnlocked = getCrypto().tryAutoUnlock();

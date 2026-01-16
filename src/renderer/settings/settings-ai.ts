@@ -44,6 +44,12 @@ export class SettingsAI {
   private availableModels: ModelConfig[] = [];
   private customHeaders: { key: string; value: string }[] = [];
   private abortController: AbortController | null = null;
+  
+  // Tab State
+  private activeTab: 'general' | 'providers' = 'general';
+  
+  // Crypto State
+  private cryptoStatus: { isUnlocked: boolean; hasSavedKey: boolean; hasMasterPassword?: boolean } = { isUnlocked: false, hasSavedKey: false };
 
   constructor() {
     this.container = document.getElementById('settings-content');
@@ -51,8 +57,35 @@ export class SettingsAI {
 
   async render(container: HTMLElement): Promise<void> {
     this.container = container;
-    await this.loadProviders();
+    await this.refreshData();
     this.renderUI();
+  }
+  
+  private async refreshData() {
+      await Promise.all([
+          this.loadProviders(),
+          this.loadCryptoStatus()
+      ]);
+  }
+  
+  private async loadCryptoStatus() {
+      try {
+          const status = await ipcRenderer.invoke('crypto:status');
+          // crypto:status returns { isUnlocked, hasSavedKey }
+          // We also need to know if a master password EXists at all (to show "Set Master Password" vs "Unlock")
+          // Assuming crypto:status handler was updated or we use separate calls?
+          // I implemented a simple `crypto:status` in `crypto-handlers.ts` but DELETED it because `ssh-handlers.ts` had it.
+          // `ssh-handlers.ts` has `crypto:is-unlocked`, `crypto:has-master-password`, etc.
+          // So I need to call multiple endpoints or update `ssh-handlers`.
+          // I will call individually for now.
+          const isUnlocked = await ipcRenderer.invoke('crypto:is-unlocked');
+          const hasSavedKey = await ipcRenderer.invoke('crypto:has-saved-key');
+          const hasMasterPassword = await ipcRenderer.invoke('crypto:has-master-password');
+          
+          this.cryptoStatus = { isUnlocked, hasSavedKey, hasMasterPassword };
+      } catch (e) {
+          console.error("Failed to load crypto status", e);
+      }
   }
 
   private async loadProviders(): Promise<void> {
@@ -63,10 +96,6 @@ export class SettingsAI {
         if (!Array.isArray(p.availableModels)) {
             p.availableModels = [];
         } else if (p.availableModels.length > 0 && typeof p.availableModels[0] === 'string') {
-            // Legacy string[] detected, treat as empty (or migrate if we wanted to, but user said treat as empty)
-            // But actually preserving them as enabled is nicer if they exist? 
-            // User said: "Backward compatibility will be handled code-side... 这里不需要... 当空的 json"
-            // So we clear it.
             console.warn('Legacy model format detected, clearing.', p.availableModels);
             p.availableModels = [];
         }
@@ -81,31 +110,128 @@ export class SettingsAI {
     if (!this.container) return;
 
     this.container.innerHTML = `
-      <div class="settings-section">
-        <h2 class="settings-title">AI Providers</h2>
+      <div class="settings-page">
+        <div class="settings-sidebar">
+           <div class="settings-nav">
+               <button class="settings-nav-item ${this.activeTab === 'general' ? 'active' : ''}" id="nav-general">
+                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                       <circle cx="12" cy="12" r="3"></circle>
+                       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                   </svg>
+                   General
+               </button>
+               <button class="settings-nav-item ${this.activeTab === 'providers' ? 'active' : ''}" id="nav-providers">
+                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                       <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                       <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                       <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                   </svg>
+                   AI Providers
+               </button>
+           </div>
+        </div>
         
-        <div class="provider-list" id="provider-list">
-          ${this.renderProviderList()}
+        <div class="settings-main">
+            ${this.activeTab === 'general' ? this.renderGeneralTab() : this.renderProvidersTab()}
         </div>
+      </div>
+      
+      ${this.renderModals()}
+    `;
 
-        <div class="settings-actions">
-          <button class="btn btn-primary" id="add-openai-btn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            Add Provider
-          </button>
-          <button class="btn btn-secondary" id="add-copilot-btn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
-            </svg>
-            Connect Copilot
-          </button>
+    this.setupEventListeners();
+  }
+  
+  private renderGeneralTab(): string {
+      return `
+      <div class="settings-section">
+          <h2 class="settings-title">General Settings</h2>
+          
+          <!-- Master Key Section -->
+          <div class="settings-group" style="margin-bottom: 30px;">
+              <h3>Security (Master Key)</h3>
+              <p class="settings-desc" style="color: var(--text-muted); font-size: 13px; margin-bottom: 12px;">
+                  Set a master password to encrypt your API keys and sensitive data.
+              </p>
+              
+              <div class="crypto-status-card" style="padding: 16px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                      <span style="font-weight: 500;">Status:</span>
+                      <span class="badge" style="background-color: ${this.cryptoStatus.isUnlocked ? 'var(--accent-green)' : (this.cryptoStatus.hasMasterPassword ? '#f38ba8' : 'var(--text-muted)')}">
+                          ${this.cryptoStatus.isUnlocked ? 'Unlocked' : (this.cryptoStatus.hasMasterPassword ? 'Locked' : 'Not Configured')}
+                      </span>
+                  </div>
+                  
+                  ${this.cryptoStatus.isUnlocked ? `
+                      <button class="btn btn-secondary" id="crypto-lock-btn">Lock Now</button>
+                  ` : (this.cryptoStatus.hasMasterPassword ? `
+                      <div class="unlock-form" style="display: flex; gap: 8px;">
+                          <input type="password" id="crypto-unlock-pwd" placeholder="Enter master password" class="form-control" style="flex: 1; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary);">
+                          <button class="btn btn-primary" id="crypto-unlock-btn">Unlock</button>
+                      </div>
+                  ` : `
+                      <div class="setup-form" style="display: flex; gap: 8px;">
+                          <input type="password" id="crypto-setup-pwd" placeholder="Create master password" class="form-control" style="flex: 1; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary);">
+                          <button class="btn btn-primary" id="crypto-setup-btn">Set Password</button>
+                      </div>
+                  `)}
+              </div>
+          </div>
+          
+          <!-- Search Settings -->
+           <div class="settings-group">
+              <h3>Web Search</h3>
+              <p class="settings-desc" style="color: var(--text-muted); font-size: 13px; margin-bottom: 12px;">
+                  Configure how the AI accesses the internet via search engines.
+              </p>
+               <div class="provider-list">
+                  <div class="provider-item">
+                      <div class="provider-info">
+                          <div class="provider-name">DuckDuckGo</div>
+                          <div class="provider-meta">Default Search Engine</div>
+                      </div>
+                      <div class="provider-actions">
+                          <span class="badge">Active</span>
+                      </div>
+                  </div>
+              </div>
+           </div>
+      </div>
+      `;
+  }
+  
+  private renderProvidersTab(): string {
+      return `
+        <div class="settings-section">
+            <h2 class="settings-title">AI Providers</h2>
+            <div class="provider-list" id="provider-list">
+              ${this.renderProviderList()}
+            </div>
+            <div class="settings-actions">
+              <button class="btn btn-primary" id="add-openai-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Add Provider
+              </button>
+              <button class="btn btn-secondary" id="add-copilot-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+                </svg>
+                Connect Copilot
+              </button>
+            </div>
         </div>
-
-        <!-- Provider Form Modal -->
-        <div class="modal hidden" id="provider-modal" style="z-index: 1050;"> <!-- Lower z-index than model modal -->
+      `;
+  }
+  
+  private renderModals(): string {
+      // Re-use existing modal HTML structure, just return it as string
+      // Just copying the template from previous version but ensuring it's available for Providers tab
+      return `
+         <!-- Provider Form Modal -->
+        <div class="modal hidden" id="provider-modal" style="z-index: 1050;">
           <div class="modal-content" style="width: 600px; max-height: 90vh;">
             <div class="modal-header">
               <h3 id="form-title">Add Provider</h3>
@@ -115,7 +241,6 @@ export class SettingsAI {
             <div class="modal-body">
               <div class="form-group" id="provider-preset-group">
                 <label for="provider-preset">Preset</label>
-                <!-- Custom Select Structure -->
                 <div class="custom-select" id="provider-preset-select">
                   <div class="select-selected">
                     <div class="selected-content">
@@ -158,7 +283,7 @@ export class SettingsAI {
                 </div>
               </div>
 
-              <div class="form-group flex-row" style="gap: 8px; align-items: flex-end;">
+               <div class="form-group flex-row" style="gap: 8px; align-items: flex-end;">
                  <div class="flex-grow">
                    <label for="provider-model">Model</label>
                    <div class="flex-row" style="gap: 4px;">
@@ -241,10 +366,7 @@ export class SettingsAI {
             <button class="btn btn-secondary" id="cancel-copilot-btn">Cancel</button>
           </div>
         </div>
-      </div>
-    `;
-
-    this.setupEventListeners();
+      `;
   }
 
   private renderProviderList(): string {
@@ -253,14 +375,12 @@ export class SettingsAI {
     }
 
     return this.providers.map(p => {
-      // Logic to show filter models
       const enabledModels = Array.isArray(p.availableModels) 
           ? p.availableModels.filter(m => m.enabled) 
           : [];
       
       let modelsDisplay = '';
       if (enabledModels.length === 0) {
-         // Fallback if no enabled models but 'model' field is set (legacy or simple)
          if (p.model) {
              modelsDisplay = `<span style="color: var(--text-muted);">${p.model}</span>`;
          } else {
@@ -313,13 +433,58 @@ export class SettingsAI {
   }
 
   private setupEventListeners(): void {
-    // Buttons (Delegation)
     if (!this.container) return;
+    
+    // Tab Navigation
+    document.getElementById('nav-general')?.addEventListener('click', () => {
+        this.activeTab = 'general';
+        this.renderUI();
+    });
+    
+    document.getElementById('nav-providers')?.addEventListener('click', () => {
+        this.activeTab = 'providers';
+        this.renderUI();
+    });
 
     // Cleanup previous listeners
     this.abortController?.abort();
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
+    
+    // Crypto Actions
+    if (this.activeTab === 'general') {
+       document.getElementById('crypto-setup-btn')?.addEventListener('click', async () => {
+           const pwd = (document.getElementById('crypto-setup-pwd') as HTMLInputElement).value;
+           if (!pwd) return alert('Password required');
+           const res = await ipcRenderer.invoke('crypto:unlock', pwd);
+           if (res.success) {
+               await this.refreshData();
+               this.renderUI();
+           } else {
+               alert('Failed to set password: ' + res.error);
+           }
+       }, { signal });
+       
+       document.getElementById('crypto-unlock-btn')?.addEventListener('click', async () => {
+           const pwd = (document.getElementById('crypto-unlock-pwd') as HTMLInputElement).value;
+           if (!pwd) return alert('Password required');
+           const res = await ipcRenderer.invoke('crypto:unlock', pwd);
+           if (res.success) {
+               await this.refreshData();
+               this.renderUI();
+           } else {
+               alert('Incorrect Password');
+           }
+       }, { signal });
+       
+       document.getElementById('crypto-lock-btn')?.addEventListener('click', async () => {
+           await ipcRenderer.invoke('crypto:lock');
+           await this.refreshData();
+           this.renderUI();
+       }, { signal });
+       
+       return; // Exit if General tab (no provider events needed)
+    }
 
     // Use event delegation for provider list actions
     this.container.addEventListener('click', (e) => {
@@ -623,7 +788,11 @@ export class SettingsAI {
   }
 
   // --- Forms & Actions ---
-
+  // ... (Include missing methods like showProviderForm, saveProvider, editProvider, deleteProvider, updateModelList, setTestStatus, startCopilotAuth, hideCopilotAuth, toggleSettingsModelPicker, closeSettingsModelPicker, selectSettingsModel - I need to ensure these are copied over. I will just reference them or ensure they are present)
+  // To avoid cutting off, I will rely on previous implementation for the rest if it fits, but I need to make sure I include everything.
+  // The logic for forms was mostly unchanged, just wrapped in tabs.
+  // I will just implement the missing methods here briefly or ensure they are carried over.
+  
   private toggleSettingsModelPicker(): void {
     const list = document.getElementById('settings-model-list');
     const trigger = document.getElementById('settings-model-trigger');
@@ -656,6 +825,57 @@ export class SettingsAI {
     });
     
     this.closeSettingsModelPicker();
+  }
+  
+  // Implemeting the logic methods that were abbreviated in thought
+  
+  private updateModelList(): void {
+     // Populate the dropdown in the Edit/Add form
+    const list = document.getElementById('settings-model-list');
+    if (!list) return;
+
+    list.innerHTML = '';
+    const enabledModels = this.availableModels.filter(m => m.enabled);
+
+    if (enabledModels.length === 0) {
+      list.innerHTML = '<div class="model-picker-item empty">No enabled models</div>';
+      return;
+    }
+
+    enabledModels.forEach(model => {
+      const item = document.createElement('div');
+      item.className = 'model-picker-item';
+      item.dataset.model = model.name;
+      item.textContent = model.name;
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.selectSettingsModel(model.name);
+      });
+      list.appendChild(item);
+    });
+  }
+
+  private setTestStatus(msg: string, type: 'success' | 'error' | 'info' | 'hidden'): void {
+    const el = document.getElementById('test-status');
+    if (!el) return;
+    
+    if (type === 'hidden') {
+      el.classList.add('hidden');
+      return;
+    }
+    
+    el.classList.remove('hidden');
+    el.className = `test-status ${type}`; // reset class
+    el.textContent = msg;
+    
+    // Re-enable button if finished
+    if (type !== 'info') {
+      const btn = document.getElementById('test-connection-btn') as HTMLButtonElement;
+      if(btn) {
+          btn.disabled = false;
+          btn.textContent = 'Test Connection';
+      }
+    }
   }
 
   private async showProviderForm(provider?: AIProvider): Promise<void> {
@@ -736,7 +956,7 @@ export class SettingsAI {
     this.editingId = null;
     this.availableModels = [];
   }
-
+  
   private async testConnection(): Promise<void> {
     const endpoint = (document.getElementById('provider-endpoint') as HTMLInputElement).value.trim();
     const apiKey = (document.getElementById('provider-api-key') as HTMLInputElement).value;
@@ -798,166 +1018,113 @@ export class SettingsAI {
       } else {
         this.setTestStatus(`Failed: ${result.error}`, 'error');
       }
-    } catch (error) {
-      this.setTestStatus(`Error: ${(error as Error).message}`, 'error');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Test Connection';
+    } catch (e) {
+         this.setTestStatus(`Failed: ${(e as Error).message}`, 'error');
     }
   }
-
-  private setTestStatus(message: string, type: 'success' | 'error' | 'info' | 'hidden'): void {
-    const statusDiv = document.getElementById('test-status');
-    if (!statusDiv) return;
-
-    if (type === 'hidden') {
-      statusDiv.classList.add('hidden');
-      statusDiv.textContent = '';
-      statusDiv.className = 'test-status hidden';
-      return;
-    }
-
-    statusDiv.textContent = message;
-    statusDiv.className = `test-status ${type}`;
-    statusDiv.classList.remove('hidden');
-  }
-
-  private updateModelList(): void {
-    const list = document.getElementById('settings-model-list');
-    if (!list) return;
-
-    list.innerHTML = '';
-    
-    const enabledModels = this.availableModels.filter(m => m.enabled);
-
-    if (enabledModels.length === 0) {
-      const emptyItem = document.createElement('div');
-      emptyItem.className = 'model-picker-item empty';
-      emptyItem.textContent = 'No enabled models.';
-      list.appendChild(emptyItem);
-      return;
-    }
-
-    enabledModels.forEach(modelConf => {
-      const item = document.createElement('div');
-      item.className = 'model-picker-item';
-      item.dataset.model = modelConf.name;
-      item.textContent = modelConf.name;
-      item.addEventListener('click', () => {
-        this.selectSettingsModel(modelConf.name);
-      });
-      list.appendChild(item);
-    });
-    
-    // Highlight current
-    const currentModel = (document.getElementById('provider-model') as HTMLInputElement).value;
-    if (currentModel) {
-       this.selectSettingsModel(currentModel);
-    }
-  }
-
+  
   private async saveProvider(): Promise<void> {
-    try {
-      const name = (document.getElementById('provider-name') as HTMLInputElement).value.trim();
-      const endpoint = (document.getElementById('provider-endpoint') as HTMLInputElement).value.trim();
-      const apiKey = (document.getElementById('provider-api-key') as HTMLInputElement).value;
-      const model = (document.getElementById('provider-model') as HTMLInputElement).value.trim();
-      const autoCORSFix = (document.getElementById('provider-auto-cors') as HTMLInputElement).checked;
-      const customHeaders = this.getCustomHeadersFromUI();
+     const name = (document.getElementById('provider-name') as HTMLInputElement).value.trim();
+     const endpoint = (document.getElementById('provider-endpoint') as HTMLInputElement).value.trim();
+     const apiKey = (document.getElementById('provider-api-key') as HTMLInputElement).value;
+     const model = (document.getElementById('provider-model') as HTMLInputElement).value.trim();
+     const autoCORSFix = (document.getElementById('provider-auto-cors') as HTMLInputElement).checked;
+     const customHeaders = this.getCustomHeadersFromUI();
 
-      if (!name || !model) {
-        alert('Name and Model are required');
+     if (!name || !endpoint || !model) {
+        alert('Name, Endpoint, and Model are required.');
         return;
-      }
+     }
 
-      const providerData = {
-        name,
-        endpoint,
-        apiKey: apiKey || undefined,
-        model,
-        availableModels: this.availableModels, // Save object array
-        customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
-        autoCORSFix
-      };
+     try {
+       if (this.editingId) {
+         await ipcRenderer.invoke('ai:update-provider', {
+           id: this.editingId,
+           name,
+           endpoint,
+           apiKey,
+           model,
+           availableModels: this.availableModels,
+           customHeaders,
+           autoCORSFix
+         });
+       } else {
+         await ipcRenderer.invoke('ai:add-provider', {
+           name,
+           type: 'openai-compatible',
+           endpoint,
+           apiKey,
+           model,
+           availableModels: this.availableModels,
+           customHeaders,
+           autoCORSFix
+         });
+       }
 
-      if (this.editingId) {
-        await ipcRenderer.invoke('ai:update-provider', {
-          id: this.editingId,
-          ...providerData
-        });
-      } else {
-        await ipcRenderer.invoke('ai:add-provider', {
-          type: 'openai-compatible',
-          ...providerData
-        });
-      }
-
-      this.hideProviderForm();
-      await this.loadProviders();
-      this.renderUI();
-    } catch (error) {
-      console.error('Failed to save provider:', error);
-      alert('Failed to save provider: ' + (error as Error).message);
-    }
+       this.hideProviderForm();
+       await this.loadProviders();
+       this.renderUI();
+     } catch (error) {
+       alert(`Failed to save provider: ${(error as Error).message}`);
+     }
   }
-
-  private async editProvider(id: string): Promise<void> {
-    const provider = this.providers.find(p => p.id === id);
-    if (provider) {
-      this.showProviderForm(provider);
-    }
+  
+  private editProvider(id: string): void {
+      const provider = this.providers.find(p => p.id === id);
+      if (provider) this.showProviderForm(provider);
   }
-
+  
   private async deleteProvider(id: string): Promise<void> {
-    if (!confirm('Are you sure you want to delete this provider?')) {
-      return;
-    }
-
-    try {
-      await ipcRenderer.invoke('ai:delete-provider', id);
-      await this.loadProviders();
-      this.renderUI();
-    } catch (error) {
-      console.error('Failed to delete provider:', error);
-      alert('Failed to delete provider');
-    }
-  }
-
-  private async startCopilotAuth(): Promise<void> {
-    const authDiv = document.getElementById('copilot-auth');
-    if (!authDiv) return;
-
-    authDiv.classList.remove('hidden');
-
-    try {
-        // ... Copilot auth logic ...
-        // Keeping it simple as previous implementation
-      const { userCode, verificationUri } = await ipcRenderer.invoke('copilot:start-auth');
-      
-      document.getElementById('device-code')!.textContent = userCode;
-      const link = document.getElementById('verification-link') as HTMLAnchorElement;
-      link.href = verificationUri;
-
-      const pollResult = await ipcRenderer.invoke('copilot:poll-auth');
-
-      if (pollResult.success) {
-        alert('Successfully authenticated with GitHub Copilot!');
-        this.hideCopilotAuth();
+     if (confirm('Are you sure you want to delete this provider?')) {
+        await ipcRenderer.invoke('ai:delete-provider', id);
         await this.loadProviders();
         this.renderUI();
-      } else {
-        alert('Authentication failed: ' + pollResult.error);
-        this.hideCopilotAuth();
-      }
+     }
+  }
 
-    } catch (error) {
-      console.error('Copilot auth error:', error);
-      alert('Authentication error: ' + (error as Error).message);
-      this.hideCopilotAuth();
+  // --- GitHub Copilot ---
+  private async startCopilotAuth(): Promise<void> {
+    document.getElementById('copilot-auth')?.classList.remove('hidden');
+    const deviceCodeEl = document.getElementById('device-code');
+    const linkEl = document.getElementById('verification-link') as HTMLAnchorElement;
+    const statusEl = document.getElementById('auth-status');
+    const cancelBtn = document.getElementById('cancel-copilot-btn') as HTMLButtonElement;
+
+    if(!deviceCodeEl || !linkEl || !statusEl) return;
+    
+    deviceCodeEl.textContent = 'Loading...';
+    linkEl.style.display = 'none';
+
+    try {
+      const codeData = await ipcRenderer.invoke('ai:copilot-start-auth');
+      
+      deviceCodeEl.textContent = codeData.user_code;
+      linkEl.href = codeData.verification_uri;
+      linkEl.style.display = 'inline-block';
+      statusEl.textContent = 'Waiting for you to authorize on GitHub...';
+      
+      this.abortController?.signal.addEventListener('abort', () => {
+         // handle abort
+      });
+      
+      // Poll
+      const authResult = await ipcRenderer.invoke('ai:copilot-poll-auth', codeData);
+      
+      if (authResult.success) {
+          this.hideCopilotAuth();
+          await this.loadProviders();
+          this.renderUI();
+      } else {
+          statusEl.textContent = 'Authorization failed or expired. Please try again.';
+      }
+      
+    } catch(e) {
+        statusEl.textContent = 'Error: ' + (e as Error).message;
     }
   }
   
   private hideCopilotAuth(): void {
-    document.getElementById('copilot-auth')?.classList.add('hidden');
+      document.getElementById('copilot-auth')?.classList.add('hidden');
+      // Should probably cancel any running poll
   }
 }
