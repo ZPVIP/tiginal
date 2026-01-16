@@ -5,6 +5,7 @@ import { setupAIHandlers } from './ai-handlers';
 import { setupSSHHandlers } from './ssh-handlers';
 import { setupChatHandlers } from './chat-handlers';
 import { getDatabase } from '../services/database/database';
+import { getCrypto } from '../services/ssh/CryptoService';
 
 // Set app name for macOS menu bar
 app.name = 'Tiginal';
@@ -137,6 +138,12 @@ app.whenReady().then(() => {
   setupAIHandlers();
   setupSSHHandlers();
   setupChatHandlers();
+  
+  // Try to auto-unlock crypto using saved key
+  const autoUnlocked = getCrypto().tryAutoUnlock();
+  if (autoUnlocked) {
+    console.log('[Crypto] Auto-unlocked using saved key');
+  }
   
   createMenu();
   createWindow();

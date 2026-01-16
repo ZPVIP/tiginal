@@ -1,10 +1,15 @@
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import argon2 from 'argon2';
+import { safeStorage } from 'electron';
+import { getConfigDir, ensureDir } from '../../main/config';
 
 // Encryption constants
 const SALT_LENGTH = 32;
 const IV_LENGTH = 12; // 96 bits for AES-256-GCM
 const TAG_LENGTH = 16;
+const KEY_FILE = 'encryption.key';
 
 // Argon2id parameters (OWASP recommended)
 const ARGON2_MEMORY = 65536; // 64 MB
@@ -14,6 +19,7 @@ const ARGON2_PARALLELISM = 1;
 /**
  * Cryptographic service for encrypting/decrypting sensitive data
  * Uses Argon2id for key derivation and AES-256-GCM for encryption
+ * Supports auto-unlock via Electron safeStorage
  */
 export class CryptoService {
   private encryptionKey: Buffer | null = null;
@@ -122,6 +128,96 @@ export class CryptoService {
       this.encryptionKey = null;
     }
     this.verificationHash = null;
+  }
+
+  /**
+   * Get the path to the saved key file
+   */
+  private getKeyFilePath(): string {
+    ensureDir(getConfigDir());
+    return path.join(getConfigDir(), KEY_FILE);
+  }
+
+  /**
+   * Save the encryption key using safeStorage
+   * The key is encrypted by the system and stored locally
+   */
+  saveKey(): boolean {
+    if (!this.encryptionKey) {
+      return false;
+    }
+
+    try {
+      if (!safeStorage.isEncryptionAvailable()) {
+        console.warn('safeStorage encryption not available');
+        return false;
+      }
+
+      const encrypted = safeStorage.encryptString(this.encryptionKey.toString('base64'));
+      fs.writeFileSync(this.getKeyFilePath(), encrypted);
+      return true;
+    } catch (error) {
+      console.error('Failed to save encryption key:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Load the encryption key from saved file using safeStorage
+   */
+  private loadKey(): Buffer | null {
+    try {
+      const keyFilePath = this.getKeyFilePath();
+      if (!fs.existsSync(keyFilePath)) {
+        return null;
+      }
+
+      if (!safeStorage.isEncryptionAvailable()) {
+        console.warn('safeStorage encryption not available');
+        return null;
+      }
+
+      const encrypted = fs.readFileSync(keyFilePath);
+      const decrypted = safeStorage.decryptString(encrypted);
+      return Buffer.from(decrypted, 'base64');
+    } catch (error) {
+      console.error('Failed to load encryption key:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Clear the saved key file
+   */
+  clearSavedKey(): void {
+    try {
+      const keyFilePath = this.getKeyFilePath();
+      if (fs.existsSync(keyFilePath)) {
+        fs.unlinkSync(keyFilePath);
+      }
+    } catch (error) {
+      console.error('Failed to clear saved key:', error);
+    }
+  }
+
+  /**
+   * Try to auto-unlock using saved key
+   * Returns true if successful
+   */
+  tryAutoUnlock(): boolean {
+    const savedKey = this.loadKey();
+    if (savedKey) {
+      this.encryptionKey = savedKey;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Check if there is a saved key
+   */
+  hasSavedKey(): boolean {
+    return fs.existsSync(this.getKeyFilePath());
   }
 
   /**

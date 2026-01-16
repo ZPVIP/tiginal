@@ -59,10 +59,33 @@ export function setupSSHHandlers(): void {
         db.setSetting('master_password_hash', result.verificationHash);
       }
 
+      // Save the encryption key for auto-unlock on next startup
+      crypto.saveKey();
+
       return { success: true };
     } catch (error) {
       return { success: false, error: (error as Error).message };
     }
+  });
+
+  // Save encryption key using safeStorage for auto-unlock
+  ipcMain.handle('crypto:save-key', async (): Promise<boolean> => {
+    return getCrypto().saveKey();
+  });
+
+  // Try to auto-unlock using saved key
+  ipcMain.handle('crypto:try-auto-unlock', async (): Promise<boolean> => {
+    return getCrypto().tryAutoUnlock();
+  });
+
+  // Check if there is a saved key
+  ipcMain.handle('crypto:has-saved-key', async (): Promise<boolean> => {
+    return getCrypto().hasSavedKey();
+  });
+
+  // Clear saved key
+  ipcMain.handle('crypto:clear-saved-key', async (): Promise<void> => {
+    getCrypto().clearSavedKey();
   });
 
   // Lock crypto
