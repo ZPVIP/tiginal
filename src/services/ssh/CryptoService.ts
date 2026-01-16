@@ -3,7 +3,7 @@ import argon2 from 'argon2';
 
 // Encryption constants
 const SALT_LENGTH = 32;
-const IV_LENGTH = 12; // 96 bits for ChaCha20-Poly1305
+const IV_LENGTH = 12; // 96 bits for AES-256-GCM
 const TAG_LENGTH = 16;
 
 // Argon2id parameters (OWASP recommended)
@@ -13,7 +13,7 @@ const ARGON2_PARALLELISM = 1;
 
 /**
  * Cryptographic service for encrypting/decrypting sensitive data
- * Uses Argon2id for key derivation and ChaCha20-Poly1305 for encryption
+ * Uses Argon2id for key derivation and AES-256-GCM for encryption
  */
 export class CryptoService {
   private encryptionKey: Buffer | null = null;
@@ -125,7 +125,7 @@ export class CryptoService {
   }
 
   /**
-   * Encrypt plaintext using ChaCha20-Poly1305
+   * Encrypt plaintext using AES-256-GCM
    * Returns base64 encoded string: iv + tag + ciphertext
    */
   encrypt(plaintext: string): string {
@@ -134,7 +134,7 @@ export class CryptoService {
     }
 
     const iv = crypto.randomBytes(IV_LENGTH);
-    const cipher = crypto.createCipheriv('chacha20-poly1305', this.encryptionKey, iv, {
+    const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, iv, {
       authTagLength: TAG_LENGTH,
     });
 
@@ -149,7 +149,7 @@ export class CryptoService {
   }
 
   /**
-   * Decrypt ciphertext using ChaCha20-Poly1305
+   * Decrypt ciphertext using AES-256-GCM
    */
   decrypt(ciphertext: string): string {
     if (!this.encryptionKey) {
@@ -162,7 +162,7 @@ export class CryptoService {
     const tag = data.subarray(IV_LENGTH, IV_LENGTH + TAG_LENGTH);
     const encrypted = data.subarray(IV_LENGTH + TAG_LENGTH);
 
-    const decipher = crypto.createDecipheriv('chacha20-poly1305', this.encryptionKey, iv, {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptionKey, iv, {
       authTagLength: TAG_LENGTH,
     });
     decipher.setAuthTag(tag);

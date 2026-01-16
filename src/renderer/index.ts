@@ -33,6 +33,22 @@ async function init(): Promise<void> {
 
   // Create first tab
   await tabManager.createTab();
+
+  // Setup tab scroll buttons
+  const tabsContainer = document.getElementById('tabs');
+  const scrollAmount = 100;
+
+  document.getElementById('scroll-tabs-left')?.addEventListener('click', () => {
+    if (tabsContainer) {
+      tabsContainer.scrollLeft -= scrollAmount;
+    }
+  });
+
+  document.getElementById('scroll-tabs-right')?.addEventListener('click', () => {
+    if (tabsContainer) {
+      tabsContainer.scrollLeft += scrollAmount;
+    }
+  });
 }
 
 function handleViewChange(view: ViewType): void {

@@ -36,6 +36,27 @@ export class TabManager {
 
     // Close context menu on click outside
     document.addEventListener('click', () => this.hideContextMenu());
+
+    // Keyboard shortcuts for tab switching
+    document.addEventListener('keydown', (e) => {
+      if (e.metaKey || e.ctrlKey) {
+        // Cmd+1-9 to switch tabs
+        if (e.key >= '1' && e.key <= '9') {
+          e.preventDefault();
+          const index = parseInt(e.key) - 1;
+          this.activateTabByIndex(index);
+        }
+        // Cmd+Left/Right to switch adjacent tabs
+        else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          this.activatePreviousTab();
+        }
+        else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          this.activateNextTab();
+        }
+      }
+    });
   }
 
   private formatTitle(cwd: string): string {
@@ -43,7 +64,8 @@ export class TabManager {
     if (cwd.length <= maxChars) {
       return cwd;
     }
-    return '...' + cwd.slice(-maxChars);
+    // Show ... + last maxChars characters
+    return '…' + cwd.slice(-maxChars);
   }
 
   private updateTabTitle(tab: Tab, cwd: string): void {
@@ -51,9 +73,10 @@ export class TabManager {
     tab.title = this.formatTitle(cwd);
     const titleEl = tab.tabElement.querySelector('.tab-title') as HTMLElement;
     if (titleEl) {
-      titleEl.textContent = tab.title;
       titleEl.title = cwd; // Full path on hover
     }
+    // Update all tab numbers to ensure [id] prefix is correct
+    this.updateTabNumbers();
   }
 
   async createTab(): Promise<void> {
@@ -117,18 +140,10 @@ export class TabManager {
     tabElement.className = 'tab';
     tabElement.innerHTML = `
       <span class="tab-title" title="${homedir}">${title}</span>
-      <button class="tab-close">×</button>
     `;
     
-    tabElement.addEventListener('click', (e) => {
-      if (!(e.target as HTMLElement).classList.contains('tab-close')) {
-        this.activateTab(id);
-      }
-    });
-    
-    tabElement.querySelector('.tab-close')!.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.closeTab(id);
+    tabElement.addEventListener('click', () => {
+      this.activateTab(id);
     });
 
     // Right-click context menu
@@ -175,6 +190,9 @@ export class TabManager {
       }
     });
     resizeObserver.observe(pane);
+
+    // Update tab numbers to show [id] prefix
+    this.updateTabNumbers();
   }
 
   private showContextMenu(e: MouseEvent, tabId: string): void {
@@ -233,6 +251,46 @@ export class TabManager {
         return id;
       })
       .filter((id): id is string => id !== undefined);
+  }
+
+  private activateTabByIndex(index: number): void {
+    const order = this.getTabOrder();
+    if (index >= 0 && index < order.length) {
+      this.activateTab(order[index]);
+    }
+  }
+
+  private activatePreviousTab(): void {
+    if (!this.activeTabId) return;
+    const order = this.getTabOrder();
+    const currentIndex = order.indexOf(this.activeTabId);
+    if (currentIndex > 0) {
+      this.activateTab(order[currentIndex - 1]);
+    }
+  }
+
+  private activateNextTab(): void {
+    if (!this.activeTabId) return;
+    const order = this.getTabOrder();
+    const currentIndex = order.indexOf(this.activeTabId);
+    if (currentIndex < order.length - 1) {
+      this.activateTab(order[currentIndex + 1]);
+    }
+  }
+
+  private updateTabNumbers(): void {
+    const tabElements = Array.from(this.tabsContainer.children);
+    tabElements.forEach((el, index) => {
+      const titleEl = el.querySelector('.tab-title');
+      if (titleEl) {
+        // Find the matching tab
+        const tab = Array.from(this.tabs.values()).find(t => t.tabElement === el);
+        if (tab) {
+          const prefix = index < 9 ? `[${index + 1}] ` : '';
+          titleEl.textContent = prefix + this.formatTitle(tab.cwd);
+        }
+      }
+    });
   }
 
   private closeOtherTabs(keepId: string): void {
@@ -314,6 +372,9 @@ export class TabManager {
         this.activateTab(remaining[remaining.length - 1]);
       }
     }
+
+    // Update tab numbers
+    this.updateTabNumbers();
 
     // Close window if no tabs left
     if (this.tabs.size === 0) {

@@ -50,13 +50,8 @@ export function setupChatHandlers(): void {
     getChatService().updateTitle(id, title);
   });
 
-  // Send message to AI and get response
-  ipcMain.handle('chat:send-message', async (
-    _event,
-    conversationId: string,
-    providerId: string,
-    userMessage: string
-  ): Promise<{ response: string; error?: string }> => {
+  // Send message to AI
+  ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string): Promise<{ response: string; error?: string }> => {
     const chatService = getChatService();
     const db = getDatabase().getDb();
     const crypto = getCrypto();
@@ -79,7 +74,7 @@ export function setupChatHandlers(): void {
     }
 
     // Add user message to conversation
-    chatService.addMessage(conversationId, 'user', userMessage);
+    chatService.addMessage(conversationId, 'user', content);
 
     // Get conversation history
     const messages = chatService.getMessages(conversationId);
@@ -95,13 +90,16 @@ export function setupChatHandlers(): void {
     }
 
     try {
+      // Determine model to use
+      const modelToUse = specificModel || provider.model;
+
       // Call AI API
       const response = await callAIAPI(
         provider.type as 'openai-compatible' | 'copilot',
         provider.endpoint || 'https://api.openai.com/v1',
         apiKey,
-        provider.model,
-        messages.map(m => ({ role: m.role, content: m.content }))
+        modelToUse,
+        messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content }))
       );
 
       // Add assistant response to conversation

@@ -10,8 +10,8 @@
   --accent-secondary: #f5c2e7;
   --accent-green: #a6e3a1;
   --border-color: #313244;
-  --tab-active: #313244;
-  --tab-hover: #45475a;
+  --tab-active: #45475a;
+  --tab-hover: #313244;
   --sidebar-width: 48px;
   --ai-panel-width: 320px;
   --command-input-height: 48px;
@@ -115,7 +115,8 @@ html, body {
 
 #tabs {
   display: flex;
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   overflow-x: auto;
   gap: 2px;
   -webkit-app-region: no-drag;
@@ -130,7 +131,7 @@ html, body {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background-color: transparent;
+  background-color: var(--bg-secondary);
   border: none;
   border-radius: 6px 6px 0 0;
   color: var(--text-secondary);
@@ -138,7 +139,7 @@ html, body {
   cursor: pointer;
   white-space: nowrap;
   transition: background-color 0.15s, color 0.15s;
-  width: 180px;
+  width: 240px;
 }
 
 .tab:hover {
@@ -147,14 +148,12 @@ html, body {
 }
 
 .tab.active {
-  background-color: var(--bg-primary);
+  background-color: var(--tab-active);
   color: var(--text-primary);
 }
 
 .tab-title {
   flex: 1;
-  overflow: hidden;
-  text-overflow: clip;
   font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Monaco, monospace;
   font-size: 11px;
 }
@@ -189,7 +188,8 @@ html, body {
   flex: 1;
 }
 
-#new-tab-btn {
+/* Tab bar buttons (new tab, scroll arrows) */
+.tab-bar-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -203,12 +203,19 @@ html, body {
   border-radius: 6px;
   transition: background-color 0.15s, color 0.15s;
   -webkit-app-region: no-drag;
+  flex-shrink: 0;
 }
 
-#new-tab-btn:hover {
+.tab-bar-btn:hover {
   background-color: var(--tab-hover);
   color: var(--text-primary);
 }
+
+#scroll-tabs-left,
+#scroll-tabs-right {
+  margin-left: 4px;
+}
+
 
 /* AI Toggle button */
 .ai-toggle-btn {
@@ -364,19 +371,40 @@ html, body {
 /* AI Panel */
 #ai-panel {
   width: var(--ai-panel-width);
+  min-width: 200px;
+  max-width: 80vw;
   height: 100%;
   background-color: var(--bg-secondary);
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  transition: width 0.2s, margin-right 0.2s;
+  position: relative;
 }
 
 #ai-panel.collapsed {
   width: 0;
+  min-width: 0;
   border-left: none;
   overflow: hidden;
+}
+
+/* Resize handle */
+.ai-panel-resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background-color 0.15s;
+  z-index: 10;
+}
+
+.ai-panel-resize:hover,
+.ai-panel-resize.dragging {
+  background-color: var(--accent-primary);
 }
 
 #ai-panel-header {
@@ -530,23 +558,77 @@ html, body {
   border-radius: 8px;
   font-size: 13px;
   line-height: 1.5;
+  color: var(--text-primary);
 }
 
-.ai-message-user {
+.ai-message.user {
   background-color: var(--accent-primary);
   color: var(--bg-tertiary);
   margin-left: 24px;
 }
 
-.ai-message-assistant {
+.ai-message.assistant {
   background-color: var(--bg-elevated);
   color: var(--text-primary);
+  margin-right: 24px;
+}
+
+.ai-message.system {
+  background-color: rgba(243, 139, 168, 0.2);
+  border: 1px solid #f38ba8;
+  color: #f38ba8;
   margin-right: 24px;
 }
 
 .ai-message-content {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* AI History (inline in messages container) */
+.ai-history {
+  padding: 8px;
+}
+
+.ai-history h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.ai-history .empty {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.ai-history .history-item {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 4px;
+  transition: background-color 0.15s;
+}
+
+.ai-history .history-item:hover {
+  background-color: var(--tab-hover);
+}
+
+.ai-history .history-title {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.ai-history .history-date {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ai-history .btn {
+  margin-top: 16px;
 }
 
 /* Settings Page */
@@ -993,6 +1075,37 @@ html, body {
   border-color: var(--accent-primary);
 }
 
+/* Input with icon */
+.input-with-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-icon input {
+  padding-right: 32px;
+  width: 100%;
+}
+
+.input-with-icon .toggle-password {
+  position: absolute;
+  right: 4px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.input-with-icon .toggle-password:hover {
+  color: var(--text-primary);
+  background-color: var(--surface-hover);
+}
+
 /* Flex row utility */
 .flex-row {
   display: flex !important;
@@ -1124,3 +1237,120 @@ html, body {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* Model Picker */
+.model-picker {
+  position: relative;
+  width: 100%;
+}
+
+/* Only add bottom margin for AI panel picker, not settings */
+#ai-input-container .model-picker {
+  margin-bottom: 8px;
+}
+
+.model-picker-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.model-picker-trigger:hover {
+  background-color: var(--tab-hover);
+}
+
+.model-picker-trigger.open {
+  border-color: var(--accent-primary);
+}
+
+.model-picker-label {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-picker-arrow {
+  flex-shrink: 0;
+  margin-left: 8px;
+  transition: transform 0.15s;
+}
+
+.model-picker-trigger.open .model-picker-arrow {
+  transform: rotate(180deg);
+}
+
+.model-picker-list {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  margin-bottom: 4px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  max-height: 300px; /* ~10 items at 30px each */
+  overflow-y: auto;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.model-picker-list.hidden {
+  display: none;
+}
+
+.model-picker-item {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+
+.model-picker-item:hover {
+  background-color: var(--tab-hover);
+}
+
+.model-picker-item.selected {
+  background-color: var(--accent-primary);
+  color: var(--bg-primary);
+}
+
+.model-picker-item.empty {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.model-picker-item.empty:hover {
+  background-color: transparent;
+}
+
+/* Custom scrollbar for model picker */
+.model-picker-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.model-picker-list::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+.model-picker-list::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.model-picker-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+

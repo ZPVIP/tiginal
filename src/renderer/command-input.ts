@@ -24,9 +24,9 @@ export class CommandInput {
     // Paste button - paste only, don't execute
     this.pasteBtn?.addEventListener('click', () => this.send(false));
 
-    // Cmd+Enter to send
+    // Enter to send, Shift+Enter for multi-line
     this.textarea?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         this.send(true);
       }

@@ -34,9 +34,9 @@ function createWindow(): void {
   });
 
   // Only open DevTools in development mode
-  if (!app.isPackaged) {
-    mainWindow.webContents.openDevTools();
-  }
+  // if (!app.isPackaged) {
+  //   mainWindow.webContents.openDevTools();
+  // }
 }
 
 function createMenu(): void {

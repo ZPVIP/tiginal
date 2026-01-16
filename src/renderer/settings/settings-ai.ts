@@ -83,27 +83,38 @@ export class SettingsAI {
 
           <div class="form-group">
             <label for="provider-api-key">API Key (optional)</label>
-            <input type="password" id="provider-api-key" placeholder="sk-...">
+            <div class="input-with-icon">
+              <input type="password" id="provider-api-key" placeholder="sk-...">
+              <button class="icon-btn toggle-password">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div class="form-group flex-row" style="gap: 8px; align-items: flex-end;">
              <div class="flex-grow">
                <label for="provider-model">Model</label>
-               <input type="text" id="provider-model" placeholder="gpt-4o" list="model-list">
-               <datalist id="model-list"></datalist>
+               <div class="model-picker settings-model-picker" id="settings-model-picker">
+                 <button class="model-picker-trigger" id="settings-model-trigger" type="button">
+                   <span class="model-picker-label" id="settings-model-label">Select model...</span>
+                   <svg class="model-picker-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                     <polyline points="6 9 12 15 18 9"></polyline>
+                   </svg>
+                 </button>
+                 <div class="model-picker-list hidden" id="settings-model-list"></div>
+               </div>
+               <input type="hidden" id="provider-model" value="">
              </div>
-             <button class="btn btn-secondary" id="test-connection-btn" style="margin-bottom: 2px;">
+             <button class="btn btn-secondary" id="test-connection-btn">
                Test Connection
              </button>
           </div>
           <div id="test-status" class="test-status hidden"></div>
 
-          <div class="form-group checkbox">
-            <label>
-              <input type="checkbox" id="provider-default">
-              Set as default
-            </label>
-          </div>
+
 
           <div class="form-actions">
             <button class="btn btn-secondary" id="cancel-form-btn">Cancel</button>
@@ -194,10 +205,29 @@ export class SettingsAI {
       this.testConnection();
     });
 
-    // Model input change
-    document.getElementById('provider-model')?.addEventListener('change', (e) => {
-       const input = e.target as HTMLInputElement;
-       // If selected from datalist, it might be one of availableModels
+    // Toggle password visibility
+    document.querySelector('.toggle-password')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const btn = e.currentTarget as HTMLElement;
+      const input = document.getElementById('provider-api-key') as HTMLInputElement;
+      
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+        `;
+      } else {
+        input.type = 'password';
+        btn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        `;
+      }
     });
 
     // Cancel Copilot auth
@@ -218,9 +248,57 @@ export class SettingsAI {
         this.deleteProvider(id);
       });
     });
+
+    // Settings model picker
+    document.getElementById('settings-model-trigger')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleSettingsModelPicker();
+    });
+
+    // Close picker on outside click
+    document.addEventListener('click', (e) => {
+      const picker = document.getElementById('settings-model-picker');
+      if (picker && !picker.contains(e.target as Node)) {
+        this.closeSettingsModelPicker();
+      }
+    });
   }
 
-  private showProviderForm(provider?: AIProvider): void {
+  private toggleSettingsModelPicker(): void {
+    const list = document.getElementById('settings-model-list');
+    const trigger = document.getElementById('settings-model-trigger');
+    if (list?.classList.contains('hidden')) {
+      list.classList.remove('hidden');
+      trigger?.classList.add('open');
+    } else {
+      list?.classList.add('hidden');
+      trigger?.classList.remove('open');
+    }
+  }
+
+  private closeSettingsModelPicker(): void {
+    document.getElementById('settings-model-list')?.classList.add('hidden');
+    document.getElementById('settings-model-trigger')?.classList.remove('open');
+  }
+
+  private selectSettingsModel(model: string): void {
+    (document.getElementById('provider-model') as HTMLInputElement).value = model;
+    const label = document.getElementById('settings-model-label');
+    if (label) label.textContent = model || 'Select model...';
+    
+    // Update selected state
+    document.querySelectorAll('#settings-model-list .model-picker-item').forEach(item => {
+      if ((item as HTMLElement).dataset.model === model) {
+        item.classList.add('selected');
+      } else {
+        item.classList.remove('selected');
+      }
+    });
+    
+    this.closeSettingsModelPicker();
+  }
+
+  private async showProviderForm(provider?: AIProvider): Promise<void> {
     const form = document.getElementById('provider-form');
     const title = document.getElementById('form-title');
     
@@ -232,9 +310,45 @@ export class SettingsAI {
     // Fill form fields
     (document.getElementById('provider-name') as HTMLInputElement).value = provider?.name || '';
     (document.getElementById('provider-endpoint') as HTMLInputElement).value = provider?.endpoint || 'https://api.openai.com/v1';
-    (document.getElementById('provider-api-key') as HTMLInputElement).value = '';
-    (document.getElementById('provider-model') as HTMLInputElement).value = provider?.model || 'gpt-4o';
-    (document.getElementById('provider-default') as HTMLInputElement).checked = provider?.isDefault || false;
+
+    // Load decrypted API key if editing
+    const apiKeyInput = document.getElementById('provider-api-key') as HTMLInputElement;
+    if (provider?.id) {
+      const decryptedKey = await ipcRenderer.invoke('ai:get-api-key', provider.id);
+      if (decryptedKey) {
+        apiKeyInput.value = decryptedKey;
+      } else if (provider.apiKeyEncrypted) {
+        // Key exists but locked
+        apiKeyInput.placeholder = '(encrypted - unlock to view)';
+        apiKeyInput.value = '';
+      } else {
+        apiKeyInput.value = '';
+        apiKeyInput.placeholder = 'sk-...';
+      }
+    } else {
+      apiKeyInput.value = '';
+      apiKeyInput.placeholder = 'sk-...';
+    }
+
+    // Reset password toggle icon
+    apiKeyInput.type = 'password';
+    const btn = document.querySelector('.toggle-password');
+    if (btn) {
+      btn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+      `;
+    }
+
+    // Set model value and label
+    const modelValue = provider?.model || '';
+    (document.getElementById('provider-model') as HTMLInputElement).value = modelValue;
+    const modelLabel = document.getElementById('settings-model-label');
+    if (modelLabel) {
+      modelLabel.textContent = modelValue || 'Select model...';
+    }
     
     this.availableModels = provider?.availableModels || [];
     this.updateModelList();
@@ -312,30 +426,67 @@ export class SettingsAI {
   }
 
   private updateModelList(): void {
-    const dataList = document.getElementById('model-list');
-    if (!dataList) return;
+    const list = document.getElementById('settings-model-list');
+    if (!list) return;
 
-    dataList.innerHTML = '';
-    this.availableModels.forEach(model => {
-      const option = document.createElement('option');
-      option.value = model;
-      dataList.appendChild(option);
-    });
-  }
-
-  private async saveProvider(): Promise<void> {
-    const name = (document.getElementById('provider-name') as HTMLInputElement).value.trim();
-    const endpoint = (document.getElementById('provider-endpoint') as HTMLInputElement).value.trim();
-    const apiKey = (document.getElementById('provider-api-key') as HTMLInputElement).value;
-    const model = (document.getElementById('provider-model') as HTMLInputElement).value.trim();
-    const isDefault = (document.getElementById('provider-default') as HTMLInputElement).checked;
-
-    if (!name || !model) {
-      alert('Name and Model are required');
+    list.innerHTML = '';
+    
+    if (this.availableModels.length === 0) {
+      const emptyItem = document.createElement('div');
+      emptyItem.className = 'model-picker-item empty';
+      emptyItem.textContent = 'Click "Test Connection" to load models';
+      list.appendChild(emptyItem);
       return;
     }
 
+    this.availableModels.forEach(model => {
+      const item = document.createElement('div');
+      item.className = 'model-picker-item';
+      item.dataset.model = model;
+      item.textContent = model;
+      item.addEventListener('click', () => {
+        this.selectSettingsModel(model);
+      });
+      list.appendChild(item);
+    });
+    
+    // Update selected state based on current hidden input value
+    const currentModel = (document.getElementById('provider-model') as HTMLInputElement).value;
+    if (currentModel) {
+      list.querySelectorAll('.model-picker-item').forEach(item => {
+        if ((item as HTMLElement).dataset.model === currentModel) {
+          item.classList.add('selected');
+        }
+      });
+    }
+  }
+
+  private async saveProvider(): Promise<void> {
     try {
+      const name = (document.getElementById('provider-name') as HTMLInputElement).value.trim();
+      const endpoint = (document.getElementById('provider-endpoint') as HTMLInputElement).value.trim();
+      const apiKey = (document.getElementById('provider-api-key') as HTMLInputElement).value;
+      const model = (document.getElementById('provider-model') as HTMLInputElement).value.trim();
+
+      if (!name || !model) {
+        alert('Name and Model are required');
+        return;
+      }
+
+      // Check unlock status
+      const isUnlocked = await ipcRenderer.invoke('crypto:is-unlocked');
+      if (apiKey && !isUnlocked) {
+        const hasPassword = await ipcRenderer.invoke('crypto:has-master-password');
+        if (hasPassword) {
+          // Direct user to unlock via SSH settings
+          alert('Please unlock the app first by going to SSH Servers settings and entering your master password.');
+          return;
+        } else {
+          alert('Please go to SSH Servers settings to set a master password first.');
+          return;
+        }
+      }
+
       if (this.editingId) {
         await ipcRenderer.invoke('ai:update-provider', {
           id: this.editingId,
@@ -344,7 +495,6 @@ export class SettingsAI {
           apiKey: apiKey || undefined,
           model,
           availableModels: this.availableModels.length > 0 ? this.availableModels : undefined,
-          isDefault,
         });
       } else {
         await ipcRenderer.invoke('ai:add-provider', {
@@ -354,7 +504,6 @@ export class SettingsAI {
           apiKey: apiKey || undefined,
           model,
           availableModels: this.availableModels.length > 0 ? this.availableModels : undefined,
-          isDefault,
         });
       }
 
@@ -363,7 +512,7 @@ export class SettingsAI {
       this.renderUI();
     } catch (error) {
       console.error('Failed to save provider:', error);
-      alert('Failed to save provider');
+      alert('Failed to save provider: ' + (error as Error).message);
     }
   }
 
@@ -403,21 +552,23 @@ export class SettingsAI {
       const link = document.getElementById('verification-link') as HTMLAnchorElement;
       link.href = verificationUri;
 
-      // Poll for token
+      // Start polling
       const pollResult = await ipcRenderer.invoke('copilot:poll-auth');
-      
+
       if (pollResult.success) {
-        document.getElementById('auth-status')!.textContent = 'Connected successfully!';
-        setTimeout(() => {
-          this.hideCopilotAuth();
-          this.loadProviders().then(() => this.renderUI());
-        }, 1500);
+        alert('Successfully authenticated with GitHub Copilot!');
+        this.hideCopilotAuth();
+        await this.loadProviders();
+        this.renderUI();
       } else {
-        document.getElementById('auth-status')!.textContent = 'Authorization failed: ' + pollResult.error;
+        alert('Authentication failed: ' + pollResult.error);
+        this.hideCopilotAuth();
       }
+
     } catch (error) {
-      console.error('Copilot auth failed:', error);
-      document.getElementById('auth-status')!.textContent = 'Authorization failed';
+      console.error('Copilot auth error:', error);
+      alert('Authentication error: ' + (error as Error).message);
+      this.hideCopilotAuth();
     }
   }
 
