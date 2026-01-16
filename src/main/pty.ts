@@ -1,5 +1,8 @@
 import * as pty from 'node-pty';
 import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
+import { app } from 'electron';
 
 export interface PtyOptions {
   cols?: number;
@@ -10,6 +13,37 @@ export interface PtyOptions {
 
 const ptyProcesses = new Map<number, pty.IPty>();
 let nextPtyId = 1;
+
+// Create a custom zshrc that sources user's zshrc and adds our hooks
+let tigiZdotdir: string | null = null;
+
+function ensureTigiZshrc(): string {
+  if (tigiZdotdir) return tigiZdotdir;
+
+  // Create temp directory for our zsh config
+  const tmpDir = path.join(app.getPath('temp'), 'tigi-terminal');
+  console.log(`[PTY] Creating temp directory: ${tmpDir}`);
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir, { recursive: true });
+  }
+
+  // Create .zshrc that sources user's config and adds OSC 7
+  const zshrc = `
+# Source user's original zshrc
+if [[ -f "$HOME/.zshrc" ]]; then
+  source "$HOME/.zshrc"
+fi
+
+# Tigi Terminal: OSC 7 directory tracking for tab titles
+precmd() {
+  print -Pn "\\e]7;file://\${HOST}\${PWD}\\a"
+}
+`;
+
+  fs.writeFileSync(path.join(tmpDir, '.zshrc'), zshrc);
+  tigiZdotdir = tmpDir;
+  return tmpDir;
+}
 
 /**
  * Get the default shell for the current platform
@@ -29,7 +63,6 @@ function getShell(): string {
  * Get shell arguments based on platform
  */
 function getShellArgs(): string[] {
-  // Don't use --login to avoid issues
   return [];
 }
 
@@ -43,9 +76,20 @@ export function createPty(options: PtyOptions = {}): number {
 
   console.log(`[PTY] Creating shell: ${shell} in ${cwd}`);
 
-  // Inject OSC 7 directory reporting for zsh/bash
-  const osc7Precmd = 'precmd() { print -Pn "\\e]7;file://${HOST}${PWD}\\a" }';
-  const osc7PromptCommand = 'printf "\\e]7;file://%s%s\\a" "$HOSTNAME" "$PWD"';
+  // For bash: PROMPT_COMMAND for OSC 7
+  const bashPromptCmd = 'printf "\\e]7;file://%s%s\\a" "$HOSTNAME" "$PWD"';
+
+  // Build environment
+  const env: Record<string, string> = {
+    ...process.env as Record<string, string>,
+    PROMPT_COMMAND: bashPromptCmd,
+    ...options.env,
+  };
+
+  // For zsh: use ZDOTDIR to load our custom zshrc silently
+  if (shell.includes('zsh')) {
+    env.ZDOTDIR = ensureTigiZshrc();
+  }
 
   try {
     const ptyProcess = pty.spawn(shell, args, {
@@ -53,23 +97,8 @@ export function createPty(options: PtyOptions = {}): number {
       cols: options.cols || 80,
       rows: options.rows || 24,
       cwd: cwd,
-      env: {
-        ...process.env,
-        // For zsh: ZDOTDIR trick won't work easily, so we'll inject via init
-        // For bash: PROMPT_COMMAND
-        PROMPT_COMMAND: osc7PromptCommand,
-        ...options.env,
-      } as Record<string, string>,
+      env: env,
     });
-
-    // For zsh, send the precmd function definition after spawn
-    if (shell.includes('zsh')) {
-      setTimeout(() => {
-        ptyProcess.write(`${osc7Precmd}\n`);
-        // Clear the screen and reprint prompt
-        ptyProcess.write('clear\n');
-      }, 100);
-    }
 
     const id = nextPtyId++;
     ptyProcesses.set(id, ptyProcess);
