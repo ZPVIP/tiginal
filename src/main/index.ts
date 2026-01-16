@@ -1,5 +1,7 @@
 import { app, BrowserWindow, Menu, MenuItemConstructorOptions } from 'electron';
 import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
 import { setupIpcHandlers } from './ipc';
 import { setupAIHandlers } from './ai-handlers';
 import { setupSSHHandlers } from './ssh-handlers';
@@ -9,6 +11,16 @@ import { getCrypto } from '../services/ssh/CryptoService';
 
 // Set app name for macOS menu bar
 app.name = 'Tiginal';
+
+// Override userData path to ~/.config/tiginal/support on macOS/Linux
+if (process.platform !== 'win32') {
+  const customUserDataPath = path.join(os.homedir(), '.config', 'tiginal', 'support');
+  // Ensure directory exists
+  if (!fs.existsSync(customUserDataPath)) {
+    fs.mkdirSync(customUserDataPath, { recursive: true });
+  }
+  app.setPath('userData', customUserDataPath);
+}
 
 let mainWindow: BrowserWindow | null = null;
 

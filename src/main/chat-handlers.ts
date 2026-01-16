@@ -58,7 +58,7 @@ export function setupChatHandlers(): void {
 
     // Get provider
     const provider = db.prepare(`
-      SELECT id, name, type, endpoint, api_key_encrypted, model
+      SELECT id, name, type, endpoint, api_key_encrypted, model, custom_headers, auto_cors_fix
       FROM ai_providers WHERE id = ?
     `).get(providerId) as {
       id: string;
@@ -67,6 +67,8 @@ export function setupChatHandlers(): void {
       endpoint: string | null;
       api_key_encrypted: string | null;
       model: string;
+      custom_headers: string | null;
+      auto_cors_fix: number | null;
     } | undefined;
 
     if (!provider) {
@@ -93,13 +95,18 @@ export function setupChatHandlers(): void {
       // Determine model to use
       const modelToUse = specificModel || provider.model;
 
+      // Parse custom headers
+      const customHeaders = provider.custom_headers ? JSON.parse(provider.custom_headers) : {};
+
       // Call AI API
       const response = await callAIAPI(
         provider.type as 'openai-compatible' | 'copilot',
         provider.endpoint || 'https://api.openai.com/v1',
         apiKey,
         modelToUse,
-        messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content }))
+        messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })),
+        customHeaders,
+        provider.auto_cors_fix === 1
       );
 
       // Add assistant response to conversation
@@ -131,14 +138,27 @@ async function callAIAPI(
   endpoint: string,
   apiKey: string | null,
   model: string,
-  messages: Array<{ role: string; content: string }>
+  messages: Array<{ role: string; content: string }>,
+  customHeaders: Record<string, string> = {},
+  autoCORSFix: boolean = true
 ): Promise<string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...customHeaders
   };
 
   if (apiKey) {
     headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+
+  // Auto CORS fix simulation (setting Origin header)
+  if (autoCORSFix) {
+    try {
+      const url = new URL(endpoint);
+      headers['Origin'] = url.origin;
+    } catch (e) {
+      // invalid url, ignore
+    }
   }
 
   const response = await fetch(`${endpoint}/chat/completions`, {

@@ -2,9 +2,10 @@ import Database from 'better-sqlite3';
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /**
  * Database service for Tiginal
@@ -15,9 +16,17 @@ export class DatabaseService {
   private dbPath: string;
 
   constructor() {
-    // Use userData directory for production, project root for development
-    const userDataPath = app?.getPath?.('userData') || process.cwd();
-    const dbDir = path.join(userDataPath, 'data');
+    let baseDir: string;
+    
+    if (process.platform === 'win32') {
+      // Windows: %APPDATA%\Tiginal
+      baseDir = path.join(process.env.APPDATA || os.homedir(), 'Tiginal');
+    } else {
+      // macOS and Linux: ~/.config/tiginal
+      baseDir = path.join(os.homedir(), '.config', 'tiginal');
+    }
+
+    const dbDir = path.join(baseDir, 'data');
     
     // Ensure data directory exists
     if (!fs.existsSync(dbDir)) {
@@ -64,6 +73,10 @@ export class DatabaseService {
 
     if (currentVersion < 2) {
       this.migrateV2();
+    }
+
+    if (currentVersion < 3) {
+      this.migrateV3();
     }
 
     // Update schema version
@@ -151,6 +164,18 @@ export class DatabaseService {
   }
 
   /**
+   * Migration v3: Add custom_headers and auto_cors_fix to ai_providers
+   */
+  private migrateV3(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      ALTER TABLE ai_providers ADD COLUMN custom_headers TEXT;
+      ALTER TABLE ai_providers ADD COLUMN auto_cors_fix INTEGER DEFAULT 1;
+    `);
+  }
+
+  /**
    * Get a setting value
    */
   getSetting(key: string): string | null {
@@ -175,6 +200,13 @@ export class DatabaseService {
   getDb(): Database.Database {
     if (!this.db) throw new Error('Database not initialized');
     return this.db;
+  }
+  
+  /**
+   * Get the path to the database file
+   */
+  getDbPath(): string {
+    return this.dbPath;
   }
 
   /**

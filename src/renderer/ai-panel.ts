@@ -1,11 +1,16 @@
 import { ipcRenderer } from 'electron';
 
+interface ModelConfig {
+  name: string;
+  enabled: boolean;
+}
+
 interface AIProvider {
   id: string;
   name: string;
   type: 'openai-compatible' | 'copilot';
   model: string;
-  availableModels?: string[];
+  availableModels?: ModelConfig[] | string[]; // Allow both for safety, but we expect ModelConfig[]
   isDefault: boolean;
 }
 
@@ -94,11 +99,21 @@ export class AIPanel {
       // Add available models (excluding default)
       if (provider.availableModels) {
         provider.availableModels.forEach(m => {
-          if (m !== provider.model) {
+          let modelName: string;
+          let isEnabled = true;
+
+          if (typeof m === 'string') {
+             modelName = m;
+          } else {
+             modelName = m.name;
+             isEnabled = m.enabled;
+          }
+
+          if (isEnabled && modelName !== provider.model) {
             options.push({
               providerId: provider.id,
               providerName: provider.name,
-              model: m,
+              model: modelName,
               isDefault: false,
             });
           }

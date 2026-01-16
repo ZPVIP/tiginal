@@ -11,6 +11,8 @@ interface AIProviderInput {
   model: string;
   isDefault?: boolean;
   availableModels?: string[];
+  customHeaders?: Record<string, string>;
+  autoCORSFix?: boolean;
 }
 
 interface AIProvider {
@@ -21,6 +23,8 @@ interface AIProvider {
   apiKeyEncrypted?: string;
   model: string;
   availableModels?: string[];
+  customHeaders?: Record<string, string>;
+  autoCORSFix?: boolean;
   isDefault: boolean;
   createdAt: number;
   updatedAt: number;
@@ -30,11 +34,16 @@ interface AIProvider {
  * Setup AI-related IPC handlers
  */
 export function setupAIHandlers(): void {
+  // Get database path
+  ipcMain.handle('ai:get-db-path', async (): Promise<string> => {
+    return getDatabase().getDbPath();
+  });
+
   // Get all providers
   ipcMain.handle('ai:get-providers', async (): Promise<AIProvider[]> => {
     const db = getDatabase().getDb();
     const rows = db.prepare(`
-      SELECT id, name, type, endpoint, api_key_encrypted, model, available_models, is_default, created_at, updated_at
+      SELECT id, name, type, endpoint, api_key_encrypted, model, available_models, custom_headers, auto_cors_fix, is_default, created_at, updated_at
       FROM ai_providers ORDER BY name
     `).all() as Array<{
       id: string;
@@ -47,6 +56,8 @@ export function setupAIHandlers(): void {
       created_at: number;
       updated_at: number;
       available_models: string | null;
+      custom_headers: string | null;
+      auto_cors_fix: number | null;
     }>;
 
     return rows.map(row => ({
@@ -57,6 +68,8 @@ export function setupAIHandlers(): void {
       apiKeyEncrypted: row.api_key_encrypted || undefined,
       model: row.model,
       availableModels: row.available_models ? JSON.parse(row.available_models) : undefined,
+      customHeaders: row.custom_headers ? JSON.parse(row.custom_headers) : undefined,
+      autoCORSFix: row.auto_cors_fix === 1,
       isDefault: row.is_default === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -82,8 +95,8 @@ export function setupAIHandlers(): void {
     }
 
     db.prepare(`
-      INSERT INTO ai_providers (id, name, type, endpoint, api_key_encrypted, model, available_models, is_default, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO ai_providers (id, name, type, endpoint, api_key_encrypted, model, available_models, custom_headers, auto_cors_fix, is_default, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       input.name,
@@ -92,6 +105,8 @@ export function setupAIHandlers(): void {
       apiKeyEncrypted,
       input.model,
       input.availableModels ? JSON.stringify(input.availableModels) : null,
+      input.customHeaders ? JSON.stringify(input.customHeaders) : null,
+      input.autoCORSFix !== false ? 1 : 0, // Default to true if undefined
       input.isDefault ? 1 : 0,
       now,
       now
@@ -104,6 +119,8 @@ export function setupAIHandlers(): void {
       endpoint: input.endpoint,
       apiKeyEncrypted: apiKeyEncrypted || undefined,
       model: input.model,
+      customHeaders: input.customHeaders,
+      autoCORSFix: input.autoCORSFix ?? true,
       isDefault: input.isDefault || false,
       createdAt: now,
       updatedAt: now,
@@ -142,6 +159,8 @@ export function setupAIHandlers(): void {
         api_key_encrypted = ?,
         model = ?,
         available_models = ?,
+        custom_headers = ?,
+        auto_cors_fix = ?,
         is_default = ?,
         updated_at = ?
       WHERE id = ?
@@ -151,6 +170,8 @@ export function setupAIHandlers(): void {
       apiKeyEncrypted,
       input.model,
       input.availableModels ? JSON.stringify(input.availableModels) : null,
+      input.customHeaders ? JSON.stringify(input.customHeaders) : null,
+      input.autoCORSFix !== false ? 1 : 0,
       input.isDefault ? 1 : 0,
       now,
       input.id
@@ -183,7 +204,13 @@ export function setupAIHandlers(): void {
     }
   });
   // Test connection and fetch models
-  ipcMain.handle('ai:test-connection', async (_event, provider: { type: string; endpoint: string; apiKey?: string }): Promise<{ success: boolean; error?: string; models?: string[] }> => {
+  ipcMain.handle('ai:test-connection', async (_event, provider: { 
+    type: string; 
+    endpoint: string; 
+    apiKey?: string;
+    customHeaders?: Record<string, string>;
+    autoCORSFix?: boolean;
+  }): Promise<{ success: boolean; error?: string; models?: string[] }> => {
     if (provider.type !== 'openai-compatible') {
       return { success: false, error: 'Only OpenAI-compatible providers support testing currently' };
     }
@@ -194,10 +221,21 @@ export function setupAIHandlers(): void {
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
+        ...provider.customHeaders
       };
 
       if (provider.apiKey) {
         headers['Authorization'] = `Bearer ${provider.apiKey}`;
+      }
+      
+      // Auto CORS fix simulation (setting Origin header)
+      if (provider.autoCORSFix) {
+        try {
+          const url = new URL(provider.endpoint);
+          headers['Origin'] = url.origin;
+        } catch (e) {
+          // invalid url, ignore
+        }
       }
 
       const response = await fetch(`${provider.endpoint}/models`, {
