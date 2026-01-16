@@ -2,14 +2,19 @@
   --bg-primary: #1e1e2e;
   --bg-secondary: #181825;
   --bg-tertiary: #11111b;
+  --bg-elevated: #313244;
   --text-primary: #cdd6f4;
   --text-secondary: #a6adc8;
   --text-muted: #6c7086;
   --accent-primary: #89b4fa;
   --accent-secondary: #f5c2e7;
+  --accent-green: #a6e3a1;
   --border-color: #313244;
   --tab-active: #313244;
   --tab-hover: #45475a;
+  --sidebar-width: 48px;
+  --ai-panel-width: 320px;
+  --command-input-height: 48px;
 }
 
 * {
@@ -24,6 +29,77 @@ html, body {
   overflow: hidden;
   background-color: var(--bg-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+}
+
+/* Main app layout */
+#app {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+/* Sidebar */
+#sidebar {
+  width: var(--sidebar-width);
+  height: 100%;
+  background-color: var(--bg-tertiary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+#sidebar-icons {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  gap: 4px;
+}
+
+.sidebar-icon {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+  position: relative;
+}
+
+.sidebar-icon:hover {
+  color: var(--text-primary);
+  background-color: var(--tab-hover);
+}
+
+.sidebar-icon.active {
+  color: var(--text-primary);
+}
+
+.sidebar-icon.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background-color: var(--accent-primary);
+  border-radius: 0 2px 2px 0;
+}
+
+.sidebar-spacer {
+  flex: 1;
+}
+
+/* Main content */
+#main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 /* Tab bar */
@@ -62,7 +138,7 @@ html, body {
   cursor: pointer;
   white-space: nowrap;
   transition: background-color 0.15s, color 0.15s;
-  width: 220px; /* Fixed width for all tabs */
+  width: 180px;
 }
 
 .tab:hover {
@@ -78,7 +154,7 @@ html, body {
 .tab-title {
   flex: 1;
   overflow: hidden;
-  text-overflow: clip; /* Don't use ellipsis, we handle truncation in JS */
+  text-overflow: clip;
   font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Monaco, monospace;
   font-size: 11px;
 }
@@ -109,6 +185,10 @@ html, body {
   color: var(--text-primary);
 }
 
+.tab-bar-spacer {
+  flex: 1;
+}
+
 #new-tab-btn {
   display: flex;
   align-items: center;
@@ -130,19 +210,47 @@ html, body {
   color: var(--text-primary);
 }
 
+/* AI Toggle button */
+.ai-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background-color 0.15s, color 0.15s;
+  -webkit-app-region: no-drag;
+  margin-left: 8px;
+}
+
+.ai-toggle-btn:hover {
+  background-color: var(--tab-hover);
+  color: var(--text-primary);
+}
+
+.ai-toggle-btn.active {
+  color: var(--accent-primary);
+}
+
 /* Terminal container */
 #terminal-container {
-  display: flex;
-  flex-direction: column;
-  height: calc(100% - 36px);
+  flex: 1;
   width: 100%;
   background-color: var(--bg-primary);
+  position: relative;
+  min-height: 0;
 }
 
 #terminals {
-  flex: 1;
-  width: 100%;
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .terminal-pane {
@@ -186,6 +294,198 @@ html, body {
   background: var(--text-secondary);
 }
 
+/* Command input area */
+#command-input-container {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+}
+
+#command-input {
+  flex: 1;
+  min-height: 32px;
+  max-height: 120px;
+  padding: 8px 12px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Monaco, monospace;
+  font-size: 13px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+#command-input:focus {
+  border-color: var(--accent-primary);
+}
+
+#command-input::placeholder {
+  color: var(--text-muted);
+}
+
+#command-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.cmd-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background-color: var(--bg-elevated);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.cmd-btn:hover {
+  background-color: var(--tab-hover);
+  color: var(--text-primary);
+}
+
+.cmd-btn.primary {
+  background-color: var(--accent-primary);
+  color: var(--bg-tertiary);
+}
+
+.cmd-btn.primary:hover {
+  background-color: #a6c8ff;
+}
+
+/* AI Panel */
+#ai-panel {
+  width: var(--ai-panel-width);
+  height: 100%;
+  background-color: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: width 0.2s, margin-right 0.2s;
+}
+
+#ai-panel.collapsed {
+  width: 0;
+  border-left: none;
+  overflow: hidden;
+}
+
+#ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ai-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ai-panel-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ai-header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.ai-header-btn:hover {
+  background-color: var(--tab-hover);
+  color: var(--text-primary);
+}
+
+#ai-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+#ai-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+#ai-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#ai-messages::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+#ai-input-container {
+  padding: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+#ai-model-select {
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+#ai-model-select:focus {
+  border-color: var(--accent-primary);
+}
+
+#ai-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+#ai-input {
+  flex: 1;
+  min-height: 32px;
+  max-height: 80px;
+  padding: 8px 12px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+#ai-input:focus {
+  border-color: var(--accent-primary);
+}
+
+#ai-input::placeholder {
+  color: var(--text-muted);
+}
+
 /* Context menu */
 .context-menu {
   position: fixed;
@@ -211,3 +511,40 @@ html, body {
   color: var(--bg-primary);
 }
 
+/* Settings/Servers view placeholder */
+.view-container {
+  display: none;
+  height: 100%;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.view-container.active {
+  display: block;
+}
+
+/* AI Messages */
+.ai-message {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ai-message-user {
+  background-color: var(--accent-primary);
+  color: var(--bg-tertiary);
+  margin-left: 24px;
+}
+
+.ai-message-assistant {
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  margin-right: 24px;
+}
+
+.ai-message-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+}

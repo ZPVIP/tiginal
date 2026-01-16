@@ -327,6 +327,27 @@ export class TabManager {
     }
   }
 
+  /**
+   * Send command to the active terminal
+   * @param command The command to send
+   * @param execute If true, append newline to execute; if false, just paste
+   */
+  sendToActiveTerminal(command: string, execute: boolean): void {
+    if (!this.activeTabId) return;
+
+    const tab = this.tabs.get(this.activeTabId);
+    if (!tab) return;
+
+    // Send command to PTY
+    const data = execute ? command + '\n' : command;
+    ipcRenderer.send('pty:write', tab.ptyId, data);
+
+    // Focus terminal if not executing (paste mode)
+    if (!execute) {
+      tab.terminal.focus();
+    }
+  }
+
   setupPtyDataHandler(): void {
     ipcRenderer.on('pty:data', (_event, ptyId: number, data: string) => {
       for (const tab of this.tabs.values()) {
