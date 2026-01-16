@@ -3,6 +3,7 @@ import * as path from 'path';
 import { setupIpcHandlers } from './ipc';
 import { setupAIHandlers } from './ai-handlers';
 import { setupSSHHandlers } from './ssh-handlers';
+import { setupChatHandlers } from './chat-handlers';
 import { getDatabase } from '../services/database/database';
 
 // Set app name for macOS menu bar
@@ -135,6 +136,7 @@ app.whenReady().then(() => {
   setupIpcHandlers();
   setupAIHandlers();
   setupSSHHandlers();
+  setupChatHandlers();
   
   createMenu();
   createWindow();
