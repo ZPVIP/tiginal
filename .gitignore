@@ -31,3 +31,9 @@ yarn-error.log*
 # Environment
 .env
 .env.local
+
+# Development database
+data/
+*.db
+*.db-wal
+*.db-shm
