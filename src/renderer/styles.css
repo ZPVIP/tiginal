@@ -327,10 +327,6 @@ html, body {
   transition: border-color 0.15s;
 }
 
-#command-input:focus {
-  border-color: var(--accent-primary);
-}
-
 #command-input::placeholder {
   color: var(--text-muted);
 }
@@ -587,10 +583,6 @@ html, body {
   resize: none;
   outline: none;
   transition: border-color 0.15s;
-}
-
-#ai-input:focus {
-  border-color: var(--accent-primary);
 }
 
 #ai-input::placeholder {
@@ -947,10 +939,6 @@ html, body {
   font-size: 13px;
   outline: none;
   transition: border-color 0.15s;
-}
-
-.form-group input:focus {
-  border-color: var(--accent-primary);
 }
 
 .form-group.checkbox label {

@@ -11,6 +11,14 @@
   body {
     @apply bg-background text-gray-100 h-screen w-screen overflow-hidden;
   }
+  
+  /* Globally disable focus rings/borders that might look yellow */
+  input:focus, textarea:focus, select:focus {
+    outline: none !important;
+    box-shadow: none !important;
+    /* Ensure border color doesn't shift to accent if not desired, 
+       though specific classes might override this. */
+  }
 }
 
 /* Custom scrollbar to match terminal aesthetic */
