@@ -1,6 +1,6 @@
 {
-  "name": "tigi-terminal",
-  "productName": "Tigi Terminal",
+  "name": "tiginal",
+  "productName": "Tiginal",
   "version": "0.1.0",
   "description": "A cross-platform terminal emulator with SSH management and AI-powered command history",
   "main": "dist/main/main/index.js",

@@ -9,7 +9,7 @@ export class HistoryManager {
   private globalHistory: CommandHistoryEntry[] = [];
   private maxEntriesPerSession = 1000;
   private maxGlobalEntries = 10000;
-  private storageKey = 'tigi-command-history';
+  private storageKey = 'tiginal-command-history';
 
   /**
    * Add a command to history

@@ -1,5 +1,5 @@
 /**
- * Shared types for tigi-terminal
+ * Shared types for tiginal
  */
 
 export interface SSHServerConfig {

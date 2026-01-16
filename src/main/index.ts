@@ -3,7 +3,7 @@ import * as path from 'path';
 import { setupIpcHandlers } from './ipc';
 
 // Set app name for macOS menu bar
-app.name = 'Tigi Terminal';
+app.name = 'Tiginal';
 
 let mainWindow: BrowserWindow | null = null;
 

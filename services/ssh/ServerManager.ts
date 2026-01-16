@@ -8,7 +8,7 @@ import { CryptoService } from './CryptoService';
 export class ServerManager {
   private servers: Map<string, SSHServerConfig> = new Map();
   private masterPassword: string | null = null;
-  private storageKey = 'tigi-ssh-servers';
+  private storageKey = 'tiginal-ssh-servers';
 
   /**
    * Initialize the server manager with a master password

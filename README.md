@@ -1,4 +1,4 @@
-# Tigi Terminal
+# Tiginal
 
 A cross-platform terminal emulator built with Electron, xterm.js, and node-pty.
 
@@ -41,9 +41,9 @@ Output files are in the `release/` directory.
 
 | Platform | Files |
 |----------|-------|
-| macOS | `Tigi Terminal-x.x.x.dmg`, `Tigi Terminal-x.x.x-mac.zip` |
-| Windows | `Tigi Terminal Setup x.x.x.exe` |
-| Linux | `Tigi Terminal-x.x.x.AppImage`, `tigi-terminal_x.x.x_amd64.deb` |
+| macOS | `Tiginal-x.x.x.dmg`, `Tiginal-x.x.x-mac.zip` |
+| Windows | `Tiginal Setup x.x.x.exe` |
+| Linux | `Tiginal-x.x.x.AppImage`, `tiginal_x.x.x_amd64.deb` |
 
 ## Architecture
 

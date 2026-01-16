@@ -1,5 +1,5 @@
-appId: com.tigi.terminal
-productName: Tigi Terminal
+appId: com.tiginal.app
+productName: Tiginal
 directories:
   output: release
   buildResources: build

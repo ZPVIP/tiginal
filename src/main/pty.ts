@@ -15,13 +15,13 @@ const ptyProcesses = new Map<number, pty.IPty>();
 let nextPtyId = 1;
 
 // Create a custom zshrc that sources user's zshrc and adds our hooks
-let tigiZdotdir: string | null = null;
+let tiginalZdotdir: string | null = null;
 
-function ensureTigiZshrc(): string {
-  if (tigiZdotdir) return tigiZdotdir;
+function ensureTiginalZshrc(): string {
+  if (tiginalZdotdir) return tiginalZdotdir;
 
   // Create temp directory for our zsh config
-  const tmpDir = path.join(app.getPath('temp'), 'tigi-terminal');
+  const tmpDir = path.join(app.getPath('temp'), 'tiginal');
   console.log(`[PTY] Creating temp directory: ${tmpDir}`);
   if (!fs.existsSync(tmpDir)) {
     fs.mkdirSync(tmpDir, { recursive: true });
@@ -34,14 +34,14 @@ if [[ -f "$HOME/.zshrc" ]]; then
   source "$HOME/.zshrc"
 fi
 
-# Tigi Terminal: OSC 7 directory tracking for tab titles
+# Tiginal: OSC 7 directory tracking for tab titles
 precmd() {
   print -Pn "\\e]7;file://\${HOST}\${PWD}\\a"
 }
 `;
 
   fs.writeFileSync(path.join(tmpDir, '.zshrc'), zshrc);
-  tigiZdotdir = tmpDir;
+  tiginalZdotdir = tmpDir;
   return tmpDir;
 }
 
@@ -88,7 +88,7 @@ export function createPty(options: PtyOptions = {}): number {
 
   // For zsh: use ZDOTDIR to load our custom zshrc silently
   if (shell.includes('zsh')) {
-    env.ZDOTDIR = ensureTigiZshrc();
+    env.ZDOTDIR = ensureTiginalZshrc();
   }
 
   try {
