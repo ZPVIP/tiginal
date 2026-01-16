@@ -7,6 +7,7 @@ export interface AIProvider {
   endpoint?: string;
   apiKeyEncrypted?: string;
   model: string;
+  availableModels?: string[];
   isDefault: boolean;
   createdAt: number;
   updatedAt: number;
@@ -16,6 +17,7 @@ export class SettingsAI {
   private container: HTMLElement | null = null;
   private providers: AIProvider[] = [];
   private editingId: string | null = null;
+  private availableModels: string[] = [];
 
   constructor() {
     this.container = document.getElementById('settings-content');
@@ -84,10 +86,17 @@ export class SettingsAI {
             <input type="password" id="provider-api-key" placeholder="sk-...">
           </div>
 
-          <div class="form-group">
-            <label for="provider-model">Model</label>
-            <input type="text" id="provider-model" placeholder="gpt-4o">
+          <div class="form-group flex-row" style="gap: 8px; align-items: flex-end;">
+             <div class="flex-grow">
+               <label for="provider-model">Model</label>
+               <input type="text" id="provider-model" placeholder="gpt-4o" list="model-list">
+               <datalist id="model-list"></datalist>
+             </div>
+             <button class="btn btn-secondary" id="test-connection-btn" style="margin-bottom: 2px;">
+               Test Connection
+             </button>
           </div>
+          <div id="test-status" class="test-status hidden"></div>
 
           <div class="form-group checkbox">
             <label>
@@ -179,6 +188,18 @@ export class SettingsAI {
       this.saveProvider();
     });
 
+    // Test connection button
+    document.getElementById('test-connection-btn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.testConnection();
+    });
+
+    // Model input change
+    document.getElementById('provider-model')?.addEventListener('change', (e) => {
+       const input = e.target as HTMLInputElement;
+       // If selected from datalist, it might be one of availableModels
+    });
+
     // Cancel Copilot auth
     document.getElementById('cancel-copilot-btn')?.addEventListener('click', () => {
       this.hideCopilotAuth();
@@ -214,6 +235,10 @@ export class SettingsAI {
     (document.getElementById('provider-api-key') as HTMLInputElement).value = '';
     (document.getElementById('provider-model') as HTMLInputElement).value = provider?.model || 'gpt-4o';
     (document.getElementById('provider-default') as HTMLInputElement).checked = provider?.isDefault || false;
+    
+    this.availableModels = provider?.availableModels || [];
+    this.updateModelList();
+    this.setTestStatus('', 'hidden');
 
     form.classList.remove('hidden');
   }
@@ -221,6 +246,81 @@ export class SettingsAI {
   private hideProviderForm(): void {
     document.getElementById('provider-form')?.classList.add('hidden');
     this.editingId = null;
+    this.availableModels = [];
+  }
+
+  private async testConnection(): Promise<void> {
+    const endpoint = (document.getElementById('provider-endpoint') as HTMLInputElement).value.trim();
+    const apiKey = (document.getElementById('provider-api-key') as HTMLInputElement).value;
+    const btn = document.getElementById('test-connection-btn') as HTMLButtonElement;
+
+    if (!endpoint) {
+      this.setTestStatus('Endpoint is required', 'error');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+    this.setTestStatus('Testing connection...', 'info');
+
+    try {
+      const result = await ipcRenderer.invoke('ai:test-connection', {
+        type: 'openai-compatible',
+        endpoint,
+        apiKey: apiKey || undefined
+      });
+
+      if (result.success) {
+        this.setTestStatus(`Success! Found ${result.models?.length || 0} models.`, 'success');
+        if (result.models && result.models.length > 0) {
+           this.availableModels = result.models;
+           this.updateModelList();
+           
+           // If current model is empty, auto-select first one or gpt-4o if present
+           const modelInput = document.getElementById('provider-model') as HTMLInputElement;
+           if (!modelInput.value) {
+             if (this.availableModels.includes('gpt-4o')) modelInput.value = 'gpt-4o';
+             else if (this.availableModels.includes('gpt-4')) modelInput.value = 'gpt-4';
+             else modelInput.value = this.availableModels[0];
+           }
+        }
+      } else {
+        this.setTestStatus(`Failed: ${result.error}`, 'error');
+      }
+    } catch (error) {
+      this.setTestStatus(`Error: ${(error as Error).message}`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Test Connection';
+    }
+  }
+
+  private setTestStatus(message: string, type: 'success' | 'error' | 'info' | 'hidden'): void {
+    const statusDiv = document.getElementById('test-status');
+    if (!statusDiv) return;
+
+    if (type === 'hidden') {
+      statusDiv.classList.add('hidden');
+      statusDiv.textContent = '';
+      statusDiv.className = 'test-status hidden';
+      return;
+    }
+
+    statusDiv.textContent = message;
+    statusDiv.className = `test-status ${type}`;
+    statusDiv.classList.remove('hidden');
+  }
+
+  private updateModelList(): void {
+    const dataList = document.getElementById('model-list');
+    if (!dataList) return;
+
+    dataList.innerHTML = '';
+    this.availableModels.forEach(model => {
+      const option = document.createElement('option');
+      option.value = model;
+      dataList.appendChild(option);
+    });
   }
 
   private async saveProvider(): Promise<void> {
@@ -243,6 +343,7 @@ export class SettingsAI {
           endpoint,
           apiKey: apiKey || undefined,
           model,
+          availableModels: this.availableModels.length > 0 ? this.availableModels : undefined,
           isDefault,
         });
       } else {
@@ -252,6 +353,7 @@ export class SettingsAI {
           endpoint,
           apiKey: apiKey || undefined,
           model,
+          availableModels: this.availableModels.length > 0 ? this.availableModels : undefined,
           isDefault,
         });
       }

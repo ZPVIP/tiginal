@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /**
  * Database service for Tiginal
@@ -60,6 +60,10 @@ export class DatabaseService {
     // Run migrations based on version
     if (currentVersion < 1) {
       this.migrateV1();
+    }
+
+    if (currentVersion < 2) {
+      this.migrateV2();
     }
 
     // Update schema version
@@ -132,6 +136,17 @@ export class DatabaseService {
       -- Create indexes
       CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
+    `);
+  }
+
+  /**
+   * Migration v2: Add available_models to ai_providers
+   */
+  private migrateV2(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      ALTER TABLE ai_providers ADD COLUMN available_models TEXT;
     `);
   }
 

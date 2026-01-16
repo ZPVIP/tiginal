@@ -10,6 +10,7 @@ interface AIProviderInput {
   apiKey?: string;
   model: string;
   isDefault?: boolean;
+  availableModels?: string[];
 }
 
 interface AIProvider {
@@ -19,6 +20,7 @@ interface AIProvider {
   endpoint?: string;
   apiKeyEncrypted?: string;
   model: string;
+  availableModels?: string[];
   isDefault: boolean;
   createdAt: number;
   updatedAt: number;
@@ -32,7 +34,7 @@ export function setupAIHandlers(): void {
   ipcMain.handle('ai:get-providers', async (): Promise<AIProvider[]> => {
     const db = getDatabase().getDb();
     const rows = db.prepare(`
-      SELECT id, name, type, endpoint, api_key_encrypted, model, is_default, created_at, updated_at
+      SELECT id, name, type, endpoint, api_key_encrypted, model, available_models, is_default, created_at, updated_at
       FROM ai_providers ORDER BY name
     `).all() as Array<{
       id: string;
@@ -44,6 +46,7 @@ export function setupAIHandlers(): void {
       is_default: number;
       created_at: number;
       updated_at: number;
+      available_models: string | null;
     }>;
 
     return rows.map(row => ({
@@ -53,6 +56,7 @@ export function setupAIHandlers(): void {
       endpoint: row.endpoint || undefined,
       apiKeyEncrypted: row.api_key_encrypted || undefined,
       model: row.model,
+      availableModels: row.available_models ? JSON.parse(row.available_models) : undefined,
       isDefault: row.is_default === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -78,8 +82,8 @@ export function setupAIHandlers(): void {
     }
 
     db.prepare(`
-      INSERT INTO ai_providers (id, name, type, endpoint, api_key_encrypted, model, is_default, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO ai_providers (id, name, type, endpoint, api_key_encrypted, model, available_models, is_default, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       input.name,
@@ -87,6 +91,7 @@ export function setupAIHandlers(): void {
       input.endpoint || null,
       apiKeyEncrypted,
       input.model,
+      input.availableModels ? JSON.stringify(input.availableModels) : null,
       input.isDefault ? 1 : 0,
       now,
       now
@@ -136,6 +141,7 @@ export function setupAIHandlers(): void {
         endpoint = ?,
         api_key_encrypted = ?,
         model = ?,
+        available_models = ?,
         is_default = ?,
         updated_at = ?
       WHERE id = ?
@@ -144,6 +150,7 @@ export function setupAIHandlers(): void {
       input.endpoint || null,
       apiKeyEncrypted,
       input.model,
+      input.availableModels ? JSON.stringify(input.availableModels) : null,
       input.isDefault ? 1 : 0,
       now,
       input.id
@@ -173,6 +180,53 @@ export function setupAIHandlers(): void {
       return crypto.decrypt(row.api_key_encrypted);
     } catch {
       return null;
+    }
+  });
+  // Test connection and fetch models
+  ipcMain.handle('ai:test-connection', async (_event, provider: { type: string; endpoint: string; apiKey?: string }): Promise<{ success: boolean; error?: string; models?: string[] }> => {
+    if (provider.type !== 'openai-compatible') {
+      return { success: false, error: 'Only OpenAI-compatible providers support testing currently' };
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (provider.apiKey) {
+        headers['Authorization'] = `Bearer ${provider.apiKey}`;
+      }
+
+      const response = await fetch(`${provider.endpoint}/models`, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json() as { data: Array<{ id: string }> };
+      
+      // Extract model IDs
+      const models = Array.isArray(data.data) 
+        ? data.data.map(m => m.id).sort()
+        : [];
+
+      if (models.length === 0) {
+          // Fallback if data is not in standard OpenAI format or empty
+          return { success: true, models: [] }; 
+      }
+
+      return { success: true, models };
+    } catch (error) {
+       return { success: false, error: (error as Error).message };
     }
   });
 }
