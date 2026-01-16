@@ -96,7 +96,10 @@ export default function App() {
              
              {/* Left Pane (Terminal/Settings) - Flex Grow */}
              <div className="flex-1 overflow-hidden relative min-w-[250px]">
-                {activeTab === 'terminal' && <TerminalView />}
+                {/* TerminalView is ALWAYS mounted to preserve state, just hidden */}
+                <div className={clsx("h-full w-full", activeTab !== 'terminal' && "hidden")}>
+                    <TerminalView />
+                </div>
                 {activeTab === 'ssh' && <SSHView />}
                 {activeTab === 'settings' && <Settings />}
              </div>
