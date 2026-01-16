@@ -26,8 +26,8 @@ export function setupChatHandlers(): void {
   });
 
   // Create new conversation
-  ipcMain.handle('chat:create-conversation', async (_event, providerId?: string): Promise<Conversation> => {
-    return getChatService().createConversation(providerId);
+  ipcMain.handle('chat:create-conversation', async (_event, providerId?: string, isTransient: boolean = false): Promise<Conversation> => {
+    return getChatService().createConversation(providerId, isTransient);
   });
 
   // Add message

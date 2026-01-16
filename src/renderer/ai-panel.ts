@@ -44,6 +44,10 @@ export class AIPanel {
   private inputField: HTMLTextAreaElement | null = null;
   private sendBtn: HTMLElement | null = null;
   
+  // New buttons
+  private newChatBtn: HTMLElement | null = null;
+  private incognitoBtn: HTMLElement | null = null;
+
   // New model picker elements
   private modelPickerTrigger: HTMLElement | null = null;
   private modelPickerList: HTMLElement | null = null;
@@ -53,6 +57,7 @@ export class AIPanel {
   private providers: AIProvider[] = [];
   private isLoading = false;
   private isPickerOpen = false;
+  private isTransientMode = false;
 
   // Selected model
   private selectedProviderId: string | null = null;
@@ -65,6 +70,10 @@ export class AIPanel {
     this.inputField = document.getElementById('ai-input') as HTMLTextAreaElement;
     this.sendBtn = document.getElementById('ai-send');
     
+    // Header buttons
+    this.newChatBtn = document.getElementById('ai-new-chat-btn');
+    this.incognitoBtn = document.getElementById('ai-incognito-btn');
+
     // Model picker elements
     this.modelPickerTrigger = document.getElementById('model-picker-trigger');
     this.modelPickerList = document.getElementById('model-picker-list');
@@ -152,11 +161,31 @@ export class AIPanel {
       this.modelPickerList?.appendChild(item);
     });
 
-    // Auto-select default if nothing selected
+    // Auto-select:
+    // 1. Try to restore from localStorage
+    // 2. Fallback to default model
+    // 3. Fallback to first available model
+    
     if (!this.selectedProviderId) {
-      const defaultOpt = options.find(o => o.isDefault);
-      if (defaultOpt) {
-        this.selectModel(defaultOpt.providerId, defaultOpt.model, `${defaultOpt.providerName} / ${defaultOpt.model}`);
+      const savedProviderId = localStorage.getItem('ai_selected_provider_id');
+      const savedModel = localStorage.getItem('ai_selected_model');
+      
+      let targetOpt: ModelOption | undefined;
+      
+      if (savedProviderId && savedModel) {
+        targetOpt = options.find(o => o.providerId === savedProviderId && o.model === savedModel);
+      }
+      
+      if (!targetOpt) {
+        targetOpt = options.find(o => o.isDefault);
+      }
+      
+      if (!targetOpt && options.length > 0) {
+        targetOpt = options[0];
+      }
+
+      if (targetOpt) {
+        this.selectModel(targetOpt.providerId, targetOpt.model, `${targetOpt.providerName} / ${targetOpt.model}`);
       }
     }
   }
@@ -164,6 +193,10 @@ export class AIPanel {
   private selectModel(providerId: string, model: string, label: string): void {
     this.selectedProviderId = providerId;
     this.selectedModel = model;
+    
+    // Persist selection
+    localStorage.setItem('ai_selected_provider_id', providerId);
+    localStorage.setItem('ai_selected_model', model);
     
     if (this.modelPickerLabel) {
       this.modelPickerLabel.textContent = label;
@@ -214,44 +247,6 @@ export class AIPanel {
       this.closePicker();
     }
   };
-
-  private setupEventListeners(): void {
-    // Toggle button
-    this.toggleBtn?.addEventListener('click', () => this.toggle());
-
-    // Send button
-    this.sendBtn?.addEventListener('click', () => this.sendMessage());
-
-    // Enter to send, Shift+Enter for newline
-    this.inputField?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        this.sendMessage();
-      }
-    });
-
-    // History button
-    document.getElementById('ai-history-btn')?.addEventListener('click', () => {
-      this.showHistory();
-    });
-
-    // Keyboard shortcut Cmd+Shift+A
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'a' && e.metaKey && e.shiftKey) {
-        e.preventDefault();
-        this.toggle();
-      }
-    });
-    
-    // Model picker trigger
-    this.modelPickerTrigger?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.togglePicker();
-    });
-
-    // Resize handle
-    this.setupResizeHandle();
-  }
 
   private setupResizeHandle(): void {
     const resizeHandle = document.getElementById('ai-panel-resize');
@@ -335,6 +330,82 @@ export class AIPanel {
     }
   }
 
+  private setupEventListeners(): void {
+    // Toggle button
+    this.toggleBtn?.addEventListener('click', () => this.toggle());
+
+    // Send button
+    this.sendBtn?.addEventListener('click', () => this.sendMessage());
+
+    // Enter to send, Shift+Enter for newline
+    this.inputField?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.sendMessage();
+      }
+    });
+
+    // History button
+    document.getElementById('ai-history-btn')?.addEventListener('click', () => {
+      this.showHistory();
+    });
+
+    // New Chat button
+    this.newChatBtn?.addEventListener('click', () => {
+      this.startNewChat();
+    });
+
+    // Incognito button
+    this.incognitoBtn?.addEventListener('click', () => {
+      this.startIncognitoChat();
+    });
+
+    // Keyboard shortcut Cmd+Shift+A
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'a' && e.metaKey && e.shiftKey) {
+        e.preventDefault();
+        this.toggle();
+      }
+    });
+    
+    // Model picker trigger
+    this.modelPickerTrigger?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.togglePicker();
+    });
+
+    // Resize handle
+    this.setupResizeHandle();
+  }
+
+  // ...
+
+  private startNewChat(): void {
+    this.currentConversation = null;
+    this.isTransientMode = false;
+    if (this.messagesContainer) {
+      this.messagesContainer.innerHTML = '';
+    }
+    this.appendMessage('system', 'Started a new conversation.');
+    this.inputField?.focus();
+    
+    // Update UI to show standard mode
+    this.panel?.classList.remove('incognito-mode');
+  }
+
+  private startIncognitoChat(): void {
+    this.currentConversation = null;
+    this.isTransientMode = true;
+    if (this.messagesContainer) {
+      this.messagesContainer.innerHTML = '';
+    }
+    this.appendMessage('system', 'Started an incognito conversation. Messages will not be saved.');
+    this.inputField?.focus();
+    
+    // Update UI to show incognito mode (optional, but good UX)
+    this.panel?.classList.add('incognito-mode');
+  }
+
   private async ensureConversation(): Promise<Conversation | null> {
     if (this.currentConversation) {
       return this.currentConversation;
@@ -348,7 +419,8 @@ export class AIPanel {
     try {
       this.currentConversation = await ipcRenderer.invoke(
         'chat:create-conversation',
-        this.selectedProviderId
+        this.selectedProviderId,
+        this.isTransientMode // Pass transient flag
       );
       return this.currentConversation;
     } catch (error) {

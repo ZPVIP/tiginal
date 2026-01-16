@@ -7,6 +7,7 @@ export interface Conversation {
   providerId: string | null;
   createdAt: number;
   updatedAt: number;
+  isTransient?: boolean;
 }
 
 export interface Message {
@@ -21,32 +22,51 @@ export interface Message {
  * Chat service for managing conversations and messages
  */
 export class ChatService {
+  private transientConversations: Map<string, Conversation & { messages: Message[] }> = new Map();
+
   /**
    * Create a new conversation
    */
-  createConversation(providerId?: string): Conversation {
-    const db = getDatabase().getDb();
+  createConversation(providerId?: string, isTransient: boolean = false): Conversation {
     const id = require('crypto').randomUUID();
     const now = Date.now();
 
-    db.prepare(`
-      INSERT INTO conversations (id, title, provider_id, created_at, updated_at)
-      VALUES (?, NULL, ?, ?, ?)
-    `).run(id, providerId || null, now, now);
-
-    return {
+    const conversation: Conversation = {
       id,
       title: null,
       providerId: providerId || null,
       createdAt: now,
       updatedAt: now,
+      isTransient,
     };
+
+    if (isTransient) {
+      this.transientConversations.set(id, { ...conversation, messages: [] });
+    } else {
+      const db = getDatabase().getDb();
+      db.prepare(`
+        INSERT INTO conversations (id, title, provider_id, created_at, updated_at)
+        VALUES (?, NULL, ?, ?, ?)
+      `).run(id, providerId || null, now, now);
+    }
+
+    return conversation;
   }
 
   /**
    * Get a conversation by ID
    */
   getConversation(id: string): Conversation | null {
+    // Check transient first
+    if (this.transientConversations.has(id)) {
+      const transConf = this.transientConversations.get(id);
+      if (transConf) {
+        // Return without messages property to match interface
+        const { messages, ...rest } = transConf;
+        return rest;
+      }
+    }
+
     const db = getDatabase().getDb();
     const row = db.prepare(`
       SELECT id, title, provider_id, created_at, updated_at
@@ -67,6 +87,7 @@ export class ChatService {
       providerId: row.provider_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      isTransient: false,
     };
   }
 
@@ -94,6 +115,7 @@ export class ChatService {
       providerId: row.provider_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      isTransient: false,
     }));
   }
 
@@ -101,6 +123,15 @@ export class ChatService {
    * Update conversation title
    */
   updateTitle(id: string, title: string): void {
+    if (this.transientConversations.has(id)) {
+      const conv = this.transientConversations.get(id);
+      if (conv) {
+        conv.title = title;
+        conv.updatedAt = Date.now();
+      }
+      return;
+    }
+
     const db = getDatabase().getDb();
     db.prepare(`
       UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?
@@ -111,6 +142,11 @@ export class ChatService {
    * Delete a conversation and its messages
    */
   deleteConversation(id: string): void {
+    if (this.transientConversations.has(id)) {
+      this.transientConversations.delete(id);
+      return;
+    }
+
     const db = getDatabase().getDb();
     db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
   }
@@ -119,10 +155,31 @@ export class ChatService {
    * Add a message to a conversation
    */
   addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string): Message {
-    const db = getDatabase().getDb();
     const id = require('crypto').randomUUID();
     const now = Date.now();
 
+    const message: Message = {
+      id,
+      conversationId,
+      role,
+      content,
+      createdAt: now,
+    };
+
+    if (this.transientConversations.has(conversationId)) {
+      const conv = this.transientConversations.get(conversationId);
+      if (conv) {
+        conv.messages.push(message);
+        conv.updatedAt = now;
+      }
+      return message;
+    }
+
+    const db = getDatabase().getDb();
+    
+    // Check if conversation exists in DB, if not (and not transient), it might be an issue.
+    // For now we assume calling code ensures existence or we let SQL error out.
+    
     db.prepare(`
       INSERT INTO messages (id, conversation_id, role, content, created_at)
       VALUES (?, ?, ?, ?, ?)
@@ -133,19 +190,17 @@ export class ChatService {
       UPDATE conversations SET updated_at = ? WHERE id = ?
     `).run(now, conversationId);
 
-    return {
-      id,
-      conversationId,
-      role,
-      content,
-      createdAt: now,
-    };
+    return message;
   }
 
   /**
    * Get all messages for a conversation
    */
   getMessages(conversationId: string): Message[] {
+    if (this.transientConversations.has(conversationId)) {
+      return this.transientConversations.get(conversationId)?.messages || [];
+    }
+
     const db = getDatabase().getDb();
     const rows = db.prepare(`
       SELECT id, conversation_id, role, content, created_at
