@@ -168,7 +168,7 @@ export function Chat() {
                  list.push({
                      providerId: p.id,
                      modelId: p.model,
-                     label: `${p.name} / ${p.model} (Default)`
+                     label: `${p.name} / ${p.model}`
                  });
              }
          }

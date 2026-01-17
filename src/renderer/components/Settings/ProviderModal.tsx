@@ -216,14 +216,13 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
                    />
                </div>
                <div>
-                   <label className="block text-sm font-medium text-gray-300 mb-1">Default Model ID</label>
+                   <label className="block text-sm font-medium text-gray-300 mb-1">Models</label>
                     <div className="flex gap-2">
                          <select 
                              value={formData.model}
                              onChange={(e) => handleChange('model', e.target.value)}
                              className="w-full bg-background border border-border rounded-lg p-2.5 text-sm"
                          >
-                             <option value="">Select a model...</option>
                              {(formData.availableModels || []).map(m => (
                                  <option key={m.id} value={m.id}>{m.name}</option>
                              ))}
