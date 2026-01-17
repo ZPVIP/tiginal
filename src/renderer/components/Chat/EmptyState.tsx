@@ -2,7 +2,7 @@ import React from 'react';
 import { Bot, Sparkles } from 'lucide-react';
 
 interface EmptyStateProps {
-  models: string[];
+  models: { value: string, label: string }[];
   selectedModel: string;
   onModelSelect: (model: string) => void;
 }
@@ -28,7 +28,9 @@ export function EmptyState({ models, selectedModel, onModelSelect }: EmptyStateP
              <Sparkles size={18} className="text-yellow-400" />
              <div className="text-left">
                  <div className="text-sm font-medium text-gray-200">Current Model</div>
-                 <div className="text-xs text-gray-500">{selectedModel || 'No model selected'}</div>
+                 <div className="text-xs text-gray-500">
+                    {models.find(m => m.value === selectedModel)?.label || selectedModel || 'No model selected'}
+                 </div>
              </div>
          </div>
       </div>

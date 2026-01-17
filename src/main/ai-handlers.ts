@@ -44,7 +44,7 @@ export function setupAIHandlers(): void {
     const db = getDatabase().getDb();
     const rows = db.prepare(`
       SELECT id, name, type, endpoint, api_key_encrypted, model, available_models, custom_headers, auto_cors_fix, is_default, created_at, updated_at
-      FROM ai_providers ORDER BY name
+      FROM ai_providers ORDER BY is_default DESC, name ASC
     `).all() as Array<{
       id: string;
       name: string;
@@ -60,20 +60,39 @@ export function setupAIHandlers(): void {
       auto_cors_fix: number | null;
     }>;
 
-    return rows.map(row => ({
-      id: row.id,
-      name: row.name,
-      type: row.type as 'openai-compatible' | 'copilot',
-      endpoint: row.endpoint || undefined,
-      apiKeyEncrypted: row.api_key_encrypted || undefined,
-      model: row.model,
-      availableModels: row.available_models ? JSON.parse(row.available_models) : undefined,
-      customHeaders: row.custom_headers ? JSON.parse(row.custom_headers) : undefined,
-      autoCORSFix: row.auto_cors_fix === 1,
-      isDefault: row.is_default === 1,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+    return rows.map(row => {
+        let availableModels: any[] | undefined = undefined;
+        if (row.available_models) {
+            try {
+                const parsed = JSON.parse(row.available_models);
+                if (Array.isArray(parsed)) {
+                    // Check if it's the old format (string[])
+                    if (parsed.length > 0 && typeof parsed[0] === 'string') {
+                         availableModels = parsed.map((id: string) => ({ id, name: id, enabled: true }));
+                    } else {
+                         availableModels = parsed;
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to parse available models", e);
+            }
+        }
+
+        return {
+            id: row.id,
+            name: row.name,
+            type: row.type as 'openai-compatible' | 'copilot',
+            endpoint: row.endpoint || undefined,
+            apiKeyEncrypted: row.api_key_encrypted || undefined,
+            model: row.model,
+            availableModels,
+            customHeaders: row.custom_headers ? JSON.parse(row.custom_headers) : undefined,
+            autoCORSFix: row.auto_cors_fix === 1,
+            isDefault: row.is_default === 1,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+        };
+    });
   });
 
   // Add provider

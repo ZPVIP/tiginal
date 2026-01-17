@@ -5,7 +5,7 @@ import { RefreshCw, Check, AlertTriangle, ChevronDown } from 'lucide-react';
 import { clsx } from 'clsx';
 // Import icons from the correct path
 import { ICONS } from '../../settings/icons';
-import { OAI_API_PROVIDERS, AIProvider } from '../../settings/ai-constants';
+import { OAI_API_PROVIDERS, AIProvider, ModelConfig } from '../../settings/ai-constants';
 
 interface ProviderModalProps {
   isOpen: boolean;
@@ -115,7 +115,27 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
           });
           setTestResult(res);
           if (res.success && res.models && res.models.length > 0) {
-              setFormData(prev => ({ ...prev, availableModels: res.models }));
+              // Strict Sync Logic: New list based on Server IDs
+              const localEnabledMap = new Map<string, boolean>();
+              const existingModels = formData.availableModels || [];
+              existingModels.forEach(m => {
+                   const name = m.name;
+                   localEnabledMap.set(name, m.enabled !== false);
+              });
+              
+              const mergedModels: ModelConfig[] = [];
+              const uniqueIds = new Set<string>();
+
+              res.models.forEach((id: string) => {
+                  if (!uniqueIds.has(id)) {
+                      uniqueIds.add(id);
+                      const name = id;
+                      const isEnabled = localEnabledMap.has(name) ? (localEnabledMap.get(name) ?? true) : true;
+                      mergedModels.push({ id, name, enabled: isEnabled });
+                  }
+              });
+              
+              setFormData(prev => ({ ...prev, availableModels: mergedModels }));
           }
       } finally {
           setIsTesting(false);
@@ -198,25 +218,16 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
                <div>
                    <label className="block text-sm font-medium text-gray-300 mb-1">Default Model ID</label>
                     <div className="flex gap-2">
-                        {testResult?.models && testResult.models.length > 0 ? (
-                            <select 
-                                value={formData.model}
-                                onChange={(e) => handleChange('model', e.target.value)}
-                                className="w-full bg-background border border-border rounded-lg p-2.5 text-sm"
-                            >
-                                <option value="">Select a model...</option>
-                                {testResult.models.map(m => <option key={m} value={m}>{m}</option>)}
-                            </select>
-                        ) : (
-                            <input 
-                                type="text" 
-                                required
-                                value={formData.model}
-                                onChange={(e) => handleChange('model', e.target.value)}
-                                className="w-full bg-background border border-border rounded-lg p-2.5 text-sm"
-                                placeholder="gpt-4o"
-                            />
-                        )}
+                         <select 
+                             value={formData.model}
+                             onChange={(e) => handleChange('model', e.target.value)}
+                             className="w-full bg-background border border-border rounded-lg p-2.5 text-sm"
+                         >
+                             <option value="">Select a model...</option>
+                             {(formData.availableModels || []).map(m => (
+                                 <option key={m.id} value={m.id}>{m.name}</option>
+                             ))}
+                         </select>
                     </div>
                </div>
            </div>

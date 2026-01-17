@@ -1,6 +1,12 @@
 
 // This file will hold the shared constants and types for AI settings
 
+export interface ModelConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+
 export interface AIProvider {
   id: string;
   name: string;
@@ -9,7 +15,7 @@ export interface AIProvider {
   apiKey?: string; // Decrypted for UI
   apiKeyEncrypted?: string;
   model: string;
-  availableModels?: string[];
+  availableModels?: ModelConfig[]; // Updated to store config objects
   customHeaders?: Record<string, string>;
   autoCORSFix?: boolean;
   isDefault: boolean;

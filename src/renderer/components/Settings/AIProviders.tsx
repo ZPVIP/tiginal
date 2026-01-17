@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Edit2, RotateCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Edit2, RotateCw, CheckCircle2, AlertCircle, DownloadCloud } from 'lucide-react';
 import { ProviderModal } from './ProviderModal';
+import { ModelManagerModal } from './ModelManagerModal';
 import { AIProvider, OAI_API_PROVIDERS } from '../../settings/ai-constants';
 
 // Mock ipc invoke
@@ -10,6 +11,7 @@ export function AIProviders() {
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<AIProvider | undefined>(undefined);
+  const [managingModelsProvider, setManagingModelsProvider] = useState<AIProvider | undefined>(undefined);
   const [isCryptoUnlocked, setIsCryptoUnlocked] = useState(false);
   
   useEffect(() => {
@@ -47,6 +49,14 @@ export function AIProviders() {
      setIsModalOpen(false);
      setEditingProvider(undefined);
      loadProviders();
+  };
+
+  const handleModelSave = async (data: Partial<AIProvider>) => {
+      if (managingModelsProvider) {
+          await invoke('ai:update-provider', { ...managingModelsProvider, ...data });
+          setManagingModelsProvider(undefined);
+          loadProviders();
+      }
   };
 
   const openAdd = () => {
@@ -107,6 +117,13 @@ export function AIProviders() {
                         <Edit2 size={16} />
                     </button>
                     <button 
+                       onClick={() => setManagingModelsProvider(provider)}
+                       className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                       title="Manage Models"
+                    >
+                        <DownloadCloud size={16} />
+                    </button>
+                    <button 
                        onClick={() => handleDelete(provider.id)}
                        className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
                     >
@@ -129,6 +146,15 @@ export function AIProviders() {
              onClose={() => setIsModalOpen(false)}
              initialData={editingProvider}
              onSave={handleSave}
+          />
+      )}
+      
+      {managingModelsProvider && (
+          <ModelManagerModal
+              isOpen={!!managingModelsProvider}
+              onClose={() => setManagingModelsProvider(undefined)}
+              provider={managingModelsProvider}
+              onSave={handleModelSave}
           />
       )}
     </div>

@@ -4,7 +4,7 @@ import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { EmptyState } from './EmptyState';
 import { HistoryPanel } from './HistoryPanel';
-import { AIProvider } from '../Settings/ProviderModal';
+import { AIProvider, ModelConfig } from '../../settings/ai-constants';
 import { EyeOff, Trash2 } from 'lucide-react';
 
 const invoke = window.electron?.invoke || (async () => {});
@@ -41,6 +41,7 @@ export function Chat() {
   };
 
   const handleSend = async (text: string, images: string[], useSearch: boolean) => {
+      // ... (rest of handleSend logic is fine, omitted for brevity if not changing) ...
       if (!selectedProviderId) {
           alert("Please select a provider/model first.");
           return;
@@ -106,6 +107,8 @@ export function Chat() {
       }
   };
 
+
+
   const handleNewChat = () => {
       if (isIncognito) {
           setIncognitoMessages([]);
@@ -136,21 +139,64 @@ export function Chat() {
       }
   };
 
-  // Derived models list
-  const activeProvider = providers.find(p => p.id === selectedProviderId);
-  const rawModels: any[] = activeProvider?.availableModels && activeProvider.availableModels.length > 0 
-      ? activeProvider.availableModels 
-      : (activeProvider ? [activeProvider.model] : []);
+  const allModels = React.useMemo(() => {
+     const list: { providerId: string; modelId: string; label: string }[] = [];
+     
+     providers.forEach(p => {
+         let hasDefault = false;
+         // Add models from availableModels
+         if (p.availableModels && p.availableModels.length > 0) {
+             p.availableModels.forEach(m => {
+                 const mObj = typeof m === 'string' ? { id: m, name: m, enabled: true } : m;
+                 if (mObj.enabled !== false) {
+                     list.push({
+                         providerId: p.id,
+                         modelId: mObj.id, // Correctly use ID
+                         label: `${p.name} / ${mObj.name}`
+                     });
+                     if (mObj.id === p.model) hasDefault = true;
+                 }
+             });
+         } 
+         
+         // Ensure default model is in the list if not found above
+         if (p.model && !hasDefault) {
+             // Avoid duplicates if valid models list was empty but model existed
+             // Check if it's already in list (for this provider)
+             const alreadyIn = list.some(x => x.providerId === p.id && x.modelId === p.model);
+             if (!alreadyIn) {
+                 list.push({
+                     providerId: p.id,
+                     modelId: p.model,
+                     label: `${p.name} / ${p.model} (Default)`
+                 });
+             }
+         }
+     });
+     return list;
+  }, [providers]);
 
-  const availableModels = rawModels.map(m => {
-      if (typeof m === 'string') return m;
-      if (typeof m === 'object' && m.name) return m.name;
-      return 'Unknown Model';
-  });
+  // Handle default selection if nothing selected
+  React.useEffect(() => {
+      if (!selectedProviderId && allModels.length > 0) {
+          // Select the first one (which should be the default provider's model due to sorting)
+          setSelectedProviderId(allModels[0].providerId);
+          setSelectedModel(allModels[0].modelId);
+      }
+  }, [allModels, selectedProviderId]);
 
-  const handleModelChange = (m: string) => {
-      setSelectedModel(m);
+  const handleModelSelect = (value: string) => {
+      // Value format: "providerId:modelId" to ensure uniqueness
+      const [pId, ...mIdParts] = value.split(':');
+      const mId = mIdParts.join(':'); // Handle case where model ID has colons
+      
+      setSelectedProviderId(pId);
+      setSelectedModel(mId);
+      
+      // Persist choice (optional, or rely on Header persistence)
+      invoke('chat:set-last-model', { providerId: pId, model: mId }).catch(console.error);
   };
+
 
   // Determine which messages to show
   const displayMessages = isIncognito ? incognitoMessages : messages;
@@ -158,9 +204,9 @@ export function Chat() {
   return (
     <div className="flex h-full w-full flex-col bg-background relative">
       <Header 
-         model={selectedModel}
-         models={availableModels}
-         onModelChange={handleModelChange}
+         currentValue={selectedProviderId && selectedModel ? `${selectedProviderId}:${selectedModel}` : ''}
+         models={allModels.map(m => ({ value: `${m.providerId}:${m.modelId}`, label: m.label }))}
+         onModelChange={handleModelSelect}
          onNewChat={handleNewChat}
          onHistory={() => setIsHistoryOpen(true)} 
          onIncognitoToggle={handleIncognitoToggle}
@@ -187,9 +233,9 @@ export function Chat() {
       
       {displayMessages.length === 0 ? (
           <EmptyState 
-             models={availableModels} 
-             selectedModel={selectedModel}
-             onModelSelect={handleModelChange}
+             models={allModels.map(m => ({ value: `${m.providerId}:${m.modelId}`, label: m.label }))}
+             selectedModel={selectedProviderId && selectedModel ? `${selectedProviderId}:${selectedModel}` : ''}
+             onModelSelect={handleModelSelect}
           />
       ) : (
           <MessageList messages={displayMessages} isStreaming={isLoading} />
