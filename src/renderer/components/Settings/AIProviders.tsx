@@ -36,6 +36,7 @@ export function AIProviders() {
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this provider?')) {
       await invoke('ai:delete-provider', id);
+      window.dispatchEvent(new Event('ai-providers-updated'));
       loadProviders();
     }
   };
@@ -48,6 +49,7 @@ export function AIProviders() {
      }
      setIsModalOpen(false);
      setEditingProvider(undefined);
+     window.dispatchEvent(new Event('ai-providers-updated'));
      loadProviders();
   };
 
@@ -55,6 +57,7 @@ export function AIProviders() {
       if (managingModelsProvider) {
           await invoke('ai:update-provider', { ...managingModelsProvider, ...data });
           setManagingModelsProvider(undefined);
+          window.dispatchEvent(new Event('ai-providers-updated'));
           loadProviders();
       }
   };

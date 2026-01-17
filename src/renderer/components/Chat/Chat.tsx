@@ -23,6 +23,10 @@ export function Chat() {
 
   useEffect(() => {
     loadProviders();
+    
+    const handleUpdate = () => loadProviders();
+    window.addEventListener('ai-providers-updated', handleUpdate);
+    return () => window.removeEventListener('ai-providers-updated', handleUpdate);
   }, []);
 
   const loadProviders = async () => {
