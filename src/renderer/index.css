@@ -9,7 +9,7 @@
 
 @layer base {
   body {
-    @apply bg-background text-gray-100 h-screen w-screen overflow-hidden;
+    @apply bg-background text-gray-100 h-screen w-screen overflow-hidden font-sans;
   }
   
   /* Globally disable focus rings/borders that might look yellow */

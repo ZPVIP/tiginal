@@ -70,39 +70,61 @@ export function MessageBubble({ role, content, reasoning, images }: MessageProps
                            {reasoningOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                        </button>
                        {reasoningOpen && (
-                           <div className="text-gray-400 text-xs italic bg-surface/30 p-2 rounded animate-in fade-in slide-in-from-top-1">
-                               {reasoning}
-                           </div>
+                            <div className="text-gray-400 text-xs italic bg-surface/30 p-2 rounded animate-in fade-in slide-in-from-top-1">
+                                <ReactMarkdown 
+                                    remarkPlugins={[remarkGfm]}
+                                    components={{
+                                        code({node, inline, className, children, ...props}: any) {
+                                            const match = /language-(\w+)/.exec(className || '')
+                                            return !inline && match ? (
+                                            <div className="relative group/code my-4">
+                                                <pre className={clsx(className, "bg-[#0d1117] p-2 rounded-lg overflow-x-auto border border-border")} {...props}>
+                                                    <code className={className} {...props}>
+                                                    {children}
+                                                    </code>
+                                                </pre>
+                                            </div>
+                                            ) : (
+                                            <code className={clsx(className, "bg-white/10 px-1 py-0.5 rounded text-pink-300")} {...props}>
+                                                {children}
+                                            </code>
+                                            )
+                                        }
+                                    }}
+                                >
+                                    {reasoning}
+                                </ReactMarkdown>
+                            </div>
                        )}
                    </div>
                )}
 
-               <ReactMarkdown 
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                      code({node, inline, className, children, ...props}: any) {
-                        const match = /language-(\w+)/.exec(className || '')
-                        return !inline && match ? (
-                          <div className="relative group/code my-4">
-                              <div className="absolute right-2 top-2 opacity-0 group-hover/code:opacity-100 transition-opacity">
-                                  <div className="text-xs text-gray-400">{match[1]}</div>
-                              </div>
-                              <pre className={clsx(className, "bg-[#0d1117] p-4 rounded-lg overflow-x-auto border border-border")} {...props}>
-                                <code className={className} {...props}>
-                                  {children}
-                                </code>
-                              </pre>
-                          </div>
-                        ) : (
-                          <code className={clsx(className, "bg-white/10 px-1 py-0.5 rounded text-pink-300")} {...props}>
-                            {children}
-                          </code>
-                        )
-                      }
-                  }}
-               >
-                 {content}
-               </ReactMarkdown>
+                <ReactMarkdown 
+                   remarkPlugins={[remarkGfm]}
+                   components={{
+                       code({node, inline, className, children, ...props}: any) {
+                         const match = /language-(\w+)/.exec(className || '')
+                         return !inline && match ? (
+                           <div className="relative group/code my-4">
+                               <div className="absolute right-2 top-2 opacity-0 group-hover/code:opacity-100 transition-opacity">
+                                   <div className="text-xs text-gray-400">{match[1]}</div>
+                               </div>
+                               <pre className={clsx(className, "bg-[#0d1117] p-4 rounded-lg overflow-x-auto border border-border")} {...props}>
+                                 <code className={className} {...props}>
+                                   {children}
+                                 </code>
+                               </pre>
+                           </div>
+                         ) : (
+                           <code className={clsx(className, "bg-white/10 px-1 py-0.5 rounded text-pink-300")} {...props}>
+                             {children}
+                           </code>
+                         )
+                       }
+                   }}
+                >
+                  {content}
+                </ReactMarkdown>
            </div>
            
            {/* Actions */}

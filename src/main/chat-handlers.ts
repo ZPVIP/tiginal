@@ -50,6 +50,13 @@ export function setupChatHandlers(): void {
     getChatService().updateTitle(id, title);
   });
 
+  // Set last used model for a provider
+  ipcMain.handle('chat:set-last-model', async (_event, { providerId, model }: { providerId: string; model: string }): Promise<void> => {
+      const db = getDatabase().getDb();
+      // Update the model for this provider so it sticks
+      db.prepare('UPDATE ai_providers SET model = ? WHERE id = ?').run(model, providerId);
+  });
+
   // Send message to AI
   ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string): Promise<{ response: string; error?: string }> => {
     const chatService = getChatService();
@@ -99,18 +106,38 @@ export function setupChatHandlers(): void {
       const customHeaders = provider.custom_headers ? JSON.parse(provider.custom_headers) : {};
 
       // Call AI API
-      const response = await callAIAPI(
-        provider.type as 'openai-compatible' | 'copilot',
-        provider.endpoint || 'https://api.openai.com/v1',
-        apiKey,
-        modelToUse,
-        messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })),
-        customHeaders,
-        provider.auto_cors_fix === 1
-      );
+      // Call AI API with streaming
+      let fullResponse = '';
+      
+          // Notify client that stream is starting (optional, but good for UI state)
+      // _event.sender.send('chat:start', { conversationId });
+
+      try {
+        await streamAIAPI(
+          provider.type as 'openai-compatible' | 'copilot',
+          provider.endpoint || 'https://api.openai.com/v1',
+          apiKey,
+          modelToUse,
+          messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })),
+          customHeaders,
+          provider.auto_cors_fix === 1,
+          (chunkData) => {
+             if (chunkData.content) fullResponse += chunkData.content;
+             _event.sender.send('chat:chunk', { conversationId, ...chunkData });
+          }
+        );
+      } catch (streamErr) {
+         return { response: fullResponse, error: (streamErr as Error).message };
+      }
 
       // Add assistant response to conversation
-      chatService.addMessage(conversationId, 'assistant', response);
+      // Note: We might want to save reasoning too if we want to persist it, but current DB/Service might only support content
+      // For now, we just save the final full content. Reasoning is transient in UI unless we persist it.
+      // IF we want to save reasoning, we need to accumulate it too.
+      // Let's stick to saving content for now to minimize DB changes, or just append reasoning?
+      // Usually reasoning is separated. Let's assume standard behavior is just saving content.
+      
+      chatService.addMessage(conversationId, 'assistant', fullResponse); // we only save content to DB for now
 
       // Generate title if this is the first response
       if (messages.length <= 2) {
@@ -122,7 +149,7 @@ export function setupChatHandlers(): void {
         }
       }
 
-      return { response };
+      return { response: fullResponse };
     } catch (error) {
       const errorMessage = (error as Error).message || 'Unknown error';
       return { response: '', error: errorMessage };
@@ -131,17 +158,18 @@ export function setupChatHandlers(): void {
 }
 
 /**
- * Call AI API
+ * Stream AI API
  */
-async function callAIAPI(
+async function streamAIAPI(
   type: 'openai-compatible' | 'copilot',
   endpoint: string,
   apiKey: string | null,
   model: string,
   messages: Array<{ role: string; content: string }>,
   customHeaders: Record<string, string> = {},
-  autoCORSFix: boolean = true
-): Promise<string> {
+  autoCORSFix: boolean = true,
+  onChunk: (data: { content?: string; reasoning?: string }) => void
+): Promise<void> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...customHeaders
@@ -151,40 +179,119 @@ async function callAIAPI(
     headers['Authorization'] = `Bearer ${apiKey}`;
   }
 
-  // Auto CORS fix simulation (setting Origin header)
+  // Auto CORS fix simulation
   if (autoCORSFix) {
     try {
       const url = new URL(endpoint);
       headers['Origin'] = url.origin;
     } catch (e) {
-      // invalid url, ignore
+      // invalid url
     }
+  }
+
+  const bodyPayload = {
+    model,
+    messages,
+    temperature: 0.7,
+    max_tokens: 4000,
+    stream: true
+  };
+
+  if (process.env.NODE_ENV !== 'production') {
+      console.log('--- AI Request Debug ---');
+      console.log('URL:', `${endpoint}/chat/completions`);
+      const safeHeaders = { ...headers };
+      if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer sk-xxx';
+      console.log('Headers:', safeHeaders);
+      console.log('Body:', JSON.stringify(bodyPayload, null, 2));
+      console.log('------------------------');
   }
 
   const response = await fetch(`${endpoint}/chat/completions`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.7,
-      max_tokens: 2000,
-    }),
+    body: JSON.stringify(bodyPayload),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error(`AI API Error: ${response.status} - ${errorText}`);
     throw new Error(`API error: ${response.status} - ${errorText}`);
   }
 
-  const data = await response.json() as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = data.choices?.[0]?.message?.content;
-
-  if (!content) {
-    throw new Error('No response from AI');
+  if (!response.body) {
+     throw new Error('No response body for stream');
   }
 
-  return content;
+  console.log(`Stream started. Status: ${response.status}, Type: ${response.headers.get('content-type')}`);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+
+  try {
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+            console.log('Stream done signal received.');
+            break;
+        }
+
+        const chunkText = decoder.decode(value, { stream: true });
+        console.log(`Received chunk (${value.length} bytes):`, chunkText); 
+        buffer += chunkText;
+        
+        // Process buffer line by line
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || "";  
+
+        for (const line of lines) {
+           processLine(line, onChunk);
+        }
+    }
+    
+    // Process remaining buffer
+    if (buffer.trim()) {
+        processLine(buffer, onChunk);
+    }
+
+  } catch (err) {
+      console.error('Stream read error:', err);
+      throw err;
+  }
+}
+
+function processLine(line: string, onChunk: (data: { content?: string; reasoning?: string }) => void) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed === "data: [DONE]") return;
+    
+    if (trimmed.startsWith("data: ")) {
+        const jsonStr = trimmed.substring(6);
+        try {
+            const data = JSON.parse(jsonStr);
+            const delta = data.choices?.[0]?.delta;
+            if (delta) {
+                const content = delta.content;
+                const reasoning = delta.reasoning;
+                
+                if (content || reasoning) {
+                   onChunk({ content, reasoning });
+                }
+            }
+        } catch (e) {
+            console.warn("Failed to parse SSE line", trimmed, e);
+        }
+    } else {
+        console.log("Ignored line (not SSE):", trimmed);
+        // Attempt to parse as standard JSON error
+        try {
+            const data = JSON.parse(trimmed);
+            if (data.error) {
+                console.error("API returned JSON error in stream:", data.error);
+                onChunk({ content: `[Error: ${data.error.message || JSON.stringify(data.error)}]` });
+            } else if (data.choices?.[0]?.message?.content) {
+                // Maybe it rolled back to non-streaming response?
+                onChunk({ content: data.choices[0].message.content });
+            }
+        } catch (ignore) {}
+    }
 }

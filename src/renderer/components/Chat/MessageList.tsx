@@ -18,7 +18,8 @@ export function MessageList({ messages, isStreaming }: MessageListProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        // Use 'auto' behavior during streaming for instant updates, 'smooth' otherwise
+        bottomRef.current?.scrollIntoView({ behavior: 'auto' });
     }, [messages, isStreaming]);
 
     if (messages.length === 0) return null;

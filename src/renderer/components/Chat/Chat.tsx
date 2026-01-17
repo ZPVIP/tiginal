@@ -26,8 +26,60 @@ export function Chat() {
     
     const handleUpdate = () => loadProviders();
     window.addEventListener('ai-providers-updated', handleUpdate);
-    return () => window.removeEventListener('ai-providers-updated', handleUpdate);
+
+    // Streaming listeners
+    // Streaming listeners
+    const onChunk = (data: { conversationId: string, content?: string; reasoning?: string }) => {
+        // console.log('Chunk received:', data);
+        
+        const updateMessages = (prev: any[]) => {
+            if (prev.length === 0) return prev;
+            const lastMsg = prev[prev.length - 1];
+            
+            if (lastMsg.role === 'assistant') {
+                const newContent = lastMsg.content + (data.content || '');
+                const newReasoning = (lastMsg.reasoning || '') + (data.reasoning || '');
+                
+                return [
+                    ...prev.slice(0, prev.length - 1), 
+                    { ...lastMsg, content: newContent, reasoning: newReasoning }
+                ];
+            } else {
+                 // Fallback if no assistant msg found (rare due to placeholder)
+                 return [...prev, { 
+                     id: Date.now().toString(), 
+                     role: 'assistant', 
+                     content: data.content || '',
+                     reasoning: data.reasoning || ''
+                 }];
+            }
+        };
+
+        if (currentConversationIdRef.current === data.conversationId) {
+             setMessages(updateMessages);
+        } else {
+             if (isIncognitoRef.current) {
+                 setIncognitoMessages(updateMessages);
+             }
+        }
+    };
+
+    const removeListener = window.electron?.on('chat:chunk', onChunk);
+
+    return () => {
+        window.removeEventListener('ai-providers-updated', handleUpdate);
+        if (removeListener) removeListener();
+    };
   }, []);
+
+  // Refs for event listeners to access current state
+  const currentConversationIdRef = React.useRef(currentConversationId);
+  const isIncognitoRef = React.useRef(isIncognito);
+
+  useEffect(() => {
+      currentConversationIdRef.current = currentConversationId;
+      isIncognitoRef.current = isIncognito;
+  }, [currentConversationId, isIncognito]);
 
   const loadProviders = async () => {
     try {
@@ -45,7 +97,6 @@ export function Chat() {
   };
 
   const handleSend = async (text: string, images: string[], useSearch: boolean) => {
-      // ... (rest of handleSend logic is fine, omitted for brevity if not changing) ...
       if (!selectedProviderId) {
           alert("Please select a provider/model first.");
           return;
@@ -53,33 +104,62 @@ export function Chat() {
 
       setIsLoading(true);
 
+      // Add User Message
+      const userMsg = { id: Date.now().toString(), role: 'user', content: text, images };
+      
+      // Add Placeholder Assistant Message
+      const placeholderMsg = { id: (Date.now() + 1).toString(), role: 'assistant', content: '' };
+
       if (isIncognito) {
-          // Incognito mode - don't persist
-          const userMsg = { id: Date.now().toString(), role: 'user', content: text, images };
-          setIncognitoMessages(prev => [...prev, userMsg]);
+          setIncognitoMessages(prev => [...prev, userMsg, placeholderMsg]);
 
           try {
-              // Create a transient conversation (will be deleted after)
               const conv = await invoke('chat:create-conversation', selectedProviderId, true);
-              const res = await invoke('chat:send-message', conv.id, selectedProviderId, text, selectedModel);
+              // Force update ref for the transient conversation if needed, 
+              // but actually we passed `true` so it creates a new one. 
+              // We need to know this ID to match events?
+              // The event listener checks `currentConversationIdRef`. 
+              // BUT in incognito we don't set `currentConversationId`.
+              // We need a way to know "this is the active streaming conversation".
               
-              if (res.error) {
-                  setIncognitoMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Error: ${res.error}` }]);
-              } else {
-                  setIncognitoMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: res.response }]);
-              }
+              // Hack/Fix: For incognito, we just listen to ALL chunks if `isIncognitoRef` is true? 
+              // Or better: temporary set currentConversationIdRef to this transient ID just for the stream logic?
+              // But `currentConversationId` state drives the UI history selection.
+              // Let's rely on `isIncognitoRef` check in `onChunk`.
+              // We need to verify if the chunk belongs to valid incognito stream.
               
-              // Delete transient conversation
+              // Pass a specialized param or just assume if incognito is open we update it.
+              // The `onChunk` logic I wrote above blindly updates `setIncognitoMessages` if `isIncognitoRef` is true
+              // and `currentConversationId` mismatch.
+              // This should work for single active stream.
+              
+              // However, `chat:send-message` needs `conv.id`.
+              // We need to make sure the event includes this ID (it does).
+              // Since we don't store transient ID in state, we can't match it easily unless we store it.
+              // Let's store "activeStreamingId" ref?
+              
+              activeStreamingId.current = conv.id;
+
+              await invoke('chat:send-message', conv.id, selectedProviderId, text, selectedModel);
+              
               await invoke('chat:delete-conversation', conv.id);
           } catch (err) {
-              setIncognitoMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Error: ${(err as Error).message}` }]);
+              setIncognitoMessages(prev => {
+                  const newMsgs = [...prev];
+                  const last = newMsgs[newMsgs.length - 1];
+                  if (last.role === 'assistant') {
+                       last.content += `\n[Error: ${(err as Error).message}]`;
+                  }
+                  return newMsgs;
+              });
           } finally {
               setIsLoading(false);
+              activeStreamingId.current = null;
           }
           return;
       }
 
-      // Normal mode
+      // Normal Mode
       let convId = currentConversationId;
       if (!convId) {
           try {
@@ -93,23 +173,27 @@ export function Chat() {
           }
       }
 
-      const userMsg = { id: Date.now().toString(), role: 'user', content: text, images };
-      setMessages(prev => [...prev, userMsg]);
+      setMessages(prev => [...prev, userMsg, placeholderMsg]);
+      activeStreamingId.current = convId!;
 
       try {
-          const res = await invoke('chat:send-message', convId, selectedProviderId, text, selectedModel);
-          
-          if (res.error) {
-              setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Error: ${res.error}` }]);
-          } else {
-              setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: res.response }]);
-          }
+          await invoke('chat:send-message', convId, selectedProviderId, text, selectedModel);
       } catch (err) {
-          setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Error: ${(err as Error).message}` }]);
+          setMessages(prev => {
+              const newMsgs = [...prev];
+              const last = newMsgs[newMsgs.length - 1];
+              if (last.role === 'assistant') {
+                   last.content += `\n[Error: ${(err as Error).message}]`;
+              }
+              return newMsgs;
+          });
       } finally {
           setIsLoading(false);
+          activeStreamingId.current = null;
       }
   };
+  
+  const activeStreamingId = React.useRef<string | null>(null);
 
 
 
