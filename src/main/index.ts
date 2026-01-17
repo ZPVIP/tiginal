@@ -41,9 +41,23 @@ if (process.platform !== 'win32') {
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
+  // Load window state
+  const statePath = path.join(app.getPath('userData'), 'window-state.json');
+  let windowState = { width: 900, height: 600, x: undefined, y: undefined };
+  
+  try {
+    if (fs.existsSync(statePath)) {
+      windowState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Failed to load window state:', e);
+  }
+
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 600,
+    width: windowState.width,
+    height: windowState.height,
+    x: windowState.x,
+    y: windowState.y,
     minWidth: 400,
     minHeight: 300,
     backgroundColor: '#1e1e2e',
@@ -54,6 +68,21 @@ function createWindow(): void {
       nodeIntegration: true,
       contextIsolation: false,
     },
+  });
+
+  // Save window state
+  const saveState = () => {
+    if (!mainWindow) return;
+    const bounds = mainWindow.getBounds();
+    try {
+      fs.writeFileSync(statePath, JSON.stringify(bounds));
+    } catch (e) {
+      console.error('Failed to save window state:', e);
+    }
+  };
+
+  ['resize', 'move', 'close'].forEach(event => {
+    mainWindow?.on(event as any, saveState);
   });
 
   // In production (built with Vite), point to dist/renderer/index.html
