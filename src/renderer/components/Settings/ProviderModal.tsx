@@ -135,7 +135,21 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
                   }
               });
               
-              setFormData(prev => ({ ...prev, availableModels: mergedModels }));
+              setFormData(prev => {
+                  let newModel = prev.model || '';
+                  // Check if current model exists in the new list
+                  const exists = mergedModels.some(m => m.id === newModel);
+                  if (!exists && mergedModels.length > 0) {
+                      const firstEnabled = mergedModels.find(m => m.enabled !== false);
+                      newModel = firstEnabled ? firstEnabled.id : mergedModels[0].id;
+                  }
+                  
+                  return { 
+                      ...prev, 
+                      availableModels: mergedModels,
+                      model: newModel
+                  };
+              });
           }
       } finally {
           setIsTesting(false);

@@ -53,8 +53,16 @@ export function setupChatHandlers(): void {
   // Set last used model for a provider
   ipcMain.handle('chat:set-last-model', async (_event, { providerId, model }: { providerId: string; model: string }): Promise<void> => {
       const db = getDatabase().getDb();
-      // Update the model for this provider so it sticks
-      db.prepare('UPDATE ai_providers SET model = ? WHERE id = ?').run(model, providerId);
+      
+      // Use transaction to atomically update model and default status
+      const update = db.transaction(() => {
+          // Clear existing default
+          db.prepare('UPDATE ai_providers SET is_default = 0').run();
+          // Update the model for this provider so it sticks, and make it default
+          db.prepare('UPDATE ai_providers SET model = ?, is_default = 1 WHERE id = ?').run(model, providerId);
+      });
+      
+      update();
   });
 
   // Send message to AI

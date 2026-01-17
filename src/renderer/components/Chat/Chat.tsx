@@ -89,7 +89,31 @@ export function Chat() {
       const def = list.find((p: any) => p.isDefault) || list[0];
       if (def) {
           setSelectedProviderId(def.id);
-          setSelectedModel(def.model);
+          
+          // Verify model exists in availableModels, else use first one
+          let validModel = def.model;
+          if (def.availableModels && def.availableModels.length > 0) {
+             const mList = typeof def.availableModels[0] === 'string' 
+                ? def.availableModels 
+                : def.availableModels.map((m: any) => m.id);
+             
+             // Check if current default model is in the list
+             if (!mList.includes(validModel)) {
+                 // Not found, pick the first one (prefer enabled ones if object structure)
+                 if (typeof def.availableModels[0] === 'object') {
+                     const firstEnabled = def.availableModels.find((m: any) => m.enabled !== false);
+                     validModel = firstEnabled ? firstEnabled.id : def.availableModels[0].id;
+                 } else {
+                     validModel = def.availableModels[0];
+                 }
+                 
+                 // Optional: Auto-correct the DB for this drift? 
+                 // Maybe not auto-save here, just correct the UI. 
+                 // But user asked "remember... but now can't remember", implying we should be robust.
+             }
+          }
+          
+          setSelectedModel(validModel);
       }
     } catch (err) {
       console.error("Failed to load providers", err);
@@ -248,30 +272,84 @@ export function Chat() {
          } 
          
          // Ensure default model is in the list if not found above
-         if (p.model && !hasDefault) {
-             // Avoid duplicates if valid models list was empty but model existed
-             // Check if it's already in list (for this provider)
-             const alreadyIn = list.some(x => x.providerId === p.id && x.modelId === p.model);
-             if (!alreadyIn) {
-                 list.push({
-                     providerId: p.id,
-                     modelId: p.model,
-                     label: `${p.name} / ${p.model}`
-                 });
-             }
-         }
+          if (p.model && !hasDefault) {
+              // Avoid duplicates if valid models list was empty but model existed
+              // Check if it's already in list (for this provider)
+              const alreadyIn = list.some(x => x.providerId === p.id && x.modelId === p.model);
+              if (!alreadyIn) {
+                  // Check if this model is actually enabled in the provider's list
+                  let isEnabled = true;
+                  if (p.availableModels && p.availableModels.length > 0) {
+                      const modelObj = p.availableModels.find((m: any) => 
+                          (typeof m === 'string' ? m : m.id) === p.model
+                      );
+                      if (modelObj && typeof modelObj !== 'string' && modelObj.enabled === false) {
+                          isEnabled = false;
+                      }
+                      // If modelObj not found in available list, treat as disabled/invalid? 
+                      // Or keep compatible? 
+                      // If available list exists but model not in it -> invalid/disabled.
+                      if (!modelObj) isEnabled = false;
+                  }
+                  
+                  if (isEnabled) {
+                      list.push({
+                          providerId: p.id,
+                          modelId: p.model,
+                          label: `${p.name} / ${p.model}`
+                      });
+                  }
+              }
+          }
      });
      return list;
   }, [providers]);
 
-  // Handle default selection if nothing selected
+  // Validate selection when model list changes
   React.useEffect(() => {
-      if (!selectedProviderId && allModels.length > 0) {
-          // Select the first one (which should be the default provider's model due to sorting)
-          setSelectedProviderId(allModels[0].providerId);
-          setSelectedModel(allModels[0].modelId);
+      // If list is empty, clear selection
+      if (allModels.length === 0) {
+          if (selectedProviderId || selectedModel) {
+              setSelectedProviderId('');
+              setSelectedModel('');
+          }
+          return;
       }
-  }, [allModels, selectedProviderId]);
+
+      // Check if current selection is valid
+      const isValid = allModels.some(m => m.providerId === selectedProviderId && m.modelId === selectedModel);
+
+      if (!isValid && providers.length > 0) {
+           // Not valid! Need to find a fallback.
+           let newPId = '';
+           let newMId = '';
+
+           // 1. Try to find the default provider (flagged in DB)
+           const defProvider = providers.find(p => p.isDefault);
+           if (defProvider) {
+               // Is there any valid model for this provider in our list?
+               const validModelForDef = allModels.find(m => m.providerId === defProvider.id);
+               if (validModelForDef) {
+                   newPId = validModelForDef.providerId;
+                   newMId = validModelForDef.modelId;
+               }
+           }
+
+           // 2. If no valid default provider model found, pick the very first available one
+           if (!newPId && allModels.length > 0) {
+               newPId = allModels[0].providerId;
+               newMId = allModels[0].modelId;
+           }
+
+           if (newPId && newMId) {
+               setSelectedProviderId(newPId);
+               setSelectedModel(newMId);
+               
+               // Persist this auto-correction so it sticks
+               invoke('chat:set-last-model', { providerId: newPId, model: newMId }).catch(console.error);
+           }
+      }
+  }, [allModels, providers, selectedProviderId, selectedModel]);
 
   const handleModelSelect = (value: string) => {
       // Value format: "providerId:modelId" to ensure uniqueness

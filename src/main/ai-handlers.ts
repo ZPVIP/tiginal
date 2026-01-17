@@ -171,6 +171,38 @@ export function setupAIHandlers(): void {
       db.prepare('UPDATE ai_providers SET is_default = 0').run();
     }
 
+    // Validate model vs availableModels
+    let modelToSave = input.model;
+    if (input.availableModels && input.availableModels.length > 0) {
+        // Handle both string[] and object[] (ModelConfig[])
+        const firstItem = input.availableModels[0];
+        const isString = typeof firstItem === 'string';
+        
+        let enabledIds: string[] = [];
+        let allIds: string[] = [];
+        
+        if (isString) {
+            allIds = input.availableModels as unknown as string[];
+            enabledIds = allIds; // Strings are always "enabled"
+        } else {
+            const list = input.availableModels as unknown as { id: string, enabled?: boolean }[];
+            allIds = list.map(m => m.id);
+            enabledIds = list.filter(m => m.enabled !== false).map(m => m.id);
+        }
+            
+        // If current model is not ENABLED, default to the first enabled one
+        if (!enabledIds.includes(modelToSave)) {
+             if (enabledIds.length > 0) {
+                 modelToSave = enabledIds[0];
+             } else if (allIds.length > 0) {
+                 // Fallback: If ALL are disabled, we still need to store *something* valid in DB
+                 // effectively "first available" even if disabled, or keep current if it exists in allIds
+                 // Let's pick first from allIds to be safe against deletions
+                 modelToSave = allIds[0];
+             }
+        }
+    }
+
     db.prepare(`
       UPDATE ai_providers SET
         name = ?,
@@ -187,7 +219,7 @@ export function setupAIHandlers(): void {
       input.name,
       input.endpoint || null,
       apiKeyEncrypted,
-      input.model,
+      modelToSave,
       input.availableModels ? JSON.stringify(input.availableModels) : null,
       input.customHeaders ? JSON.stringify(input.customHeaders) : null,
       input.autoCORSFix !== false ? 1 : 0,
