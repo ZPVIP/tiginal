@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { clsx } from 'clsx';
-import { User, Copy, Check, ChevronDown, ChevronRight, BrainCircuit } from 'lucide-react';
+import { User, Copy, Check, ChevronDown, ChevronRight, BrainCircuit, Maximize2, Minimize2 } from 'lucide-react';
 import { TigiCat } from '../icons/TigiCat';
+import { useEffect, useRef } from 'react';
 
 interface MessageProps {
   role: 'user' | 'assistant';
@@ -12,9 +13,93 @@ interface MessageProps {
   images?: string[];
 }
 
+function ReasoningBlock({ content }: { content: string }) {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const [userScrolled, setUserScrolled] = useState(false);
+
+    // Auto-scroll to bottom if not expanded and not paused by user scroll
+    useEffect(() => {
+        if (!isExpanded && !userScrolled && scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+    }, [content, isExpanded, userScrolled]);
+
+    const handleScroll = () => {
+        if (scrollRef.current) {
+            const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+            const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 10;
+            if (!isAtBottom) {
+                setUserScrolled(true);
+            } else {
+                setUserScrolled(false);
+            }
+        }
+    };
+
+    return (
+        <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-xs font-medium text-purple-400 mb-1">
+                <BrainCircuit size={12} />
+                <span>Thinking Process</span>
+            </div>
+            
+            <div 
+                ref={scrollRef}
+                onScroll={handleScroll}
+                className={clsx(
+                    "bg-surface/30 p-3 rounded-lg text-gray-400 text-xs custom-scrollbar transition-all duration-300",
+                    isExpanded ? "h-auto max-h-none" : "h-32 overflow-y-auto"
+                )}
+            >
+                <ReactMarkdown 
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                        code({node, inline, className, children, ...props}: any) {
+                            const match = /language-(\w+)/.exec(className || '')
+                            return !inline && match ? (
+                            <div className="relative group/code my-2">
+                                <pre className={clsx(className, "bg-[#0d1117] p-2 rounded-lg overflow-x-auto border border-border")} {...props}>
+                                    <code className={className} {...props}>
+                                    {children}
+                                    </code>
+                                </pre>
+                            </div>
+                            ) : (
+                            <code className={clsx(className, "bg-white/10 px-1 py-0.5 rounded text-pink-300")} {...props}>
+                                {children}
+                            </code>
+                            )
+                        }
+                    }}
+                >
+                    {content}
+                </ReactMarkdown>
+            </div>
+
+            <button 
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="self-start flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wider text-purple-400/70 hover:text-purple-400 transition-colors mt-1 px-1 py-0.5 rounded hover:bg-purple-500/10"
+            >
+                {isExpanded ? (
+                    <>
+                        <Minimize2 size={10} />
+                        Collapse
+                    </>
+                ) : (
+                    <>
+                        <Maximize2 size={10} />
+                        Expand
+                    </>
+                )}
+            </button>
+        </div>
+    );
+}
+
+
 export function MessageBubble({ role, content, reasoning, images }: MessageProps) {
   const [copied, setCopied] = useState(false);
-  const [reasoningOpen, setReasoningOpen] = useState(false);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
@@ -58,46 +143,12 @@ export function MessageBubble({ role, content, reasoning, images }: MessageProps
                   ? "bg-surface/50 px-4 py-3 rounded-2xl rounded-tr-sm border border-border" 
                   : "bg-transparent pl-0"
            )}>
-               {/* DeepSeek Reasoning Block */}
-               {reasoning && !isUser && (
-                   <div className="mb-4 border-l-2 border-purple-500/30 pl-3">
-                       <button 
-                         onClick={() => setReasoningOpen(!reasoningOpen)}
-                         className="flex items-center gap-2 text-xs font-medium text-purple-400 hover:text-purple-300 transition-colors mb-1"
-                       >
-                           <BrainCircuit size={12} />
-                           {reasoningOpen ? 'Hide Reasoning' : 'Show Reasoning'}
-                           {reasoningOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                       </button>
-                       {reasoningOpen && (
-                            <div className="text-gray-400 text-xs italic bg-surface/30 p-2 rounded animate-in fade-in slide-in-from-top-1">
-                                <ReactMarkdown 
-                                    remarkPlugins={[remarkGfm]}
-                                    components={{
-                                        code({node, inline, className, children, ...props}: any) {
-                                            const match = /language-(\w+)/.exec(className || '')
-                                            return !inline && match ? (
-                                            <div className="relative group/code my-4">
-                                                <pre className={clsx(className, "bg-[#0d1117] p-2 rounded-lg overflow-x-auto border border-border")} {...props}>
-                                                    <code className={className} {...props}>
-                                                    {children}
-                                                    </code>
-                                                </pre>
-                                            </div>
-                                            ) : (
-                                            <code className={clsx(className, "bg-white/10 px-1 py-0.5 rounded text-pink-300")} {...props}>
-                                                {children}
-                                            </code>
-                                            )
-                                        }
-                                    }}
-                                >
-                                    {reasoning}
-                                </ReactMarkdown>
-                            </div>
-                       )}
-                   </div>
-               )}
+                {/* DeepSeek Reasoning Block */}
+                {reasoning && !isUser && (
+                    <div className="mb-4 border-l-2 border-purple-500/30 pl-3">
+                        <ReasoningBlock content={reasoning} />
+                    </div>
+                )}
 
                 <ReactMarkdown 
                    remarkPlugins={[remarkGfm]}
