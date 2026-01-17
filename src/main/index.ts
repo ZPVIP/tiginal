@@ -61,8 +61,9 @@ function createWindow(): void {
     minWidth: 400,
     minHeight: 300,
     backgroundColor: '#1e1e2e',
-    // Use default title bar for dragging
-    titleBarStyle: 'default',
+    // Custom title bar for immersive feel
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 12, y: 9 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: true,

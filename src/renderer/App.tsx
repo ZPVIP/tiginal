@@ -148,63 +148,72 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-        <div className="flex h-screen w-screen bg-background overflow-hidden relative">
-          {/* Sidebar */}
-          <div className="w-12 bg-surface/50 border-r border-border flex flex-col items-center py-4 z-10 shrink-0">
-            <NavItem 
-               id="terminal" 
-               icon={TerminalSquare} 
-               title="Terminal" 
-               isActive={showTerminal && activeTab === 'terminal'}
-               onClick={() => {
-                   handleNavClick('terminal'); 
-                   // Special toggle logic only if already active tab
-                   if (activeTab === 'terminal') toggleTerminal();
-                   else setActiveTab('terminal');
-               }}
-            />
-            
-            {/* AI Toggle Button - Moved below Terminal */}
-            <button
-              onClick={toggleChat}
-              title="Toggle AI Chat"
-              className={clsx(
-                "p-2 rounded-lg mb-2 transition-colors",
-                showChat
-                  ? "bg-purple-500/20 text-purple-400" 
-                  : "text-gray-400 hover:text-gray-100 hover:bg-white/5"
-              )}
-            >
-              <MessageSquare size={20} strokeWidth={2} />
-            </button>
-            
-            <NavItem 
-               id="ssh" 
-               icon={Server} 
-               title="SSH Servers" 
-               isActive={showTerminal && activeTab === 'ssh'}
-               onClick={() => {
-                   handleNavClick('ssh');
-                   if (activeTab === 'ssh') toggleTerminal();
-               }}
-            />
-            
-            <div className="flex-1" />
-            
-            <NavItem 
-               id="settings" 
-               icon={SettingsIcon} 
-               title="Settings" 
-               isActive={showTerminal && activeTab === 'settings'}
-               onClick={() => {
-                   handleNavClick('settings');
-                   if (activeTab === 'settings') toggleTerminal(); 
-               }}
-            />
+        <div className="flex flex-col h-screen w-screen bg-background overflow-hidden relative">
+          {/* Custom Title Bar */}
+          <div 
+            className="h-8 bg-surface/50 border-b border-border w-full flex items-center shrink-0"
+            style={{ WebkitAppRegion: 'drag' } as any}
+          >
+             {/* Title Bar Content (Traffic lights sit here natively) */}
           </div>
 
-          {/* Main Content Area */}
-          <div className="flex-1 flex overflow-hidden w-full">
+          <div className="flex-1 flex overflow-hidden">
+            {/* Sidebar */}
+            <div className="w-12 bg-surface/50 border-r border-border flex flex-col items-center py-4 z-10 shrink-0 select-none">
+                <NavItem 
+                id="terminal" 
+                icon={TerminalSquare} 
+                title="Terminal" 
+                isActive={showTerminal && activeTab === 'terminal'}
+                onClick={() => {
+                    handleNavClick('terminal'); 
+                    // Special toggle logic only if already active tab
+                    if (activeTab === 'terminal') toggleTerminal();
+                    else setActiveTab('terminal');
+                }}
+                />
+                
+                {/* AI Toggle Button - Moved below Terminal */}
+                <button
+                onClick={toggleChat}
+                title="Toggle AI Chat"
+                className={clsx(
+                    "p-2 rounded-lg mb-2 transition-colors",
+                    showChat
+                    ? "bg-purple-500/20 text-purple-400" 
+                    : "text-gray-400 hover:text-gray-100 hover:bg-white/5"
+                )}
+                >
+                <MessageSquare size={20} strokeWidth={2} />
+                </button>
+                
+                <NavItem 
+                id="ssh" 
+                icon={Server} 
+                title="SSH Servers" 
+                isActive={showTerminal && activeTab === 'ssh'}
+                onClick={() => {
+                    handleNavClick('ssh');
+                    if (activeTab === 'ssh') toggleTerminal();
+                }}
+                />
+                
+                <div className="flex-1" />
+                
+                <NavItem 
+                id="settings" 
+                icon={SettingsIcon} 
+                title="Settings" 
+                isActive={showTerminal && activeTab === 'settings'}
+                onClick={() => {
+                    handleNavClick('settings');
+                    if (activeTab === 'settings') toggleTerminal(); 
+                }}
+                />
+            </div>
+
+            {/* Main Content Area */}
+            <div className="flex-1 flex overflow-hidden w-full">
              
              {/* Left Pane (Terminal/Settings) */}
              {showTerminal && (
@@ -251,6 +260,7 @@ export default function App() {
                      </ErrorBoundary>
                  </div>
              )}
+          </div>
           </div>
           
           {/* Overlay for resizing safety */}
