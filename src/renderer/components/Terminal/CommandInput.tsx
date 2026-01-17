@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Send, Clipboard } from 'lucide-react';
+import { SendHorizontal, Clipboard } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface CommandInputProps {
@@ -14,7 +14,7 @@ export function CommandInput({ onSend }: CommandInputProps) {
     const el = textareaRef.current;
     if (el) {
       el.style.height = 'auto'; // Reset to calculate scrollHeight
-      const newHeight = Math.min(Math.max(el.scrollHeight, 32), 120);
+      const newHeight = Math.min(Math.max(el.scrollHeight, 36), 120);
       el.style.height = `${newHeight}px`;
     }
   };
@@ -38,44 +38,32 @@ export function CommandInput({ onSend }: CommandInputProps) {
     textareaRef.current?.focus();
   };
 
-  const handlePaste = async () => {
-      try {
-          const text = await navigator.clipboard.readText();
-          setValue(prev => prev + text);
-          textareaRef.current?.focus();
-      } catch (err) {
-          console.error('Failed to read clipboard', err);
-      }
-  };
-
   return (
     <div className="border-t border-border bg-[#1a1a1a] p-2 flex gap-2 items-end">
-      <div className="flex-1 relative">
         <textarea
           ref={textareaRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="w-full bg-[#262626] text-gray-200 text-sm font-mono rounded-md p-2 outline-none resize-none border border-transparent overflow-hidden min-h-[36px]"
+          className="flex-1 w-full bg-[#262626] text-gray-200 text-sm font-mono rounded-md py-2 px-2 outline-none resize-none border border-transparent overflow-hidden min-h-[36px]"
           placeholder="Enter command..."
           rows={1}
         />
-      </div>
       
       <button 
-        onClick={handlePaste}
-        className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors mb-0.5"
-        title="Paste (without executing)"
+        onClick={() => handleSend(false)}
+        className="h-[36px] w-[36px] flex items-center justify-center bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+        title="Paste to Terminal"
       >
         <Clipboard size={18} />
       </button>
 
       <button 
         onClick={() => handleSend(true)}
-        className="p-2 bg-primary/20 text-primary hover:bg-primary/30 rounded-lg transition-colors mb-0.5"
+        className="h-[36px] w-[36px] flex items-center justify-center bg-primary/20 text-primary hover:bg-primary/30 rounded-lg transition-colors"
         title="Send and Execute"
       >
-        <Send size={18} />
+        <SendHorizontal size={18} />
       </button>
     </div>
   );
