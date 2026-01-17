@@ -186,11 +186,11 @@ export function TerminalView() {
   return (
     <div className="flex flex-col h-full bg-background font-mono text-sm">
       {/* Tab Bar */}
-      <div className="flex items-center h-8 bg-surface/50 border-b border-border select-none shrink-0">
+      <div className="flex bg-surface/50 border-b border-border select-none shrink-0" style={{ height: '40px' }}>
         {/* Tab Container */}
         <div 
            ref={tabsContainerRef}
-           className="flex-1 flex overflow-x-auto no-scrollbar scroll-smooth"
+           className="flex-1 flex h-full overflow-x-auto no-scrollbar scroll-smooth"
            onWheel={(e) => {
                if (e.shiftKey) return; 
            }}
@@ -206,7 +206,7 @@ export function TerminalView() {
                   title={tab.cwd || 'Terminal'} // Hover shows full path
                   className={clsx(
                       "flex items-center px-2 h-full cursor-pointer transition-colors border-r border-border min-w-[180px] max-w-[180px]", // Increased width
-                      activeTabId === tab.id ? "bg-background text-white font-bold" : "text-gray-400 hover:bg-white/5",
+                      activeTabId === tab.id ? "bg-background text-white font-bold" : "text-gray-400 bg-surface hover:bg-surface/80",
                       "whitespace-nowrap"
                   )}
                 >

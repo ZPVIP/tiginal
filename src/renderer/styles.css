@@ -106,7 +106,7 @@ html, body {
 #tab-bar {
   display: flex;
   align-items: center;
-  height: 36px;
+  height: 44px;
   background-color: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   padding: 0 8px;
@@ -407,7 +407,8 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px;
+  height: 44px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--border-color);
 }
 

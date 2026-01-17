@@ -37,7 +37,7 @@ export function Header({
   // It implies the dropdown options. The button text isn't explicitly constrained but typical to match.
 
   return (
-    <div className="h-14 border-b border-border bg-background/50 backdrop-blur-sm flex items-center justify-between px-4 sticky top-0 z-30">
+    <div className="border-b border-border bg-background/50 backdrop-blur-sm flex items-center justify-between px-4 sticky top-0 z-30 shrink-0" style={{ height: '40px' }}>
       <div className="flex items-center gap-2">
         {/* Tigi Branding */}
         <TigiCat size={28} />

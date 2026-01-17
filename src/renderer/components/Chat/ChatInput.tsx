@@ -137,12 +137,6 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             </button>
         </div>
       </div>
-      
-      <div className="text-center mt-2">
-          <p className="text-[10px] text-gray-500">
-             AI can make mistakes. Please verify important information.
-          </p>
-      </div>
     </div>
   );
 }
