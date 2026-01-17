@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Edit2, RotateCw, CheckCircle2, AlertCircle } from 'lucide-react';
-import { ProviderModal, AIProvider, OAI_API_PROVIDERS } from './ProviderModal';
+import { ProviderModal } from './ProviderModal';
+import { AIProvider, OAI_API_PROVIDERS } from '../../settings/ai-constants';
 
 // Mock ipc invoke
 const invoke = window.electron?.invoke || (async () => {});

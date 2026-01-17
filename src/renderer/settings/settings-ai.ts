@@ -1,40 +1,10 @@
 import { ipcRenderer } from 'electron';
 import { ICONS } from './icons';
-
-const OAI_API_PROVIDERS = [
-  { label: "Custom", value: "custom", baseUrl: "" },
-  { label: "Cerebras", value: "cerebras", baseUrl: "https://api.cerebras.ai/v1" },
-  { label: "Ollama", value: "ollama", baseUrl: "http://localhost:11434/v1" },
-  { label: "OpenAI", value: "openai", baseUrl: "https://api.openai.com/v1" },
-  { label: "LLaMa.cpp", value: "llamacpp", baseUrl: "http://localhost:8080/v1" },
-  { label: "LM Studio", value: "lmstudio", baseUrl: "http://localhost:1234/v1" },
-  { label: "Llamafile", value: "llamafile", baseUrl: "http://127.0.0.1:8080/v1" },
-  { label: "DeepSeek", value: "deepseek", baseUrl: "https://api.deepseek.com" },
-  { label: "Groq", value: "groq", baseUrl: "https://api.groq.com/openai/v1" },
-  { label: "Mistral", value: "mistral", baseUrl: "https://api.mistral.ai/v1" },
-  { label: "Anthropic (Claude)", value: "anthropic", baseUrl: "https://api.anthropic.com/v1" },
-  { label: "OpenRouter", value: "openrouter", baseUrl: "https://openrouter.ai/api/v1" },
-  { label: "Google AI", value: "gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" },
-];
+import { OAI_API_PROVIDERS, AIProvider } from './ai-constants';
 
 export interface ModelConfig {
   name: string;
   enabled: boolean;
-}
-
-export interface AIProvider {
-  id: string;
-  name: string;
-  type: 'openai-compatible' | 'copilot';
-  endpoint?: string;
-  apiKeyEncrypted?: string;
-  model: string;
-  availableModels?: ModelConfig[];
-  customHeaders?: Record<string, string>;
-  autoCORSFix?: boolean;
-  isDefault: boolean;
-  createdAt: number;
-  updatedAt: number;
 }
 
 export class SettingsAI {
@@ -230,6 +200,31 @@ export class SettingsAI {
       // Re-use existing modal HTML structure, just return it as string
       // Just copying the template from previous version but ensuring it's available for Providers tab
       return `
+        <style>
+          .provider-icon svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+          }
+          .custom-select .select-items {
+            /* Custom Scrollbar for dropdown */
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-color) transparent;
+          }
+          .custom-select .select-items::-webkit-scrollbar {
+            width: 6px;
+          }
+          .custom-select .select-items::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          .custom-select .select-items::-webkit-scrollbar-thumb {
+            background-color: var(--border-color);
+            border-radius: 3px;
+          }
+          .select-item:hover {
+            background-color: var(--bg-hover);
+          }
+        </style>
          <!-- Provider Form Modal -->
         <div class="modal hidden" id="provider-modal" style="z-index: 1050;">
           <div class="modal-content" style="width: 600px; max-height: 90vh;">
@@ -241,18 +236,19 @@ export class SettingsAI {
             <div class="modal-body">
               <div class="form-group" id="provider-preset-group">
                 <label for="provider-preset">Preset</label>
-                <div class="custom-select" id="provider-preset-select">
-                  <div class="select-selected">
-                    <div class="selected-content">
-                      <span class="provider-icon">${ICONS.custom || ICONS.default}</span>
+                <div class="custom-select" id="provider-preset-select" style="position: relative;">
+                  <div class="select-selected" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); cursor: pointer;">
+                    <div class="selected-content" style="display: flex; align-items: center; gap: 8px;">
+                      <span class="provider-icon" style="width: 20px; height: 20px; display: flex;">${ICONS.custom || ICONS.default}</span>
                       <span class="provider-label">Custom</span>
                     </div>
                   </div>
-                  <div class="select-items select-hide">
+                  <div class="select-items select-hide" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 99; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); max-height: 300px; overflow-y: auto; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); margin-top: 4px;">
                     ${OAI_API_PROVIDERS.map(p => `
-                      <div class="select-item" data-value="${p.value}" data-url="${p.baseUrl}" data-label="${p.label}">
-                        <span class="provider-icon">${ICONS[p.value] || ICONS.default}</span>
-                        <span class="provider-label">${p.label}</span>
+                      <div class="select-item" data-value="${p.value}" data-url="${p.baseUrl}" data-label="${p.label}" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border-color-subtle);">
+                         <span class="provider-icon" style="width: 20px; height: 20px; display: flex; color: var(--text-muted);">${ICONS[p.value] || ICONS.default}</span>
+                         <span class="provider-label" style="font-weight: 500;">${p.label}</span>
+                         ${p.baseUrl ? `<span style="margin-left: auto; font-size: 10px; color: var(--text-muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${new URL(p.baseUrl).hostname}</span>` : ''}
                       </div>
                     `).join('')}
                   </div>
@@ -287,14 +283,14 @@ export class SettingsAI {
                  <div class="flex-grow">
                    <label for="provider-model">Model</label>
                    <div class="flex-row" style="gap: 4px;">
-                     <div class="model-picker settings-model-picker flex-grow" id="settings-model-picker">
-                       <button class="model-picker-trigger" id="settings-model-trigger" type="button">
+                     <div class="model-picker settings-model-picker flex-grow" id="settings-model-picker" style="position: relative;">
+                       <button class="model-picker-trigger" id="settings-model-trigger" type="button" style="width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary);">
                          <span class="model-picker-label" id="settings-model-label">Select model...</span>
                          <svg class="model-picker-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                            <polyline points="6 9 12 15 18 9"></polyline>
                          </svg>
                        </button>
-                       <div class="model-picker-list hidden" id="settings-model-list"></div>
+                       <div class="model-picker-list hidden" id="settings-model-list" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); max-height: 200px; overflow-y: auto; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); margin-top: 4px;"></div>
                      </div>
                      <button class="btn btn-sm btn-secondary" id="manage-models-btn" title="Manage Models">
                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -533,62 +529,107 @@ export class SettingsAI {
         }
     }, { signal });
 
-    // Custom Preset Selection Logic
+    // Custom Preset Selection Logic (Portal Implementation)
     const customSelect = document.querySelector('.custom-select');
-    const selectedDiv = customSelect?.querySelector('.select-selected');
-    const itemsDiv = customSelect?.querySelector('.select-items');
+    const selectedDiv = customSelect?.querySelector('.select-selected') as HTMLElement;
+    const itemsDivSource = customSelect?.querySelector('.select-items') as HTMLElement;
     
-    if (customSelect && selectedDiv && itemsDiv) {
+    if (customSelect && selectedDiv && itemsDivSource) {
       // Toggle dropdown
       selectedDiv.addEventListener('click', (e) => {
         e.stopPropagation();
-        itemsDiv.classList.toggle('select-hide');
-        selectedDiv.classList.toggle('select-arrow-active');
+        
+        // Check if floating dropdown already exists
+        const existingFloat = document.getElementById('floating-select-items');
+        if (existingFloat) {
+            existingFloat.remove();
+            selectedDiv.classList.remove('select-arrow-active');
+            return;
+        }
+
+        // Create Portal
+        const rect = customSelect.getBoundingClientRect();
+        const floatingDiv = itemsDivSource.cloneNode(true) as HTMLElement;
+        floatingDiv.id = 'floating-select-items';
+        floatingDiv.classList.remove('select-hide');
+        floatingDiv.style.position = 'fixed';
+        floatingDiv.style.top = `${rect.bottom + 4}px`;
+        floatingDiv.style.left = `${rect.left}px`;
+        floatingDiv.style.width = `${rect.width}px`;
+        floatingDiv.style.zIndex = '9999';
+        floatingDiv.style.maxHeight = '300px'; 
+        // Ensure styling carries over if computed styles are missed, though inline styles should work
+        
+        document.body.appendChild(floatingDiv);
+        selectedDiv.classList.add('select-arrow-active');
+
+        // Handle item selection on the floated element
+        floatingDiv.querySelectorAll('.select-item').forEach(item => {
+          item.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            const target = ev.currentTarget as HTMLElement;
+            const value = target.dataset.value;
+            const url = target.dataset.url;
+            const label = target.dataset.label;
+            const icon = target.querySelector('.provider-icon')?.innerHTML;
+
+            if (value && icon && label) {
+               // Update selected view
+               const selectedContent = selectedDiv.querySelector('.selected-content');
+               if (selectedContent) {
+                  selectedContent.innerHTML = `<span class="provider-icon" style="width: 20px; height: 20px; display: flex;">${icon}</span><span class="provider-label">${label}</span>`;
+               }
+               // Update hidden input
+               (document.getElementById('provider-preset-value') as HTMLInputElement).value = value;
+               
+               // Logic to fill fields...
+               const nameInput = document.getElementById('provider-name') as HTMLInputElement;
+               const endpointInput = document.getElementById('provider-endpoint') as HTMLInputElement;
+               if (url) endpointInput.value = url;
+               const currentName = nameInput.value;
+               const isPresetName = OAI_API_PROVIDERS.some(p => p.label === currentName) || !currentName;
+               if (label && isPresetName) {
+                 nameInput.value = label;
+               }
+            }
+            // Close
+            floatingDiv.remove();
+            selectedDiv.classList.remove('select-arrow-active');
+          });
+          
+          // Hover Effects manual since :hover might assume different context (though fixed should work)
+          (item as HTMLElement).onmouseover = () => (item as HTMLElement).style.backgroundColor = 'var(--bg-hover)';
+          (item as HTMLElement).onmouseout = () => (item as HTMLElement).style.backgroundColor = 'transparent';
+        });
+        
+        // Adjust position if offscreen (basic)
+        const floatRect = floatingDiv.getBoundingClientRect();
+        if (floatRect.bottom > window.innerHeight) {
+            floatingDiv.style.top = `${rect.top - floatRect.height - 4}px`;
+        }
+
       }, { signal });
-
-      // Handle item selection
-      customSelect.querySelectorAll('.select-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const target = e.currentTarget as HTMLElement;
-          const value = target.dataset.value;
-          const url = target.dataset.url;
-          const label = target.dataset.label;
-          const icon = target.querySelector('.provider-icon')?.innerHTML;
-
-          if (value && icon && label) {
-            // Update selected view
-            const selectedContent = selectedDiv.querySelector('.selected-content');
-            if (selectedContent) {
-               selectedContent.innerHTML = `<span class="provider-icon">${icon}</span><span class="provider-label">${label}</span>`;
-            }
-
-            // Update hidden input
-            (document.getElementById('provider-preset-value') as HTMLInputElement).value = value;
-
-            // Fill form fields
-            const nameInput = document.getElementById('provider-name') as HTMLInputElement;
-            const endpointInput = document.getElementById('provider-endpoint') as HTMLInputElement;
-
-            if (url) endpointInput.value = url;
-            if (label && (!nameInput.value || OAI_API_PROVIDERS.some(p => p.label === nameInput.value))) {
-              nameInput.value = label;
-            }
-          }
-
-          // Close dropdown
-          itemsDiv.classList.add('select-hide');
-          selectedDiv.classList.remove('select-arrow-active');
-        }, { signal });
-      });
 
       // Close when clicking outside
       document.addEventListener('click', (e) => {
-        if (!customSelect.contains(e.target as Node)) {
-          itemsDiv.classList.add('select-hide');
-          selectedDiv.classList.remove('select-arrow-active');
+        const floatingDiv = document.getElementById('floating-select-items');
+        if (floatingDiv && !selectedDiv.contains(e.target as Node) && !floatingDiv.contains(e.target as Node)) {
+             floatingDiv.remove();
+             selectedDiv.classList.remove('select-arrow-active');
         }
       }, { signal });
+      
+      // Cleanup on modal close or unmount
+      this.abortController.signal.addEventListener('abort', () => {
+           document.getElementById('floating-select-items')?.remove();
+      });
+      // Also listen to close-form-btn directly to be safe? listener above handles logic but cleaning floating is crucial
+      document.getElementById('close-form-btn')?.addEventListener('click', () => {
+           document.getElementById('floating-select-items')?.remove();
+      });
+      document.getElementById('cancel-form-btn')?.addEventListener('click', () => {
+           document.getElementById('floating-select-items')?.remove();
+      });
     }
 
     document.getElementById('add-header-btn')?.addEventListener('click', (e) => {
@@ -847,6 +888,12 @@ export class SettingsAI {
       item.className = 'model-picker-item';
       item.dataset.model = model.name;
       item.textContent = model.name;
+      item.style.padding = '8px 12px';
+      item.style.cursor = 'pointer';
+      item.style.borderBottom = '1px solid var(--border-color-subtle)';
+      item.onmouseover = () => item.style.background = 'var(--bg-hover)';
+      item.onmouseout = () => item.style.background = 'transparent';
+      
       item.addEventListener('click', (e) => {
         e.stopPropagation();
         this.selectSettingsModel(model.name);
@@ -879,6 +926,10 @@ export class SettingsAI {
   }
 
   private async showProviderForm(provider?: AIProvider): Promise<void> {
+    console.log('showProviderForm called');
+    console.log('OAI_API_PROVIDERS count:', OAI_API_PROVIDERS.length);
+    console.log('OAI_API_PROVIDERS:', OAI_API_PROVIDERS);
+    
     const form = document.getElementById('provider-modal');
     const title = document.getElementById('form-title');
     const presetGroup = document.getElementById('provider-preset-group');

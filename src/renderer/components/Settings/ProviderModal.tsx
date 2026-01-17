@@ -1,29 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Modal } from '../ui/Modal';
-import { RefreshCw, Check, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Check, AlertTriangle, ChevronDown } from 'lucide-react';
 import { clsx } from 'clsx';
-
-export interface AIProvider {
-  id: string;
-  name: string;
-  type: 'openai-compatible' | 'copilot';
-  endpoint?: string;
-  apiKey?: string; // Decrypted for UI
-  apiKeyEncrypted?: string;
-  model: string;
-  availableModels?: string[];
-  customHeaders?: Record<string, string>;
-  autoCORSFix?: boolean;
-  isDefault: boolean;
-}
-
-export const OAI_API_PROVIDERS = [
-  { label: "OpenAI", value: "openai", baseUrl: "https://api.openai.com/v1" },
-  { label: "Ollama", value: "ollama", baseUrl: "http://localhost:11434/v1" },
-  { label: "DeepSeek", value: "deepseek", baseUrl: "https://api.deepseek.com" },
-  { label: "Anthropic (Claude)", value: "anthropic", baseUrl: "https://api.anthropic.com/v1" },
-  { label: "Custom", value: "custom", baseUrl: "" },
-];
+// Import icons from the correct path
+import { ICONS } from '../../settings/icons';
+import { OAI_API_PROVIDERS, AIProvider } from '../../settings/ai-constants';
 
 interface ProviderModalProps {
   isOpen: boolean;
@@ -49,6 +31,12 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
   const [preset, setPreset] = useState('custom');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success?: boolean; error?: string; models?: string[] } | null>(null);
+  
+  // Custom Select State
+  const [isPresetOpen, setIsPresetOpen] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+  const presetRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
      // Try to match endpoint to preset
@@ -59,19 +47,58 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
      }
   }, [initialData]);
 
+  // Click outside to close preset dropdown
+  useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+          const target = event.target as Node;
+          const isInsideTrigger = presetRef.current?.contains(target);
+          const isInsideDropdown = dropdownRef.current?.contains(target);
+
+          if (!isInsideTrigger && !isInsideDropdown) {
+              setIsPresetOpen(false);
+          }
+      };
+      
+      if (isPresetOpen) {
+          document.addEventListener('mousedown', handleClickOutside);
+          // Also update coords on scroll/resize ideally, or just close
+          const handleResize = () => setIsPresetOpen(false);
+          window.addEventListener('resize', handleResize);
+          return () => {
+              document.removeEventListener('mousedown', handleClickOutside);
+              window.removeEventListener('resize', handleResize);
+          };
+      }
+  }, [isPresetOpen]);
+
   const handleChange = (field: string, value: any) => {
       setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handlePresetChange = (value: string) => {
-      setPreset(value);
-      const found = OAI_API_PROVIDERS.find(p => p.value === value);
-      if (found && value !== 'custom') {
+  const handlePresetSelect = (provider: typeof OAI_API_PROVIDERS[0]) => {
+      setPreset(provider.value);
+      setIsPresetOpen(false);
+      
+      if (provider.value !== 'custom') {
           setFormData(prev => ({ 
               ...prev, 
-              endpoint: found.baseUrl,
-              name: prev.name || found.label // Auto-fill name if empty
+              endpoint: provider.baseUrl,
+              name: prev.name || provider.label // Auto-fill name if empty
           }));
+      }
+  };
+  
+  const togglePreset = () => {
+      if (!isPresetOpen && presetRef.current) {
+          const rect = presetRef.current.getBoundingClientRect();
+          setCoords({
+              top: rect.bottom + window.scrollY + 4,
+              left: rect.left + window.scrollX,
+              width: rect.width
+          });
+          setIsPresetOpen(true);
+      } else {
+          setIsPresetOpen(false);
       }
   };
 
@@ -100,22 +127,60 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
       await onSave(formData);
   };
 
+  const selectedPreset = OAI_API_PROVIDERS.find(p => p.value === preset) || OAI_API_PROVIDERS[0];
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={initialData?.id ? 'Edit Provider' : 'Add Provider'} width="max-w-xl">
        <form onSubmit={handleSubmit} className="p-6 space-y-4">
            
-           {/* Preset Selector */}
-           <div>
+           {/* Custom Preset Selector */}
+           <div className="relative" ref={presetRef}>
                <label className="block text-sm font-medium text-gray-300 mb-1">Provider Preset</label>
-               <select 
-                  value={preset} 
-                  onChange={(e) => handlePresetChange(e.target.value)}
-                  className="w-full bg-background border border-border rounded-lg p-2.5 text-sm"
+               <button
+                  type="button"
+                  onClick={togglePreset}
+                  className="w-full bg-background border border-border rounded-lg p-2.5 text-sm flex items-center justify-between hover:border-gray-500 transition-colors"
                >
-                   {OAI_API_PROVIDERS.map(p => (
-                       <option key={p.value} value={p.value}>{p.label}</option>
-                   ))}
-               </select>
+                   <div className="flex items-center gap-2">
+                       <div 
+                           className="w-5 h-5 flex items-center justify-center text-gray-400"
+                           dangerouslySetInnerHTML={{ __html: ICONS[selectedPreset.value] || ICONS.default }} 
+                       />
+                       <span>{selectedPreset.label}</span>
+                   </div>
+                   <ChevronDown size={16} className={clsx("text-gray-500 transition-transform", isPresetOpen ? "rotate-180" : "")} />
+               </button>
+
+               {/* Dropdown Menu Portal */}
+               {isPresetOpen && createPortal(
+                   <div 
+                       ref={dropdownRef}
+                       style={{ 
+                           top: coords.top, 
+                           left: coords.left, 
+                           width: coords.width,
+                           maxHeight: '300px'
+                       }}
+                       className="fixed z-[9999] bg-surface border border-border rounded-lg shadow-xl overflow-y-auto"
+                   >
+                       {OAI_API_PROVIDERS.map(p => (
+                           <button
+                               key={p.value}
+                               type="button"
+                               onClick={() => handlePresetSelect(p)}
+                               className="w-full p-2.5 text-left text-sm hover:bg-white/5 flex items-center gap-2 transition-colors border-b border-white/5 last:border-0"
+                           >
+                               <div 
+                                   className="w-5 h-5 flex items-center justify-center text-gray-400"
+                                   dangerouslySetInnerHTML={{ __html: ICONS[p.value] || ICONS.default }} 
+                               />
+                               <span className="font-medium">{p.label}</span>
+                               {p.baseUrl && <span className="text-xs text-gray-500 ml-auto truncate max-w-[150px]">{new URL(p.baseUrl).hostname}</span>}
+                           </button>
+                       ))}
+                   </div>,
+                   document.body
+               )}
            </div>
 
            <div className="grid grid-cols-2 gap-4">
