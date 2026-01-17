@@ -12,8 +12,16 @@ export default defineConfig({
     outDir: path.join(__dirname, 'dist/renderer'),
     emptyOutDir: true,
     target: 'chrome100', // Electron uses Chromium
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       input: path.join(__dirname, 'src/renderer/index.html'),
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            return 'vendor';
+          }
+        },
+      },
     },
   },
   resolve: {
