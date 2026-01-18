@@ -7,9 +7,12 @@ import { AIProvider, OAI_API_PROVIDERS } from '../../settings/ai-constants';
 // Mock ipc invoke
 const invoke = window.electron?.invoke || (async () => {});
 
+import { CopilotAuthModal } from './CopilotAuthModal';
+
 export function AIProviders() {
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCopilotModalOpen, setIsCopilotModalOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<AIProvider | undefined>(undefined);
   const [managingModelsProvider, setManagingModelsProvider] = useState<AIProvider | undefined>(undefined);
   const [isCryptoUnlocked, setIsCryptoUnlocked] = useState(false);
@@ -88,12 +91,21 @@ export function AIProviders() {
             <h3 className="text-xl font-semibold">AI Providers</h3>
             <p className="text-sm text-gray-400 mt-1">Manage API connections for LLMs.</p>
         </div>
-        <button 
-          onClick={openAdd}
-          className="flex items-center gap-2 px-3 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm transition-colors"
-        >
-          <Plus size={16} /> Add Provider
-        </button>
+        <div className="flex gap-2">
+             <button 
+                onClick={() => setIsCopilotModalOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-surface hover:bg-surface-light border border-border text-gray-200 rounded-lg text-sm transition-colors"
+                title="Login with GitHub Copilot"
+             >
+                <div className="w-4 h-4 rounded-full bg-white text-black flex items-center justify-center font-bold text-[10px]">G</div> Add Copilot
+             </button>
+             <button 
+                onClick={openAdd}
+                className="flex items-center gap-2 px-3 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm transition-colors"
+             >
+                <Plus size={16} /> Add Provider
+             </button>
+        </div>
       </div>
 
       <div className="grid gap-4">
@@ -158,6 +170,26 @@ export function AIProviders() {
               onClose={() => setManagingModelsProvider(undefined)}
               provider={managingModelsProvider}
               onSave={handleModelSave}
+          />
+      )}
+
+      {isCopilotModalOpen && (
+          <CopilotAuthModal 
+             isOpen={isCopilotModalOpen}
+             onClose={() => setIsCopilotModalOpen(false)}
+             onSuccess={async (token) => {
+                 await invoke('ai:add-provider', {
+                     name: 'GitHub Copilot',
+                     type: 'copilot', // MATCHES DB CONSTRAINT
+                     apiKey: token, 
+                     model: 'gpt-4', // Default model
+                     availableModels: ['gpt-4', 'gpt-3.5-turbo'], // Will likely be fetched later
+                     endpoint: 'https://api.githubcopilot.com', // Base endpoint
+                     isDefault: true
+                 });
+                 window.dispatchEvent(new Event('ai-providers-updated'));
+                 loadProviders();
+             }}
           />
       )}
     </div>

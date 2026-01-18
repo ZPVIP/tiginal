@@ -11,6 +11,9 @@ interface AIProvider {
   model: string;
 }
 
+
+import { getCopilotToken } from './services/ai/CopilotAuthService';
+
 /**
  * Setup Chat-related IPC handlers
  */
@@ -183,13 +186,38 @@ async function streamAIAPI(
     ...customHeaders
   };
 
-  if (apiKey) {
+  if (type === 'copilot' && apiKey) {
+      // If endpoint is missing or is the default OpenAI endpoint, use the official Copilot endpoint.
+      // We check for 'api.openai.com' to catch the default value often set by the UI.
+      // We DO NOT unconditionally set this, because we want to allow custom endpoints for GitHub Enterprise.
+      if (!endpoint || endpoint.includes('api.openai.com')) {
+           endpoint = 'https://api.githubcopilot.com'; 
+      }
+
+      try {
+          // Exchange OAuth token for API token
+          const copilotToken = await getCopilotToken(apiKey);
+          headers['Authorization'] = `Bearer ${copilotToken}`;
+          // Add required Copilot headers
+          headers['Authorization'] = `Bearer ${copilotToken}`;
+          // Add required Copilot headers to match opencode-copilot-auth
+          headers['Copilot-Integration-Id'] = 'vscode-chat';
+          headers['Editor-Version'] = 'vscode/1.107.0'; 
+          headers['Editor-Plugin-Version'] = 'copilot-chat/0.35.0';
+          headers['User-Agent'] = 'GitHubCopilotChat/0.35.0'; 
+          headers['Openai-Intent'] = 'conversation-edits';
+      } catch (err) {
+          console.error("Copilot Token Exchange Failed", err);
+          throw err;
+      }
+  } else if (apiKey) {
     headers['Authorization'] = `Bearer ${apiKey}`;
   }
 
   // Auto CORS fix simulation
   if (autoCORSFix) {
     try {
+      // For Copilot, we might not need this or it might break it, but let's keep it safe
       const url = new URL(endpoint);
       headers['Origin'] = url.origin;
     } catch (e) {
@@ -224,7 +252,50 @@ async function streamAIAPI(
   if (!response.ok) {
     const errorText = await response.text();
     console.error(`AI API Error: ${response.status} - ${errorText}`);
-    throw new Error(`API error: ${response.status} - ${errorText}`);
+
+    // Handle specific Copilot "model not supported" error
+    if (type === 'copilot' && response.status === 400) {
+        try {
+            const errorJson = JSON.parse(errorText);
+            if (errorJson.error?.code === 'model_not_supported') {
+                 const friendlyMessage = 
+                    ` **GitHub Copilot Error: Model Not Supported**\n` +
+                    `\n` +
+                    `The requested model is not available. This is usually because:\n` +
+                    `\n` +
+                    `- You may not have a GitHub Copilot Pro subscription.\n` +
+                    `- Your organization's policy settings might be restricting this model.\n` +
+                    `\n` +
+                    `Please check your settings: [https://github.com/settings/copilot/features](https://github.com/settings/copilot/features)`;
+                 
+                 onChunk({ content: friendlyMessage });
+                 return;
+            }
+        } catch (e) {
+            // ignore JSON parse error, throw original text
+        }
+    }
+
+    // Handle generic errors
+    let errorMessage = errorText;
+    try {
+        const errorJson = JSON.parse(errorText);
+        if (errorJson.error?.message) {
+            errorMessage = errorJson.error.message;
+        } else if (errorJson.error) {
+            errorMessage = JSON.stringify(errorJson.error); 
+        }
+    } catch (e) {
+        // use raw text
+    }
+
+    const genericErrorMsg = 
+        `> **AI Provider Error (${response.status})**\n` +
+        `>\n` +
+        `> ${errorMessage}`;
+
+    onChunk({ content: genericErrorMsg });
+    return;
   }
 
   if (!response.body) {

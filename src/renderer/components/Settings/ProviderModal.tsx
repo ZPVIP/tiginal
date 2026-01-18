@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Modal } from '../ui/Modal';
-import { RefreshCw, Check, AlertTriangle, ChevronDown } from 'lucide-react';
+import { RefreshCw, Check, AlertTriangle, ChevronDown, Eye, EyeOff } from 'lucide-react';
 import { clsx } from 'clsx';
 // Import icons from the correct path
 import { ICONS } from '../../settings/icons';
@@ -31,6 +31,7 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
   const [preset, setPreset] = useState('custom');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success?: boolean; error?: string; models?: string[] } | null>(null);
+  const [showApiKey, setShowApiKey] = useState(false);
   
   // Custom Select State
   const [isPresetOpen, setIsPresetOpen] = useState(false);
@@ -107,6 +108,7 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
       setTestResult(null);
       try {
           const res = await invoke('ai:test-connection', {
+              id: formData.id, // Pass ID for fallback lookup
               type: formData.type,
               endpoint: formData.endpoint,
               apiKey: formData.apiKey,
@@ -257,16 +259,25 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
                />
            </div>
 
-           <div>
-               <label className="block text-sm font-medium text-gray-300 mb-1">API Key</label>
-               <input 
-                  type="password" 
-                  value={formData.apiKey}
-                  onChange={(e) => handleChange('apiKey', e.target.value)}
-                  className="w-full bg-background border border-border rounded-lg p-2.5 text-sm font-mono"
-                  placeholder="sk-..."
-               />
-           </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">API Key</label>
+                <div className="relative">
+                    <input 
+                       type={showApiKey ? "text" : "password"}
+                       value={formData.apiKey}
+                       onChange={(e) => handleChange('apiKey', e.target.value)}
+                       className="w-full bg-background border border-border rounded-lg p-2.5 pr-10 text-sm font-mono"
+                       placeholder="sk-..."
+                    />
+                    <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                    >
+                        {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                </div>
+            </div>
 
            <div className="flex items-center gap-4 py-2">
                <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">

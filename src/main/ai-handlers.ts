@@ -256,66 +256,169 @@ export function setupAIHandlers(): void {
   });
   // Test connection and fetch models
   ipcMain.handle('ai:test-connection', async (_event, provider: { 
+    id?: string;
     type: string; 
     endpoint: string; 
     apiKey?: string;
     customHeaders?: Record<string, string>;
     autoCORSFix?: boolean;
   }): Promise<{ success: boolean; error?: string; models?: string[] }> => {
-    if (provider.type !== 'openai-compatible') {
-      return { success: false, error: 'Only OpenAI-compatible providers support testing currently' };
+    
+    // Handle OpenAI Compatible & Copilot
+    if (provider.type !== 'openai-compatible' && provider.type !== 'copilot') {
+      return { success: false, error: 'Provider type not supported for testing' };
     }
 
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-
-      const headers: Record<string, string> = {
+      
+      let endpoint = provider.endpoint;
+      let headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...provider.customHeaders
       };
 
-      if (provider.apiKey) {
-        headers['Authorization'] = `Bearer ${provider.apiKey}`;
+      // -- Resolve API Key --
+      let finalApiKey = provider.apiKey;
+      // If no key provided but we have an ID, try to load it from DB
+      if (!finalApiKey && provider.id) {
+          const db = getDatabase().getDb();
+          const crypto = getCrypto();
+          const row = db.prepare('SELECT api_key_encrypted FROM ai_providers WHERE id = ?').get(provider.id) as { api_key_encrypted: string } | undefined;
+          
+          if (row?.api_key_encrypted && crypto.isUnlocked()) {
+              try {
+                  finalApiKey = crypto.decrypt(row.api_key_encrypted);
+              } catch (e) {
+                  console.error("Failed to decrypt key for test-connection", e);
+              }
+          }
       }
       
+      // -- Copilot Specific Logic --
+      if (provider.type === 'copilot') {
+          if (!finalApiKey) throw new Error("No API Key provided");
+          
+          // 1. Get Token using our shared service
+          const { getCopilotToken } = require('./services/ai/CopilotAuthService');
+          const copilotToken = await getCopilotToken(finalApiKey);
+          
+          headers['Authorization'] = `Bearer ${copilotToken}`;
+          // Copilot Headers
+          headers['Copilot-Integration-Id'] = 'vscode-chat';
+          headers['Editor-Version'] = 'vscode/1.107.0'; 
+          headers['Editor-Plugin-Version'] = 'copilot-chat/0.35.0';
+          headers['User-Agent'] = 'GitHubCopilotChat/0.35.0'; 
+          headers['Openai-Intent'] = 'conversation-panel'; // Changed from edits to panel for better model access
+          headers['x-github-api-version'] = '2025-04-01'; // Specific Copilot API version
+          
+      // 2. Fetch Models
+          // Standard OpenAI endpoint is /models. Copilot usually honors this on their proxy.
+          // Ensure endpoint is correct. If default or empty, use standard Copilot.
+          if (!endpoint || endpoint === 'https://api.openai.com/v1') {
+              endpoint = 'https://api.githubcopilot.com'; 
+          }
+      } else {
+         // Standard OpenAI Logic
+         if (finalApiKey) {
+           headers['Authorization'] = `Bearer ${finalApiKey}`;
+         }
+      }
+
       // Auto CORS fix simulation (setting Origin header)
       if (provider.autoCORSFix) {
         try {
-          const url = new URL(provider.endpoint);
+          const url = new URL(endpoint);
           headers['Origin'] = url.origin;
         } catch (e) {
           // invalid url, ignore
         }
       }
 
-      const response = await fetch(`${provider.endpoint}/models`, {
-        method: 'GET',
-        headers,
-        signal: controller.signal,
-      });
+      let models: string[] = [];
+      try {
+          const response = await fetch(`${endpoint}/models`, {
+            method: 'GET',
+            headers,
+            signal: controller.signal,
+          });
 
+          if (response.ok) {
+              const data = await response.json() as { data: Array<{ id: string }> };
+              if (Array.isArray(data.data)) {
+                  models = data.data.map(m => m.id).sort();
+              }
+          }
+      } catch (fetchErr) {
+          console.warn("Failed to fetch models dynamically:", fetchErr);
+      }
+      
       clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        throw new Error(`API returned ${response.status}: ${response.statusText}`);
+      // -- Copilot Fallback & Merging --
+      if (provider.type === 'copilot') {
+          // Known Copilot Models (updated list)
+          const fallbackModels = [
+              'gpt-4',
+              'gpt-3.5-turbo',
+              'o1-preview',
+              'o1-mini',
+              'claude-3.5-sonnet'
+          ];
+          
+          // Merge with fetched models, ensuring no duplicates
+          const uniqueModels = new Set([...models, ...fallbackModels]);
+          models = Array.from(uniqueModels).sort();
       }
 
-      const data = await response.json() as { data: Array<{ id: string }> };
-      
-      // Extract model IDs
-      const models = Array.isArray(data.data) 
-        ? data.data.map(m => m.id).sort()
-        : [];
-
       if (models.length === 0) {
-          // Fallback if data is not in standard OpenAI format or empty
           return { success: true, models: [] }; 
       }
 
       return { success: true, models };
     } catch (error) {
+       console.error("Test connection failed:", error);
        return { success: false, error: (error as Error).message };
     }
+  });
+
+  // Proxy for GitHub Device Code (fixes CORS in renderer)
+  ipcMain.handle('ai:github-auth-device-code', async (_event, clientId: string): Promise<any> => {
+      const response = await fetch('https://github.com/login/device/code', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          scope: 'read:user'
+        })
+      });
+
+      if (!response.ok) {
+          throw new Error(`GitHub API Error: ${response.status} ${await response.text()}`);
+      }
+      return await response.json();
+  });
+
+  // Proxy for GitHub Poll Token (fixes CORS in renderer)
+  ipcMain.handle('ai:github-auth-poll-token', async (_event, { clientId, deviceCode }: { clientId: string, deviceCode: string }): Promise<any> => {
+      const response = await fetch('https://github.com/login/oauth/access_token', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            client_id: clientId,
+            device_code: deviceCode,
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+          })
+        });
+
+        const data = await response.json();
+        return data; // Return raw data, let frontend handle logic
   });
 }

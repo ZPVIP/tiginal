@@ -171,6 +171,15 @@ export function MessageBubble({ role, content, reasoning, images }: MessageProps
                              {children}
                            </code>
                          )
+                       },
+                       ul({node, className, children, ...props}: any) {
+                         return <ul className={clsx(className, "list-disc pl-5 my-2 space-y-1")} {...props}>{children}</ul>
+                       },
+                       ol({node, className, children, ...props}: any) {
+                         return <ol className={clsx(className, "list-decimal pl-5 my-2 space-y-1")} {...props}>{children}</ol>
+                       },
+                       li({node, className, children, ...props}: any) {
+                         return <li className={clsx(className, "leading-relaxed")} {...props}>{children}</li>
                        }
                    }}
                 >
