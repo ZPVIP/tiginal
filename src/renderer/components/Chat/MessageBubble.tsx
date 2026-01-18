@@ -180,6 +180,18 @@ export function MessageBubble({ role, content, reasoning, images }: MessageProps
                        },
                        li({node, className, children, ...props}: any) {
                          return <li className={clsx(className, "leading-relaxed")} {...props}>{children}</li>
+                       },
+                       a({node, className, children, ...props}: any) {
+                         return (
+                           <a 
+                             className={clsx(className, "text-blue-500 hover:text-blue-400 underline")} 
+                             target="_blank" 
+                             rel="noopener noreferrer" 
+                             {...props}
+                           >
+                             {children}
+                           </a>
+                         )
                        }
                    }}
                 >

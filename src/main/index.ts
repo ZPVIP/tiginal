@@ -90,6 +90,16 @@ function createWindow(): void {
   // __dirname is dist/main/main/
   mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'));
 
+  // Open external links in default browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // Check if it's http/https
+    if (url.startsWith('http:') || url.startsWith('https:')) {
+      require('electron').shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
