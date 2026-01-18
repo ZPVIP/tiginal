@@ -39,20 +39,20 @@ export function CommandInput({ onSend }: CommandInputProps) {
   };
 
   return (
-    <div className="border-t border-border bg-[#1a1a1a] p-2 flex gap-2 items-end">
+    <div className="border-t border-border bg-background p-2 flex gap-2 items-end">
         <textarea
           ref={textareaRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1 w-full bg-[#262626] text-gray-200 text-sm font-mono rounded-md py-2 px-2 outline-none resize-none border border-transparent overflow-hidden min-h-[36px]"
+          className="flex-1 w-full bg-surface text-text-main text-sm font-mono rounded-md py-2 px-2 outline-none resize-none border border-border placeholder-text-muted overflow-hidden min-h-[36px]"
           placeholder="Enter command..."
           rows={1}
         />
       
       <button 
         onClick={() => handleSend(false)}
-        className="h-[36px] w-[36px] flex items-center justify-center bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+        className="p-2 text-text-muted hover:text-text-main hover:bg-surface-light rounded-lg transition-colors"
         title="Paste to Terminal"
       >
         <Clipboard size={18} />
@@ -60,7 +60,13 @@ export function CommandInput({ onSend }: CommandInputProps) {
 
       <button 
         onClick={() => handleSend(true)}
-        className="h-[36px] w-[36px] flex items-center justify-center bg-primary/20 text-primary hover:bg-primary/30 rounded-lg transition-colors"
+        disabled={!value}
+        className={clsx(
+            "p-2 rounded-lg transition-colors flex items-center justify-center gap-2",
+            !value
+               ? "bg-surface/50 text-text-muted cursor-not-allowed"
+               : "bg-primary text-white hover:opacity-90"
+        )}
         title="Send and Execute"
       >
         <SendHorizontal size={18} />

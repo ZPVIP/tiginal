@@ -36,7 +36,7 @@ export function Settings() {
           {activeTab === 'general' && <GeneralSettings />}
           {activeTab === 'providers' && <AIProviders />}
           {activeTab === 'ssh' && (
-             <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+             <div className="flex flex-col items-center justify-center h-64 text-text-muted">
                 <Shield size={48} className="mb-4 opacity-50" />
                 <p>SSH Keys and Host Config coming soon.</p>
              </div>

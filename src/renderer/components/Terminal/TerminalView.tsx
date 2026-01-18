@@ -206,7 +206,7 @@ export function TerminalView() {
                   title={tab.cwd || 'Terminal'} // Hover shows full path
                   className={clsx(
                       "flex items-center px-2 h-full cursor-pointer transition-colors border-r border-border min-w-[180px] max-w-[180px]", // Increased width
-                      activeTabId === tab.id ? "bg-background text-white font-bold" : "text-gray-400 bg-surface hover:bg-surface/80",
+                      activeTabId === tab.id ? "bg-background text-text-main font-bold" : "text-text-sec bg-surface hover:bg-surface/80 hover:text-text-main",
                       "whitespace-nowrap"
                   )}
                 >
@@ -248,7 +248,7 @@ export function TerminalView() {
       </div>
 
       {/* Terminal Area (Flex Grow) */}
-      <div className="flex-1 relative overflow-hidden bg-[#1a1a1a] p-1 flex flex-col min-h-0">
+      <div className="flex-1 relative overflow-hidden bg-background p-1 flex flex-col min-h-0">
           <div className="flex-1 overflow-hidden relative">
               {tabs.map(tab => (
                   <TerminalInstance
@@ -284,7 +284,7 @@ export function TerminalView() {
       {/* Context Menu */}
       {contextMenu && (
           <div 
-             className="fixed z-50 bg-[#262626] border border-[#404040] shadow-xl text-gray-200 text-xs py-1 rounded w-40"
+             className="fixed z-50 bg-surface border border-border shadow-xl text-primary text-xs py-1 rounded w-40"
              style={{ top: contextMenu.y, left: contextMenu.x }}
              onClick={(e) => e.stopPropagation()} // Prevent closing immediately
           >

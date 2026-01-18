@@ -109,17 +109,17 @@ export function GeneralSettings() {
       
       {/* Security Settings - FIRST */}
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold flex items-center gap-2">
+        <h3 className="text-xl font-semibold flex items-center gap-2 text-text-main">
           <KeyRound className="w-5 h-5 text-yellow-500" />
           Security (Master Key)
         </h3>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-text-muted">
           Manage encryption for your API keys and sensitive data.
         </p>
 
         <div className="bg-surface border border-border rounded-lg p-6">
             <div className="flex items-center justify-between mb-6">
-                <span className="text-sm font-medium text-gray-300">Current Status</span>
+                <span className="text-sm font-medium text-text-sec">Current Status</span>
                 <span className={clsx(
                     "px-2.5 py-0.5 rounded-full text-xs font-medium",
                     isUnlocked ? "bg-green-900 text-green-300" : (isSetupState ? "bg-red-900 text-red-300" : "bg-yellow-900 text-yellow-300")
@@ -130,10 +130,10 @@ export function GeneralSettings() {
 
             {isUnlocked && (
                 <div className="flex items-center justify-between">
-                    <p className="text-sm text-gray-400">Your keys are decrypted and accessible.</p>
+                    <p className="text-sm text-text-muted">Your keys are decrypted and accessible.</p>
                     <button 
                        onClick={handleLock}
-                       className="flex items-center gap-2 px-4 py-2 bg-surface hover:bg-white/5 border border-border rounded-lg transition-colors text-sm"
+                       className="flex items-center gap-2 px-4 py-2 bg-background hover:bg-[var(--tab-hover)] border border-border rounded-lg transition-colors text-sm text-text-main"
                     >
                         <Lock size={14} /> Lock Now
                     </button>
@@ -143,13 +143,13 @@ export function GeneralSettings() {
             {isLockedState && (
                 <div className="flex items-end gap-3">
                     <div className="flex-1">
-                        <label className="block mb-2 text-sm font-medium text-gray-300">Enter Master Password</label>
+                        <label className="block mb-2 text-sm font-medium text-text-sec">Enter Master Password</label>
                         <input 
                            type="password" 
                            value={passwordInput}
                            onChange={(e) => setPasswordInput(e.target.value)}
                            onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
-                           className="bg-background border border-border text-gray-100 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
+                           className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
                            placeholder="••••••••"
                         />
                     </div>
@@ -166,13 +166,13 @@ export function GeneralSettings() {
             {isSetupState && (
                  <div className="flex items-end gap-3">
                     <div className="flex-1">
-                        <label className="block mb-2 text-sm font-medium text-gray-300">Create Master Password</label>
+                        <label className="block mb-2 text-sm font-medium text-text-sec">Create Master Password</label>
                         <input 
                            type="password" 
                            value={passwordInput}
                            onChange={(e) => setPasswordInput(e.target.value)}
                            onKeyDown={(e) => e.key === 'Enter' && handleSetPassword()}
-                           className="bg-background border border-border text-gray-100 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
+                           className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
                            placeholder="Minimum 8 characters..."
                         />
                     </div>
@@ -190,21 +190,21 @@ export function GeneralSettings() {
 
       {/* Search Settings - SECOND */}
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold flex items-center gap-2">
+        <h3 className="text-xl font-semibold flex items-center gap-2 text-text-main">
           <Globe className="w-5 h-5 text-blue-400" />
           Web Search
         </h3>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-text-muted">
           Configure the default search engine used by AI for internet access.
         </p>
 
         <div className="bg-surface border border-border rounded-lg p-6">
            <div className="flex flex-col gap-2 max-w-sm">
-             <label className="text-sm font-medium text-gray-300">Search Engine</label>
+             <label className="text-sm font-medium text-text-sec">Search Engine</label>
              <select 
                value={searchProvider}
                onChange={(e) => handleSearchChange(e.target.value)}
-               className="bg-background border border-border text-gray-100 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
+               className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
              >
                <option value="duckduckgo">DuckDuckGo (Privacy Focused)</option>
                <option value="google">Google</option>
@@ -216,27 +216,27 @@ export function GeneralSettings() {
 
       {/* Date Format Settings - THIRD */}
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold flex items-center gap-2">
+        <h3 className="text-xl font-semibold flex items-center gap-2 text-text-main">
           <Calendar className="w-5 h-5 text-green-400" />
           Date & Time Format
         </h3>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-text-muted">
           Choose how dates and times are displayed throughout the application.
         </p>
 
         <div className="bg-surface border border-border rounded-lg p-6">
            <div className="flex flex-col gap-2 max-w-md">
-             <label className="text-sm font-medium text-gray-300">Display Format</label>
+             <label className="text-sm font-medium text-text-sec">Display Format</label>
              <select 
                value={dateFormat}
                onChange={(e) => handleDateFormatChange(e.target.value)}
-               className="bg-background border border-border text-gray-100 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
+               className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
              >
                {DATE_FORMATS.map(fmt => (
                    <option key={fmt.value} value={fmt.value}>{fmt.label}</option>
                ))}
              </select>
-             <p className="text-xs text-gray-500 mt-1">
+             <p className="text-xs text-text-muted mt-1">
                 Example: {DATE_FORMATS.find(f => f.value === dateFormat)?.example}
              </p>
            </div>
@@ -245,21 +245,21 @@ export function GeneralSettings() {
 
       {/* History Sort Settings - FOURTH */}
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold flex items-center gap-2">
+        <h3 className="text-xl font-semibold flex items-center gap-2 text-text-main">
           <ArrowUpDown className="w-5 h-5 text-purple-400" />
           Chat History Order
         </h3>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-text-muted">
           Choose how chat history is sorted by default.
         </p>
 
         <div className="bg-surface border border-border rounded-lg p-6">
            <div className="flex flex-col gap-2 max-w-sm">
-             <label className="text-sm font-medium text-gray-300">Sort By</label>
+             <label className="text-sm font-medium text-text-sec">Sort By</label>
              <select 
                value={historySort}
                onChange={(e) => handleHistorySortChange(e.target.value)}
-               className="bg-background border border-border text-gray-100 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
+               className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
              >
                {SORT_OPTIONS.map(opt => (
                    <option key={opt.value} value={opt.value}>{opt.label}</option>

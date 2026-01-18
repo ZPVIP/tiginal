@@ -89,12 +89,12 @@ export function AIProviders() {
       <div className="flex items-center justify-between">
         <div>
             <h3 className="text-xl font-semibold">AI Providers</h3>
-            <p className="text-sm text-gray-400 mt-1">Manage API connections for LLMs.</p>
+            <p className="text-sm text-text-muted mt-1">Manage API connections for LLMs.</p>
         </div>
         <div className="flex gap-2">
              <button 
                 onClick={() => setIsCopilotModalOpen(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-surface hover:bg-surface-light border border-border text-gray-200 rounded-lg text-sm transition-colors"
+                className="flex items-center gap-2 px-3 py-2 bg-surface hover:bg-surface-light border border-border text-text-main rounded-lg text-sm transition-colors"
                 title="Login with GitHub Copilot"
              >
                 <div className="w-4 h-4 rounded-full bg-white text-black flex items-center justify-center font-bold text-[10px]">G</div> Add Copilot
@@ -118,10 +118,10 @@ export function AIProviders() {
                     </div>
                     <div>
                         <div className="flex items-center gap-2">
-                             <h4 className="font-medium text-gray-100">{provider.name}</h4>
+                             <h4 className="font-medium text-text-main">{provider.name}</h4>
                              {provider.isDefault && <span className="text-[10px] bg-green-900 text-green-300 px-1.5 rounded uppercase">Default</span>}
                         </div>
-                        <p className="text-xs text-gray-400 mt-0.5">{provider.endpoint || OAI_API_PROVIDERS.find(p => p.value === 'openai')?.baseUrl}</p>
+                        <p className="text-xs text-text-muted mt-0.5">{provider.endpoint || OAI_API_PROVIDERS.find(p => p.value === 'openai')?.baseUrl}</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -133,14 +133,14 @@ export function AIProviders() {
                     </button>
                     <button 
                        onClick={() => setManagingModelsProvider(provider)}
-                       className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                       className="p-2 text-text-muted hover:text-text-main hover:bg-white/10 rounded-lg transition-colors"
                        title="Manage Models"
                     >
                         <DownloadCloud size={16} />
                     </button>
                     <button 
                        onClick={() => handleDelete(provider.id)}
-                       className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                       className="p-2 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
                     >
                         <Trash2 size={16} />
                     </button>
@@ -149,7 +149,7 @@ export function AIProviders() {
         ))}
 
         {providers.length === 0 && (
-            <div className="text-center py-12 text-gray-500 bg-surface/50 rounded-lg border border-dashed border-border">
+            <div className="text-center py-12 text-text-muted bg-surface/50 rounded-lg border border-dashed border-border">
                 No providers configured. Click "Add Provider" to start.
             </div>
         )}

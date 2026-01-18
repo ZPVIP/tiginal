@@ -71,7 +71,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
                         <img src={img} alt="preview" className="h-16 w-16 object-cover rounded-lg border border-border" />
                         <button 
                            onClick={() => setImages(prev => prev.filter((_, i) => i !== idx))}
-                           className="absolute -top-1.5 -right-1.5 bg-background border border-border rounded-full p-0.5 text-gray-400 hover:text-red-400"
+                           className="absolute -top-1.5 -right-1.5 bg-background border border-border rounded-full p-0.5 text-text-muted hover:text-red-400"
                         >
                             <X size={12} />
                         </button>
@@ -99,7 +99,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
                    onClick={() => setUseSearch(!useSearch)}
                    className={clsx(
                        "p-2 rounded-lg transition-colors",
-                       useSearch ? "bg-blue-500/10 text-blue-400" : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+                       useSearch ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
                    )}
                    title="Web Search"
                 >
@@ -108,7 +108,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
                 <div className="h-4 w-[1px] bg-border mx-1" />
                 <button 
                    onClick={() => fileInputRef.current?.click()}
-                   className="p-2 text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-lg transition-colors"
+                   className="p-2 text-text-muted hover:text-text-main hover:bg-surface-light rounded-lg transition-colors"
                    title="Attach Image"
                 >
                     <ImageIcon size={18} />
@@ -129,8 +129,8 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
                className={clsx(
                    "p-2 rounded-lg transition-colors flex items-center gap-2",
                    (!text.trim() && images.length === 0) || disabled
-                      ? "bg-white/5 text-gray-500 cursor-not-allowed"
-                      : "bg-primary text-white hover:bg-blue-600"
+                      ? "bg-surface/50 text-text-muted cursor-not-allowed"
+                      : "bg-primary text-white hover:opacity-90"
                )}
             >
                 <SendHorizontal size={18} />
