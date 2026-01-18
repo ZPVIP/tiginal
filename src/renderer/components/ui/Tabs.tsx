@@ -25,8 +25,8 @@ export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
           className={clsx(
             "relative flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors",
             activeTab === tab.id
-              ? "text-white"
-              : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+              ? "text-text-main"
+              : "text-text-sec hover:text-text-main hover:bg-surface-light"
           )}
         >
           {activeTab === tab.id && (

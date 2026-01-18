@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Tabs } from '../ui/Tabs';
-import { Settings as SettingsIcon, Database, Shield } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Shield, Palette } from 'lucide-react';
 import { GeneralSettings } from './GeneralSettings';
 import { AIProviders } from './AIProviders';
+import { ThemeSettings } from './ThemeSettings';
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState('general');
@@ -11,6 +12,7 @@ export function Settings() {
     { id: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
     { id: 'providers', label: 'AI Providers', icon: <Database size={16} /> },
     { id: 'ssh', label: 'SSH (Coming Soon)', icon: <Shield size={16} /> }, // Placeholder
+    { id: 'theme', label: 'Theme', icon: <Palette size={16} /> },
   ];
 
   return (
@@ -34,11 +36,12 @@ export function Settings() {
           {activeTab === 'general' && <GeneralSettings />}
           {activeTab === 'providers' && <AIProviders />}
           {activeTab === 'ssh' && (
-             <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+             <div className="flex flex-col items-center justify-center h-64 text-text-muted">
                 <Shield size={48} className="mb-4 opacity-50" />
                 <p>SSH Keys and Host Config coming soon.</p>
              </div>
           )}
+          {activeTab === 'theme' && <ThemeSettings />}
         </div>
       </div>
     </div>

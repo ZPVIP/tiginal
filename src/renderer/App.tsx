@@ -49,7 +49,7 @@ export default function App() {
         "p-2 rounded-lg mb-2 transition-colors",
         isActive 
           ? "bg-primary/20 text-primary" 
-          : "text-gray-400 hover:text-gray-100 hover:bg-white/5"
+          : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
       )}
     >
       <Icon size={20} strokeWidth={2} />
@@ -181,7 +181,7 @@ export default function App() {
                     "p-2 rounded-lg mb-2 transition-colors",
                     showChat
                     ? "bg-purple-500/20 text-purple-400" 
-                    : "text-gray-400 hover:text-gray-100 hover:bg-white/5"
+                    : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
                 )}
                 >
                 <MessageSquare size={20} strokeWidth={2} />
