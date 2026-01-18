@@ -127,4 +127,8 @@ export class TerminalManager {
 
     this.terminal.dispose();
   }
+
+  setTheme(theme: any): void { // Using any for ITheme since we didn't import strict type here to avoid conflict, but it matches xterm
+    this.terminal.options.theme = theme;
+  }
 }

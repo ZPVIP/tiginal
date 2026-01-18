@@ -3,13 +3,7 @@ import { Lock, Unlock, Globe, KeyRound, Calendar, ArrowUpDown } from 'lucide-rea
 import { clsx } from 'clsx';
 
 // Interface for IPC calls
-declare global {
-  interface Window {
-    electron?: {
-      invoke(channel: string, ...args: any[]): Promise<any>;
-    };
-  }
-}
+// Interface for IPC calls
 const invoke = window.electron?.invoke || (async () => {}); 
 
 // Date format options

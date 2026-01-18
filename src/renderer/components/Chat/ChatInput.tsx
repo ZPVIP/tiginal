@@ -89,7 +89,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           placeholder="Ask anything..."
           rows={1}
           disabled={disabled}
-          className="w-full bg-transparent border-0 outline-none focus:ring-0 resize-none py-3 px-4 min-h-[50px] max-h-[200px] text-gray-100 placeholder-gray-500"
+          className="w-full bg-transparent border-0 outline-none focus:ring-0 resize-none py-3 px-4 min-h-[50px] max-h-[200px] text-text-main placeholder-text-muted"
         />
 
         {/* Toolbar */}

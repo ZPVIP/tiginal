@@ -3,17 +3,9 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { clsx } from 'clsx';
+import { useTheme } from '../../context/ThemeContext';
 
-// Interface for IPC calls
-declare global {
-  interface Window {
-    electron?: {
-      invoke(channel: string, ...args: any[]): Promise<any>;
-      send(channel: string, ...args: any[]): void;
-      on(channel: string, func: (...args: any[]) => void): () => void; // Returns cleanup
-    };
-  }
-}
+// Interface for IPC calls will be picked up from types/electron.d.ts
 const invoke = window.electron?.invoke || (async () => {});
 const send = window.electron?.send || (() => {});
 
@@ -36,6 +28,7 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const ptyIdRef = useRef<number | null>(null);
+  const { currentTheme } = useTheme(); // Use Theme Context
 
   // Expose methods
   useImperativeHandle(ref, () => ({
@@ -57,6 +50,13 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
     }
   }));
 
+  // Update theme when it changes
+  useEffect(() => {
+    if (xtermRef.current) {
+       xtermRef.current.options.theme = currentTheme.terminal;
+    }
+  }, [currentTheme]);
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -67,30 +67,7 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
       fontSize: 14,
       fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", Menlo, Monaco, "Courier New", monospace',
       lineHeight: 1.2,
-      theme: {
-        background: '#1a1a1a', // Match app bg
-        foreground: '#cdd6f4',
-        cursor: '#f5e0dc',
-        cursorAccent: '#1e1e2e',
-        selectionBackground: '#585b70',
-        selectionForeground: '#cdd6f4',
-        black: '#45475a',
-        red: '#f38ba8',
-        green: '#a6e3a1',
-        yellow: '#f9e2af',
-        blue: '#89b4fa',
-        magenta: '#f5c2e7',
-        cyan: '#94e2d5',
-        white: '#bac2de',
-        brightBlack: '#585b70',
-        brightRed: '#f38ba8',
-        brightGreen: '#a6e3a1',
-        brightYellow: '#f9e2af',
-        brightBlue: '#89b4fa',
-        brightMagenta: '#f5c2e7',
-        brightCyan: '#94e2d5',
-        brightWhite: '#a6adc8',
-      },
+      theme: currentTheme.terminal, // Initial theme
       allowProposedApi: true,
     });
 

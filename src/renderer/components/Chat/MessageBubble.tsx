@@ -59,14 +59,14 @@ function ReasoningBlock({ content }: { content: string }) {
                             const match = /language-(\w+)/.exec(className || '')
                             return !inline && match ? (
                             <div className="relative group/code my-2">
-                                <pre className={clsx(className, "bg-[#0d1117] p-2 rounded-lg overflow-x-auto border border-border")} {...props}>
+                                <pre className={clsx(className, "bg-elevated p-2 rounded-lg overflow-x-auto border border-border text-text-main")} {...props}>
                                     <code className={className} {...props}>
                                     {children}
                                     </code>
                                 </pre>
                             </div>
                             ) : (
-                            <code className={clsx(className, "bg-white/10 px-1 py-0.5 rounded text-pink-300")} {...props}>
+                            <code className={clsx(className, "bg-elevated px-1 py-0.5 rounded text-pink-300")} {...props}>
                                 {children}
                             </code>
                             )
@@ -160,14 +160,14 @@ export function MessageBubble({ role, content, reasoning, images }: MessageProps
                                <div className="absolute right-2 top-2 opacity-0 group-hover/code:opacity-100 transition-opacity">
                                    <div className="text-xs text-gray-400">{match[1]}</div>
                                </div>
-                               <pre className={clsx(className, "bg-[#0d1117] p-4 rounded-lg overflow-x-auto border border-border")} {...props}>
+                               <pre className={clsx(className, "bg-elevated p-4 rounded-lg overflow-x-auto border border-border text-text-main")} {...props}>
                                  <code className={className} {...props}>
                                    {children}
                                  </code>
                                </pre>
                            </div>
                          ) : (
-                           <code className={clsx(className, "bg-white/10 px-1 py-0.5 rounded text-pink-300")} {...props}>
+                           <code className={clsx(className, "bg-elevated px-1 py-0.5 rounded text-pink-300")} {...props}>
                              {children}
                            </code>
                          )

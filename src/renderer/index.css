@@ -1,10 +1,16 @@
 @import "tailwindcss";
 
+/* Theme is managed by tailwind.config.js mapping to CSS variables */
 @theme {
-  --color-background: #1a1a1a;
-  --color-surface: #262626;
-  --color-border: #404040;
-  --color-primary: #3b82f6;
+  --color-background: var(--bg-primary);
+  --color-surface: var(--bg-secondary);
+  --color-elevated: var(--bg-elevated);
+  --color-border: var(--border-color);
+  --color-primary: var(--accent-primary);
+  
+  --color-text-main: var(--text-primary);
+  --color-text-sec: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
 }
 
 @layer base {
