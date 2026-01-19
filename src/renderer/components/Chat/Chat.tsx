@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './Header';
 import { MessageList } from './MessageList';
-import { ChatInput } from './ChatInput';
+import { ChatInput, ChatInputHandle } from './ChatInput';
 import { EmptyState } from './EmptyState';
 import { HistoryPanel } from './HistoryPanel';
 import { AIProvider, ModelConfig } from '../../settings/ai-constants';
@@ -367,6 +367,16 @@ export function Chat() {
   // Determine which messages to show
   const displayMessages = isIncognito ? incognitoMessages : messages;
 
+  // Handle edit message
+  const chatInputRef = React.useRef<ChatInputHandle>(null);
+  
+  const handleEditMessage = (content: string) => {
+      if (chatInputRef.current) {
+          chatInputRef.current.setText(content);
+          chatInputRef.current.focus();
+      }
+  };
+
   return (
     <div className="flex h-full w-full flex-col bg-background relative">
       <Header 
@@ -404,10 +414,18 @@ export function Chat() {
              onModelSelect={handleModelSelect}
           />
       ) : (
-          <MessageList messages={displayMessages} isStreaming={isLoading} />
+          <MessageList 
+            messages={displayMessages} 
+            isStreaming={isLoading} 
+            onEdit={handleEditMessage}
+          />
       )}
 
-      <ChatInput onSend={handleSend} disabled={isLoading} />
+      <ChatInput 
+        ref={chatInputRef}
+        onSend={handleSend} 
+        disabled={isLoading} 
+      />
 
       {/* History Panel */}
       <HistoryPanel 

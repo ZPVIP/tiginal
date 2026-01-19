@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { clsx } from 'clsx';
-import { User, Copy, Check, ChevronDown, ChevronRight, BrainCircuit, Maximize2, Minimize2 } from 'lucide-react';
+import { User, Copy, Check, ChevronDown, ChevronRight, BrainCircuit, Maximize2, Minimize2, Pencil, FileText, Monitor, Smartphone } from 'lucide-react';
 import { TigiCat } from '../icons/TigiCat';
 import { useEffect, useRef } from 'react';
 
@@ -11,6 +12,7 @@ interface MessageProps {
   content: string;
   reasoning?: string; // For DeepSeek reasoning block
   images?: string[];
+  onEdit?: (content: string) => void;
 }
 
 function ReasoningBlock({ content }: { content: string }) {
@@ -53,7 +55,7 @@ function ReasoningBlock({ content }: { content: string }) {
                 )}
             >
                 <ReactMarkdown 
-                    remarkPlugins={[remarkGfm]}
+                    remarkPlugins={[remarkGfm, remarkBreaks]}
                     components={{
                         code({node, inline, className, children, ...props}: any) {
                             const match = /language-(\w+)/.exec(className || '')
@@ -98,13 +100,47 @@ function ReasoningBlock({ content }: { content: string }) {
 }
 
 
-export function MessageBubble({ role, content, reasoning, images }: MessageProps) {
+export function MessageBubble({ role, content, reasoning, images, onEdit }: MessageProps) {
   const [copied, setCopied] = useState(false);
+  const [copiedPlain, setCopiedPlain] = useState(false);
+  const [copiedRendered, setCopiedRendered] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyPlain = () => {
+      if (contentRef.current) {
+          navigator.clipboard.writeText(contentRef.current.innerText);
+          setCopiedPlain(true);
+          setTimeout(() => setCopiedPlain(false), 2000);
+      }
+  };
+
+  const handleCopyRendered = async () => {
+      if (contentRef.current) {
+          try {
+              const html = contentRef.current.innerHTML;
+              const text = contentRef.current.innerText;
+              
+              const blobHtml = new Blob([html], { type: 'text/html' });
+              const blobText = new Blob([text], { type: 'text/plain' });
+              
+              const data = [new ClipboardItem({ 
+                  'text/html': blobHtml, 
+                  'text/plain': blobText 
+              })];
+              await navigator.clipboard.write(data);
+              
+              setCopiedRendered(true);
+              setTimeout(() => setCopiedRendered(false), 2000);
+          } catch (err) {
+              console.error('Failed to copy rendered:', err);
+          }
+      }
   };
 
   const isUser = role === 'user';
@@ -124,8 +160,8 @@ export function MessageBubble({ role, content, reasoning, images }: MessageProps
 
        {/* Content */}
        <div className={clsx("flex-1 min-w-0 space-y-2", isUser && "flex flex-col items-end")}>
-           <div className={clsx("font-medium text-sm text-gray-400", isUser && "text-right")}>
-               {isUser ? 'You' : 'Tigi'}
+           <div className={clsx("font-medium text-sm text-gray-400 flex items-center gap-2", isUser && "flex-row-reverse text-right")}>
+               <span>{isUser ? 'You' : 'Tigi'}</span>
            </div>
 
            {/* Images */}
@@ -137,7 +173,7 @@ export function MessageBubble({ role, content, reasoning, images }: MessageProps
                </div>
            )}
 
-           <div className={clsx(
+           <div ref={contentRef} className={clsx(
                "prose prose-invert max-w-none text-sm leading-relaxed break-words",
                 isUser 
                   ? "bg-surface/50 px-4 py-3 rounded-2xl rounded-tr-sm border border-border" 
@@ -151,7 +187,7 @@ export function MessageBubble({ role, content, reasoning, images }: MessageProps
                 )}
 
                 <ReactMarkdown 
-                   remarkPlugins={[remarkGfm]}
+                   remarkPlugins={[remarkGfm, remarkBreaks]}
                    components={{
                        code({node, inline, className, children, ...props}: any) {
                          const match = /language-(\w+)/.exec(className || '')
@@ -181,6 +217,9 @@ export function MessageBubble({ role, content, reasoning, images }: MessageProps
                        li({node, className, children, ...props}: any) {
                          return <li className={clsx(className, "leading-relaxed")} {...props}>{children}</li>
                        },
+                       p({node, className, children, ...props}: any) {
+                         return <p className={clsx(className, "mb-4 last:mb-0")} {...props}>{children}</p>
+                       },
                        a({node, className, children, ...props}: any) {
                          return (
                            <a 
@@ -200,17 +239,52 @@ export function MessageBubble({ role, content, reasoning, images }: MessageProps
            </div>
            
            {/* Actions */}
-           {!isUser && (
-               <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+           <div className={clsx(
+               "flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity",
+               isUser && "justify-end"
+           )}>
+               {/* Copy Markdown (Original) */}
+               <button 
+                 onClick={handleCopy}
+                 className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded hover:bg-surface flex items-center gap-1"
+                 title="Copy Markdown"
+               >
+                   {copied ? <Check size={14} /> : <Copy size={14} />}
+                   <span className="text-[10px]">MD</span>
+               </button>
+
+               {/* Copy Plain Text */}
+               <button 
+                 onClick={handleCopyPlain}
+                 className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded hover:bg-surface flex items-center gap-1"
+                 title="Copy Plain Text"
+               >
+                   {copiedPlain ? <Check size={14} /> : <FileText size={14} />}
+                   <span className="text-[10px]">TXT</span>
+               </button>
+
+               {/* Copy Rendered */}
+               <button 
+                 onClick={handleCopyRendered}
+                 className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded hover:bg-surface flex items-center gap-1"
+                 title="Copy Rich Text (for Word/Docs)"
+               >
+                   {copiedRendered ? <Check size={14} /> : <Monitor size={14} />}
+                   <span className="text-[10px]">Rich</span>
+               </button>
+
+               {/* Edit Button */}
+               {isUser && onEdit && (
                    <button 
-                     onClick={handleCopy}
-                     className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded hover:bg-surface"
-                     title="Copy"
+                       onClick={() => onEdit(content)}
+                       className="p-1.5 text-gray-500 hover:text-primary transition-colors rounded hover:bg-surface flex items-center gap-1"
+                       title="Edit"
                    >
-                       {copied ? <Check size={14} /> : <Copy size={14} />}
+                       <Pencil size={14} />
+                       <span className="text-[10px]">Edit</span>
                    </button>
-               </div>
-           )}
+               )}
+           </div>
        </div>
     </div>
   );

@@ -12,9 +12,10 @@ interface Message {
 interface MessageListProps {
     messages: Message[];
     isStreaming?: boolean;
+    onEdit?: (content: string) => void;
 }
 
-export function MessageList({ messages, isStreaming }: MessageListProps) {
+export function MessageList({ messages, isStreaming, onEdit }: MessageListProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -33,6 +34,7 @@ export function MessageList({ messages, isStreaming }: MessageListProps) {
                    content={msg.content}
                    reasoning={msg.reasoning}
                    images={msg.images}
+                   onEdit={onEdit}
                 />
             ))}
             {isStreaming && (

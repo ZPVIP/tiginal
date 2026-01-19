@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
 import { 
   SendHorizontal, 
   Paperclip, 
@@ -8,17 +8,37 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
+export interface ChatInputHandle {
+    setText: (text: string) => void;
+    focus: () => void;
+}
+
 interface ChatInputProps {
   onSend: (text: string, images: string[], useSearch: boolean) => void;
   disabled?: boolean;
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, disabled }, ref) => {
   const [text, setText] = useState('');
   const [useSearch, setUseSearch] = useState(false);
   const [images, setImages] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => ({
+      setText: (newText: string) => {
+          setText(newText);
+          // Auto resize after setting text
+          if (textareaRef.current) {
+               // We need a slight delay or effect to ensure the value updates before calc
+               // But usually state update triggers effect. 
+               // Let's rely on the useEffect([text]) below.
+          }
+      },
+      focus: () => {
+          textareaRef.current?.focus();
+      }
+  }));
 
   // Auto-resize textarea
   useEffect(() => {
@@ -139,4 +159,4 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
       </div>
     </div>
   );
-}
+});
