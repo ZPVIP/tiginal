@@ -174,16 +174,15 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
 
 
   // --- Helper to format title ---
-  const formatTitle = (path: string, index: number) => {
+  const formatPath = (path: string) => {
       let display = path || 'Terminal';
-      if (display.length > 22) {
-          display = '...' + display.slice(-22);
-      }
-      if (index < 9) {
-          display = `[${index + 1}] ${display}`;
+      if (display.length > 20) {
+          display = '...' + display.slice(-20);
       }
       return display;
   };
+  
+  const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
   // Initial tab - use ref to guard against StrictMode double invocation
   const initializedRef = useRef(false);
@@ -217,18 +216,27 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                   }}
                   title={tab.cwd || 'Terminal'} // Hover shows full path
                   className={clsx(
-                      "flex items-center px-2 h-full cursor-pointer transition-colors border-r border-border min-w-[180px] max-w-[180px]", // Increased width
+                      "flex items-center px-2 h-full cursor-pointer transition-colors border-r border-border min-w-[220px] max-w-[220px]", // Increased width
                       activeTabId === tab.id ? "bg-background text-text-main font-bold" : "text-text-sec bg-surface hover:bg-surface/80 hover:text-text-main",
                       "whitespace-nowrap"
                   )}
                 >
                     <span 
-                        className="w-full text-center font-mono text-[11px] whitespace-nowrap overflow-hidden"
+                        className="w-full text-center font-mono text-xs whitespace-nowrap overflow-hidden flex items-center justify-center"
                         style={{ direction: 'rtl' }}
                     >
-                        <bdi>{formatTitle(tab.cwd || 'Terminal', idx)}</bdi>
+                        <bdi className="flex items-center">
+                            {idx < 9 && (
+                                <span className="mr-1.5 opacity-80 inline-flex items-baseline">
+                                     {isMac ? (
+                                        <span className="pr-1 text-sm leading-3 relative top-[1px]">⌘</span>
+                                     ) : '^'}
+                                     <span>{idx + 1}</span>
+                                </span>
+                            )}
+                            {formatPath(tab.cwd || 'Terminal')}
+                        </bdi>
                     </span>
-                    {/* No X button as requested */}
                 </div>
             ))}
             
