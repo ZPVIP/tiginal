@@ -10,7 +10,11 @@ interface Tab {
   cwd: string;
 }
 
-export function TerminalView() {
+interface TerminalViewProps {
+  onActivePathChange?: (path: string) => void;
+}
+
+export function TerminalView({ onActivePathChange }: TerminalViewProps) {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, tabId: string } | null>(null);
@@ -159,6 +163,14 @@ export function TerminalView() {
       });
       return cleanup;
   }, []);
+
+  // Notify parent about active path
+  useEffect(() => {
+      if (!onActivePathChange) return;
+      
+      const activeTab = tabs.find(t => t.id === activeTabId);
+      onActivePathChange(activeTab?.cwd || '');
+  }, [activeTabId, tabs, onActivePathChange]);
 
 
   // --- Helper to format title ---

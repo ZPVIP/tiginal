@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare } from 'lucide-react';
+import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare, Check, Copy } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Settings } from './components/Settings/Settings';
 import { Chat } from './components/Chat/Chat';
@@ -18,6 +18,10 @@ export default function App() {
 
   // Resizing State
   const [isResizing, setIsResizing] = useState(false);
+
+  // Terminal State for Title Bar
+  const [activeTerminalPath, setActiveTerminalPath] = useState('');
+  const [pathCopied, setPathCopied] = useState(false);
   
   // Load Layout State
   useEffect(() => {
@@ -145,6 +149,19 @@ export default function App() {
       }
   };
 
+  const handleCopyPath = () => {
+    if (!activeTerminalPath) return;
+    navigator.clipboard.writeText(activeTerminalPath);
+    setPathCopied(true);
+    setTimeout(() => setPathCopied(false), 2000);
+  };
+
+  const formatHeaderPath = (path: string) => {
+    if (!path) return '';
+    // Replace /Users/username with ~
+    return path.replace(/^\/Users\/[^/]+/, '~');
+  };
+
 
   return (
     <ErrorBoundary>
@@ -155,6 +172,25 @@ export default function App() {
             style={{ WebkitAppRegion: 'drag' } as any}
           >
              {/* Title Bar Content (Traffic lights sit here natively) */}
+             <div 
+               className="ml-[80px] flex items-center space-x-2 text-xs text-text-sec px-2 h-full select-text"
+               style={{ WebkitAppRegion: 'no-drag' } as any}
+             > 
+               {activeTerminalPath && activeTab === 'terminal' && (
+                  <>
+                     <button 
+                       onClick={handleCopyPath}
+                       className="hover:text-text-main transition-colors p-1 rounded hover:bg-white/5 flex items-center justify-center"
+                       title="Copy full path"
+                     >
+                        {pathCopied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                     </button>
+                     <span className="font-mono opacity-80 select-none truncate">
+                        {formatHeaderPath(activeTerminalPath)}
+                     </span>
+                  </>
+               )}
+             </div>
           </div>
 
           <div className="flex-1 flex overflow-hidden">
@@ -227,7 +263,7 @@ export default function App() {
                  >
                     {/* Screens are always mounted to preserve state */}
                     <div className={clsx("h-full w-full", activeTab !== 'terminal' && "hidden")}>
-                        <TerminalView />
+                        <TerminalView onActivePathChange={setActiveTerminalPath} />
                     </div>
                     {activeTab === 'ssh' && <SSHView />}
                     {activeTab === 'settings' && <Settings />}
