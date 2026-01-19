@@ -252,23 +252,24 @@ export default function App() {
             <div className="flex-1 flex overflow-hidden w-full">
              
              {/* Left Pane (Terminal/Settings) */}
-             {showTerminal && (
-                 <div 
-                    className="flex-1 overflow-hidden relative min-w-0"
-                    style={{ 
-                        flexGrow: showChat ? (1 - chatRatio) : 1,
-                        flexShrink: 0,
-                        flexBasis: showChat ? '0%' : '100%' 
-                    }}
-                 >
-                    {/* Screens are always mounted to preserve state */}
-                    <div className={clsx("h-full w-full", activeTab !== 'terminal' && "hidden")}>
-                        <TerminalView onActivePathChange={setActiveTerminalPath} />
-                    </div>
-                    {activeTab === 'ssh' && <SSHView />}
-                    {activeTab === 'settings' && <Settings />}
-                 </div>
-             )}
+             <div 
+                className={clsx(
+                    "flex-1 overflow-hidden relative min-w-0",
+                    !showTerminal && "hidden"
+                )}
+                style={{ 
+                    flexGrow: showChat ? (1 - chatRatio) : 1,
+                    flexShrink: 0,
+                    flexBasis: showChat ? '0%' : '100%' 
+                }}
+             >
+                {/* Screens are always mounted to preserve state */}
+                <div className={clsx("h-full w-full", activeTab !== 'terminal' && "hidden")}>
+                    <TerminalView onActivePathChange={setActiveTerminalPath} />
+                </div>
+                {activeTab === 'ssh' && <SSHView />}
+                {activeTab === 'settings' && <Settings />}
+             </div>
 
              {/* Resizer */}
              {showTerminal && showChat && (
@@ -282,20 +283,21 @@ export default function App() {
              )}
              
              {/* AI Panel */}
-             {showChat && (
-                 <div 
-                    className="border-l border-border bg-background shadow-2xl flex flex-col h-full relative min-w-0"
-                    style={{ 
-                        flexGrow: showTerminal ? chatRatio : 1, 
-                        flexShrink: 0,
-                        flexBasis: showTerminal ? '0%' : '100%'
-                    }}
-                 >
-                     <ErrorBoundary>
-                         <Chat />
-                     </ErrorBoundary>
-                 </div>
-             )}
+             <div 
+                className={clsx(
+                    "border-l border-border bg-background shadow-2xl flex flex-col h-full relative min-w-0",
+                    !showChat && "hidden"
+                )}
+                style={{ 
+                    flexGrow: showTerminal ? chatRatio : 1, 
+                    flexShrink: 0,
+                    flexBasis: showTerminal ? '0%' : '100%'
+                }}
+             >
+                 <ErrorBoundary>
+                     <Chat />
+                 </ErrorBoundary>
+             </div>
           </div>
           </div>
           
