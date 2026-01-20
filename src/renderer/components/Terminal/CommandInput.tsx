@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { SendHorizontal, Clipboard } from 'lucide-react';
 import { clsx } from 'clsx';
 import { CommandSuggestion } from './CommandSuggestion';
@@ -8,13 +8,24 @@ interface CommandInputProps {
   cwd: string;
 }
 
+export interface CommandInputHandle {
+    focus: () => void;
+}
+
 interface SuggestionsData {
     local: string[];
     frequent: string[];
 }
 
-export function CommandInput({ onSend, cwd }: CommandInputProps) {
+export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({ onSend, cwd }, ref) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useImperativeHandle(ref, () => ({
+      focus: () => {
+          textareaRef.current?.focus();
+      }
+  }));
+
   const [value, setValue] = useState('');
   
   // Suggestion State
@@ -45,15 +56,6 @@ export function CommandInput({ onSend, cwd }: CommandInputProps) {
       setSuggestionsData(data);
       setFlatSuggestions(flat);
       setShowSuggestions(flat.length > 0);
-      
-      // Smart selection logic
-      // If we have local suggestions, usually auto-select first IF user is typing?
-      // But user requested: if completed cd Downloads/, don't select.
-      // If partial, maybe select?
-      // Let's stick to: if value ends with /, no select. Else select first.
-      
-      // Wait, we need access to 'value' here -> passed as arg or from checking outside?
-      // We'll handle selection index in the fetch block.
   }, []);
 
   const fetchSuggestions = useCallback((input: string) => {
@@ -130,13 +132,13 @@ export function CommandInput({ onSend, cwd }: CommandInputProps) {
               // Absolute path from frequent list
               newValue = `cd ${safeSuggestion}`;
           } else {
-             // Relative path logic
-             const lastSlash = prefix.lastIndexOf('/');
-             let newPrefix = '';
-             if (lastSlash !== -1) {
-                newPrefix = prefix.substring(0, lastSlash + 1);
-             }
-             newValue = `cd ${newPrefix}${safeSuggestion}`;
+              // Relative path logic
+              const lastSlash = prefix.lastIndexOf('/');
+              let newPrefix = '';
+              if (lastSlash !== -1) {
+                 newPrefix = prefix.substring(0, lastSlash + 1);
+              }
+              newValue = `cd ${newPrefix}${safeSuggestion}`;
           }
       }
 
@@ -258,4 +260,4 @@ export function CommandInput({ onSend, cwd }: CommandInputProps) {
       </button>
     </div>
   );
-}
+});

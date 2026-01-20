@@ -80,7 +80,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
   };
 
   return (
-    <div className="p-4 bg-background border-t border-border">
+    <div className="p-2 bg-background border-t border-border">
       <div className="max-w-3xl mx-auto bg-surface border border-border rounded-xl shadow-sm transition-all">
         
         {/* Image Previews */}

@@ -19,6 +19,7 @@ export interface Theme {
     // Additional UI specific
     tabActive: string;        // --tab-active
     tabHover: string;         // --tab-hover
+    splitBorderActive: string; // --split-border-active
   };
   terminal: XtermTheme; // Direct xterm theme object
 }
@@ -40,6 +41,7 @@ export const themes: Theme[] = [
       primary: '#89b4fa',
       tabActive: '#45475a',
       tabHover: '#313244',
+      splitBorderActive: '#89b4fa',
     },
     terminal: {
       background: '#181825',
@@ -82,6 +84,7 @@ export const themes: Theme[] = [
       primary: '#007acc',
       tabActive: '#1e1e1e',
       tabHover: '#2a2d2e',
+      splitBorderActive: '#007acc',
     },
     terminal: {
       background: '#1e1e1e',
@@ -122,6 +125,7 @@ export const themes: Theme[] = [
       primary: '#a6e22e',
       tabActive: '#272822',
       tabHover: '#3e3d32',
+      splitBorderActive: '#a6e22e',
     },
     terminal: {
       background: '#272822',
@@ -162,6 +166,7 @@ export const themes: Theme[] = [
       primary: '#7aa2f7',
       tabActive: '#1f2335',
       tabHover: '#292e42',
+      splitBorderActive: '#7aa2f7',
     },
     terminal: {
       background: '#1a1b26',
@@ -202,6 +207,7 @@ export const themes: Theme[] = [
       primary: '#7aa2f7',
       tabActive: '#292e42',
       tabHover: '#414868',
+      splitBorderActive: '#7aa2f7',
     },
     terminal: {
       background: '#24283b',
@@ -242,6 +248,7 @@ export const themes: Theme[] = [
       primary: '#34548a',
       tabActive: '#cbccd1', 
       tabHover: '#e9e9ec',
+      splitBorderActive: '#34548a',
     },
     terminal: {
       background: '#d5d6db',
@@ -282,6 +289,7 @@ export const themes: Theme[] = [
       primary: '#007acc',
       tabActive: '#ffffff',
       tabHover: '#e8e8e8',
+      splitBorderActive: '#007acc',
     },
     terminal: {
       background: '#ffffff',
@@ -322,6 +330,7 @@ export const themes: Theme[] = [
       primary: '#5d2b90',    // VS Purple
       tabActive: '#f6f6f6',
       tabHover: '#dce1e6',
+      splitBorderActive: '#5d2b90',
     },
     terminal: {
       background: '#f6f6f6',

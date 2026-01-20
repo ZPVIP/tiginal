@@ -4,6 +4,7 @@ import { Settings as SettingsIcon, Database, Shield, Palette } from 'lucide-reac
 import { GeneralSettings } from './GeneralSettings';
 import { AIProviders } from './AIProviders';
 import { ThemeSettings } from './ThemeSettings';
+import { ShortcutSettings } from './ShortcutSettings';
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState('general');
@@ -13,6 +14,7 @@ export function Settings() {
     { id: 'providers', label: 'AI Providers', icon: <Database size={16} /> },
     { id: 'ssh', label: 'SSH (Coming Soon)', icon: <Shield size={16} /> }, // Placeholder
     { id: 'theme', label: 'Theme', icon: <Palette size={16} /> },
+    { id: 'shortcuts', label: 'Shortcuts', icon: <div className="font-bold text-[10px] w-4 text-center border border-current rounded">⌘</div> },
   ];
 
   return (
@@ -42,6 +44,7 @@ export function Settings() {
              </div>
           )}
           {activeTab === 'theme' && <ThemeSettings />}
+          {activeTab === 'shortcuts' && <ShortcutSettings />}
         </div>
       </div>
     </div>

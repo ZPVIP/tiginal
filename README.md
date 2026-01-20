@@ -10,6 +10,18 @@ A cross-platform terminal emulator built with Electron, xterm.js, and node-pty.
 - 🔐 SSH server management (encrypted storage) - *coming soon*
 - 📜 Command history with AI suggestions - *coming soon*
 - ☁️ Multi-device sync - *coming soon*
+- 🪟 Split Panes (Cmd+\ for split, Cmd+Opt+Arrow for nav)
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd + T` | New Tab |
+| `Cmd + W` | Close Tab |
+| `Cmd + 1-9` | Switch Tab |
+| `Cmd + \` | Split Pane Right |
+| `Cmd + Opt + Arrows` | Navigate Panes |
+| `Cmd + Shift + W` | Close Pane |
 
 ## Development
 

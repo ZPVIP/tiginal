@@ -74,6 +74,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     root.style.setProperty('--accent-primary', theme.colors.primary);
     root.style.setProperty('--tab-active', theme.colors.tabActive);
     root.style.setProperty('--tab-hover', theme.colors.tabHover);
+    root.style.setProperty('--split-border-active', theme.colors.splitBorderActive);
     
     // We can also broadcast an event if needed outside of React context
     window.dispatchEvent(new CustomEvent('theme-changed', { detail: theme }));
