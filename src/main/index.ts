@@ -69,6 +69,8 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: true,
       contextIsolation: false,
+      // Disable DevTools in production for security
+      devTools: !app.isPackaged,
     },
   });
 
@@ -171,7 +173,8 @@ function createMenu(): void {
       submenu: [
         { role: 'reload' as const },
         { role: 'forceReload' as const },
-        { role: 'toggleDevTools' as const },
+        // Only show DevTools menu item in development
+        ...(!app.isPackaged ? [{ role: 'toggleDevTools' as const }] : []),
         { type: 'separator' as const },
         { role: 'resetZoom' as const },
         { role: 'zoomIn' as const },
