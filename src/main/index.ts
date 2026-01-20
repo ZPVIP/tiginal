@@ -22,6 +22,7 @@ import { setupSSHHandlers } from './ssh-handlers';
 import { setupChatHandlers } from './chat-handlers';
 import { setupSearchHandlers } from './services/search';
 import { setupSettingsHandlers } from './settings-handlers';
+import { setupShellHandlers } from './shell-handlers';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
 
@@ -210,6 +211,7 @@ app.whenReady().then(() => {
   setupChatHandlers();
   setupSearchHandlers();
   setupSettingsHandlers();
+  setupShellHandlers();
   
   // Try to auto-unlock crypto using saved key
   const autoUnlocked = getCrypto().tryAutoUnlock();

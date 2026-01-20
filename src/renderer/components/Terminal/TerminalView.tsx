@@ -107,7 +107,11 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
           // If execute is true, append \r (enter). If false, just paste text.
           const textToSend = execute ? `${command}\r` : command;
           term.send(textToSend);
-          term.focus();
+          // Only focus terminal if it's not an executed command from input
+          // Actually, standard behavior: if I use the input box, I want to keep typing there.
+          if (!execute) {
+             term.focus();
+          }
       }
   };
 
@@ -164,12 +168,17 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
       return cleanup;
   }, []);
 
-  // Notify parent about active path
+  // Notify parent about active path and record visit
   useEffect(() => {
       if (!onActivePathChange) return;
       
       const activeTab = tabs.find(t => t.id === activeTabId);
-      onActivePathChange(activeTab?.cwd || '');
+      if (activeTab?.cwd) {
+          onActivePathChange(activeTab.cwd);
+          
+          // Record visit to history DB
+          window.electron?.invoke('shell:record-visit', activeTab.cwd).catch(console.error);
+      }
   }, [activeTabId, tabs, onActivePathChange]);
 
 
@@ -297,7 +306,10 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
           
           {/* Command Input Area (Bottom) */}
           <div className="shrink-0 z-10">
-              <CommandInput onSend={handleSendCommand} />
+              <CommandInput 
+                  onSend={handleSendCommand} 
+                  cwd={tabs.find(t => t.id === activeTabId)?.cwd || ''}
+              />
           </div>
       </div>
 
