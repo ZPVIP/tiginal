@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, X, Monitor, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, X, Monitor, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { TerminalRef } from './TerminalInstance';
 import { CommandInput } from './CommandInput';
@@ -12,6 +12,7 @@ interface Tab {
   columns: Column[];
   columnWidths: number[]; // Ratios summing to approx 1
   activePaneId: string;
+  maximizedPaneId: string | null; // If set, only this pane is shown
 }
 
 interface TerminalViewProps {
@@ -60,7 +61,8 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
               splitRatio: 0.5 
           }],
           columnWidths: [1], // Single column = 100%
-          activePaneId: initialPaneId
+          activePaneId: initialPaneId,
+          maximizedPaneId: null
       };
       
       setTabs(prev => [...prev, newTab]);
@@ -343,6 +345,18 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
       }
   };
 
+  // --- Maximize ---
+  
+  const toggleMaximize = () => {
+      if (!activeTabId) return;
+      setTabs(prev => prev.map(tab => {
+          if (tab.id !== activeTabId) return tab;
+          // Toggle: if already maximized, restore; else maximize active pane
+          const newMaximized = tab.maximizedPaneId ? null : tab.activePaneId;
+          return { ...tab, maximizedPaneId: newMaximized };
+      }));
+  };
+
   // --- Shortcuts ---
 
   useEffect(() => {
@@ -359,26 +373,42 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
             return;
         }
 
-        // Split Right: Cmd+\
-        if (isCmdOrCtrl && e.key === '\\') {
+        // Split Right: Cmd+D
+        if (isCmdOrCtrl && !isShift && e.key.toLowerCase() === 'd') {
             e.preventDefault();
             splitRight();
             return;
         }
 
-        // Close Pane: Cmd+Shift+W (Close Tab if last pane)
-        if (isCmdOrCtrl && isShift && e.key === 'w') {
-            const tab = getActiveTab();
-            if (tab) closePane(tab.activePaneId);
+        // Split Down: Cmd+Shift+D
+        if (isCmdOrCtrl && isShift && e.key.toLowerCase() === 'd') {
             e.preventDefault();
+            splitVertical('down');
             return;
         }
-        
-        // Close Tab: Cmd+W (Closes whole tab)
+
+        // Maximize Toggle: Cmd+Shift+Enter
+        if (isCmdOrCtrl && isShift && e.key === 'Enter') {
+            e.preventDefault();
+            toggleMaximize();
+            return;
+        }
+
+        // Smart Close: Cmd+W
+        // - If multiple panes, close active pane
+        // - If single pane, close tab
         if (isCmdOrCtrl && !isShift && e.key === 'w') {
-             e.preventDefault();
-             if (activeTabId) closeTab(activeTabId);
-             return;
+            e.preventDefault();
+            const tab = getActiveTab();
+            if (!tab) return;
+            
+            const totalPanes = tab.columns.reduce((acc, col) => acc + col.panes.length, 0);
+            if (totalPanes > 1) {
+                closePane(tab.activePaneId);
+            } else {
+                closeTab(tab.id);
+            }
+            return;
         }
 
         // Navigate Panes: Cmd+Opt+Arrows
@@ -512,9 +542,12 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                   )}
                 >
                     <span 
-                        className="w-full text-center font-mono text-xs whitespace-nowrap overflow-hidden flex items-center justify-center"
+                        className="w-full text-center font-mono text-xs whitespace-nowrap overflow-hidden flex items-center justify-center gap-1"
                         style={{ direction: 'rtl' }}
                     >
+                        {tab.maximizedPaneId && (
+                            <Maximize2 size={12} className="text-primary shrink-0" />
+                        )}
                         <bdi className="flex items-center">
                             {idx < 9 && (
                                 <span className="mr-1.5 opacity-80 inline-flex items-baseline">
@@ -555,6 +588,7 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                   <SplitLayout
                       columns={activeTab.columns}
                       activePaneId={activeTab.activePaneId}
+                      maximizedPaneId={activeTab.maximizedPaneId}
                       columnRatios={activeTab.columnWidths}
                       onPaneActivate={handlePaneActivate}
                       onTitleChange={handleTitleChange}
@@ -616,40 +650,66 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                           Close to Right
                       </button>
                   </>
-              ) : (
+              ) : (() => {
+                  // Calculate disabled states
+                  const canSplitRight = (activeTab?.columns.length || 0) < 4;
+                  const targetPaneId = 'paneId' in contextMenu ? contextMenu.paneId : undefined;
+                  const targetCol = activeTab?.columns.find(c => c.panes.some(p => p.id === targetPaneId));
+                  const canSplitVertical = targetCol ? targetCol.panes.length < 2 : false;
+                  const isMaximized = !!activeTab?.maximizedPaneId;
+                  
+                  return (
                   <>
                       <button 
-                         onClick={() => { splitRight(); setContextMenu(null); }}
-                         className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
-                         disabled={(activeTab?.columns.length || 0) >= 4}
+                         onClick={() => { if(canSplitRight) { splitRight(); setContextMenu(null); } }}
+                         className={clsx(
+                             "w-full text-left px-3 py-1.5 flex justify-between items-center",
+                             canSplitRight ? "hover:bg-primary hover:text-white" : "text-text-muted cursor-not-allowed"
+                         )}
                       >
-                          Split Right
+                          <span>Split Right</span>
+                          <span className="text-text-muted text-[10px]">⌘D</span>
                       </button>
                       <button 
-                         onClick={() => { splitVertical('up', 'paneId' in contextMenu ? contextMenu.paneId : undefined); setContextMenu(null); }}
-                         className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
-                         // Check active col
+                         onClick={() => { if(canSplitVertical) { splitVertical('up', targetPaneId); setContextMenu(null); } }}
+                         className={clsx(
+                             "w-full text-left px-3 py-1.5 flex justify-between items-center",
+                             canSplitVertical ? "hover:bg-primary hover:text-white" : "text-text-muted cursor-not-allowed"
+                         )}
                       >
-                          Split Up
+                          <span>Split Up</span>
                       </button>
                       <button 
-                         onClick={() => { splitVertical('down', 'paneId' in contextMenu ? contextMenu.paneId : undefined); setContextMenu(null); }}
-                         className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
+                         onClick={() => { if(canSplitVertical) { splitVertical('down', targetPaneId); setContextMenu(null); } }}
+                         className={clsx(
+                             "w-full text-left px-3 py-1.5 flex justify-between items-center",
+                             canSplitVertical ? "hover:bg-primary hover:text-white" : "text-text-muted cursor-not-allowed"
+                         )}
                       >
-                          Split Down
+                          <span>Split Down</span>
+                          <span className="text-text-muted text-[10px]">⌘⇧D</span>
                       </button>
                       <div className="h-[1px] bg-[#404040] my-1" />
+                      <button 
+                         onClick={() => { toggleMaximize(); setContextMenu(null); }}
+                         className="w-full text-left px-3 py-1.5 flex justify-between items-center hover:bg-primary hover:text-white"
+                      >
+                          <span>{isMaximized ? 'Restore' : 'Maximize'}</span>
+                          <span className="text-text-muted text-[10px]">⌘⇧↩</span>
+                      </button>
                       <button 
                          onClick={() => { 
                              if ('paneId' in contextMenu) closePane(contextMenu.paneId); 
                              setContextMenu(null); 
                          }}
-                         className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
+                         className="w-full text-left px-3 py-1.5 flex justify-between items-center hover:bg-primary hover:text-white"
                       >
-                          Close Pane
+                          <span>Close Pane</span>
+                          <span className="text-text-muted text-[10px]">⌘W</span>
                       </button>
                   </>
-              )}
+                  );
+              })()}
           </div>
       )}
     </div>

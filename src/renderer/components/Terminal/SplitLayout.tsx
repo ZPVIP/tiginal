@@ -18,6 +18,7 @@ export interface Column {
 interface SplitLayoutProps {
     columns: Column[];
     activePaneId: string;
+    maximizedPaneId: string | null;
     // Callbacks
     onPaneActivate: (id: string) => void;
     onTitleChange: (id: string, title: string) => void;
@@ -37,6 +38,7 @@ interface SplitLayoutProps {
 export function SplitLayout({
     columns,
     activePaneId,
+    maximizedPaneId,
     columnRatios = [],
     onPaneActivate,
     onTitleChange,
@@ -173,16 +175,24 @@ export function SplitLayout({
     // Helper to count total panes
     const totalPanes = columns.reduce((acc, col) => acc + col.panes.length, 0);
 
+    // Check if maximized
+    const isMaximized = !!maximizedPaneId;
+
     return (
-        <div ref={layoutRef} className="flex h-full w-full">
+        <div ref={layoutRef} className="flex h-full w-full relative">
             {columns.map((col, idx) => {
                 const isMultiPane = col.panes.length > 1;
                 const topHeight = isMultiPane ? `${col.splitRatio * 100}%` : '100%';
                 
+                // Check if this column contains the maximized pane
+                const colHasMaximizedPane = isMaximized && col.panes.some(p => p.id === maximizedPaneId);
+                // Hide column if maximized mode is on and this column doesn't have the maximized pane
+                const hideColumn = isMaximized && !colHasMaximizedPane;
+                
                 return (
                     <React.Fragment key={col.id}>
-                        {/* Vertical Divider (Resizer) */}
-                        {idx > 0 && (
+                        {/* Vertical Divider (Resizer) - hide when maximized */}
+                        {idx > 0 && !isMaximized && (
                             <div
                                 className="w-1 hover:bg-primary cursor-col-resize z-30 shrink-0 transition-colors bg-border relative -ml-0.5"
                                 onMouseDown={(e) => {
@@ -195,35 +205,51 @@ export function SplitLayout({
 
                         <div 
                             ref={el => { if(el) colRefs.current.set(col.id, el); }}
-                            className="flex flex-col h-full overflow-hidden relative min-w-0 transition-[width] duration-0" 
-                            style={{ width: getColWidth(idx) }}
+                            className={clsx(
+                                "flex flex-col h-full overflow-hidden relative min-w-0 transition-[width] duration-0",
+                                hideColumn && "hidden"
+                            )}
+                            style={{ width: isMaximized && colHasMaximizedPane ? '100%' : getColWidth(idx) }}
                         >
                             {/* Top Pane (or Only Pane) */}
-                            <div style={{ height: topHeight }} className="relative min-h-0 flex flex-col">
-                                {/* Border Wrapper */}
-                                <div className={clsx(
-                                    "flex-1 relative overflow-hidden flex flex-col transition-colors duration-200 border",
-                                    (totalPanes > 1 && activePaneId === col.panes[0].id) 
-                                        ? "border-[var(--split-border-active)]" 
-                                        : "border-transparent"
-                                )}>
-                                    <PaneContainer
-                                        id={col.panes[0].id}
-                                        isActive={activePaneId === col.panes[0].id}
-                                        onActivate={onPaneActivate}
-                                        onTitleChange={onTitleChange}
-                                        onExit={onExit}
-                                        terminalRef={(ref) => registerTerminalRef(col.panes[0].id, ref)}
-                                        onContextMenu={(e) => {
-                                            e.preventDefault();
-                                            onContextMenu(e, col.panes[0].id);
-                                        }}
-                                    />
-                                </div>
-                            </div>
+                            {col.panes[0] && (() => {
+                                const pane = col.panes[0];
+                                const isPaneMaximized = maximizedPaneId === pane.id;
+                                const hidePane = isMaximized && !isPaneMaximized;
+                                
+                                return (
+                                    <div 
+                                        style={{ height: isMaximized ? (isPaneMaximized ? '100%' : '0') : topHeight }} 
+                                        className={clsx(
+                                            "relative min-h-0 flex flex-col",
+                                            hidePane && "hidden"
+                                        )}
+                                    >
+                                        <div className={clsx(
+                                            "flex-1 relative overflow-hidden flex flex-col transition-colors duration-200 border",
+                                            (!isMaximized && totalPanes > 1 && activePaneId === pane.id) 
+                                                ? "border-[var(--split-border-active)]" 
+                                                : "border-transparent"
+                                        )}>
+                                            <PaneContainer
+                                                id={pane.id}
+                                                isActive={activePaneId === pane.id}
+                                                onActivate={onPaneActivate}
+                                                onTitleChange={onTitleChange}
+                                                onExit={onExit}
+                                                terminalRef={(ref) => registerTerminalRef(pane.id, ref)}
+                                                onContextMenu={(e) => {
+                                                    e.preventDefault();
+                                                    onContextMenu(e, pane.id);
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
-                            {/* Splitter */}
-                            {isMultiPane && (
+                            {/* Splitter - hide when maximized */}
+                            {isMultiPane && !isMaximized && (
                                 <div 
                                     className="h-1 bg-border hover:bg-primary cursor-row-resize z-20 shrink-0 transition-colors"
                                     onMouseDown={(e) => handleMouseDown(e, 'row', col.id, col.splitRatio)}
@@ -231,29 +257,41 @@ export function SplitLayout({
                             )}
 
                             {/* Bottom Pane */}
-                            {isMultiPane && col.panes[1] && (
-                                <div className="flex-1 relative min-h-0 flex flex-col">
-                                    <div className={clsx(
-                                        "flex-1 relative overflow-hidden flex flex-col transition-colors duration-200 border",
-                                        (totalPanes > 1 && activePaneId === col.panes[1].id) 
-                                            ? "border-[var(--split-border-active)]" 
-                                            : "border-transparent"
-                                    )}>
-                                        <PaneContainer
-                                            id={col.panes[1].id}
-                                            isActive={activePaneId === col.panes[1].id}
-                                            onActivate={onPaneActivate}
-                                            onTitleChange={onTitleChange}
-                                            onExit={onExit}
-                                            terminalRef={(ref) => registerTerminalRef(col.panes[1].id, ref)}
-                                            onContextMenu={(e) => {
-                                                e.preventDefault();
-                                                onContextMenu(e, col.panes[1].id);
-                                            }}
-                                        />
+                            {isMultiPane && col.panes[1] && (() => {
+                                const pane = col.panes[1];
+                                const isPaneMaximized = maximizedPaneId === pane.id;
+                                const hidePane = isMaximized && !isPaneMaximized;
+                                
+                                return (
+                                    <div 
+                                        className={clsx(
+                                            "flex-1 relative min-h-0 flex flex-col",
+                                            hidePane && "hidden"
+                                        )}
+                                        style={{ height: isMaximized && isPaneMaximized ? '100%' : undefined }}
+                                    >
+                                        <div className={clsx(
+                                            "flex-1 relative overflow-hidden flex flex-col transition-colors duration-200 border",
+                                            (!isMaximized && totalPanes > 1 && activePaneId === pane.id) 
+                                                ? "border-[var(--split-border-active)]" 
+                                                : "border-transparent"
+                                        )}>
+                                            <PaneContainer
+                                                id={pane.id}
+                                                isActive={activePaneId === pane.id}
+                                                onActivate={onPaneActivate}
+                                                onTitleChange={onTitleChange}
+                                                onExit={onExit}
+                                                terminalRef={(ref) => registerTerminalRef(pane.id, ref)}
+                                                onContextMenu={(e) => {
+                                                    e.preventDefault();
+                                                    onContextMenu(e, pane.id);
+                                                }}
+                                            />
+                                        </div>
                                     </div>
-                                </div>
-                            )}
+                                );
+                            })()}
                             
                         </div>
                     </React.Fragment>
