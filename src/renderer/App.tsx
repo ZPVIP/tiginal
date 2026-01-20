@@ -274,18 +274,23 @@ export default function App() {
              {/* Resizer */}
              {showTerminal && showChat && (
                  <div 
-                    onMouseDown={startResizing}
                     className={clsx(
-                        "w-1 h-full cursor-col-resize hover:bg-primary transition-colors z-20 shrink-0",
-                        isResizing ? "bg-primary" : "bg-border"
+                        "w-px h-full z-20 shrink-0 relative transition-colors",
+                        isResizing ? "bg-primary" : "bg-border",
+                        "hover:bg-primary"
                     )}
-                />
+                 >
+                    <div 
+                        onMouseDown={startResizing}
+                        className="absolute inset-y-0 -left-1 w-3 cursor-col-resize z-30"
+                    />
+                 </div>
              )}
              
              {/* AI Panel */}
              <div 
                 className={clsx(
-                    "border-l border-border bg-background shadow-2xl flex flex-col h-full relative min-w-0",
+                    "bg-background shadow-2xl flex flex-col h-full relative min-w-0",
                     !showChat && "hidden"
                 )}
                 style={{ 
