@@ -21,6 +21,8 @@ export interface TerminalRef {
   focus: () => void;
   write: (data: string) => void;
   send: (data: string) => void; // Write to PTY
+  setFontSize: (size: number) => void;
+  getFontSize: () => number;
 }
 
 export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>(({ id, isActive, onTitleChange, onExit }, ref) => {
@@ -47,7 +49,17 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
         if (ptyIdRef.current !== null) {
             send('pty:write', ptyIdRef.current, data);
         }
-    }
+    },
+    setFontSize: (size: number) => {
+        if (xtermRef.current) {
+            xtermRef.current.options.fontSize = size;
+            fitAddonRef.current?.fit();
+            if (ptyIdRef.current !== null) {
+                send('pty:resize', ptyIdRef.current, xtermRef.current.cols, xtermRef.current.rows);
+            }
+        }
+    },
+    getFontSize: () => xtermRef.current?.options.fontSize || 14
   }));
 
   // Update theme when it changes

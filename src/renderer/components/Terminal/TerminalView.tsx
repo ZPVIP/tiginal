@@ -195,6 +195,9 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
   };
 
   const closePane = (paneId: string) => {
+      // Pre-calculate the new active pane ID for focusing later
+      let newActivePaneIdForFocus: string | null = null;
+      
       setTabs(prev => prev.map(tab => {
           // Optimization: check if pane exists in tab
           if (!tab.columns.some(c => c.panes.some(p => p.id === paneId))) return tab;
@@ -211,7 +214,7 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
           }).filter(Boolean) as Column[];
           
           if (newColumns.length === 0) {
-              return tab; // Will be handled by separate check
+              return { ...tab, columns: [] }; // Will be filtered out below
           }
           
           // If column removed, update widths
@@ -230,8 +233,38 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
              newActiveId = allPanes[allPanes.length - 1].id;
           }
           
+          // Track this for focusing after state update
+          if (activeTabId === tab.id) {
+              newActivePaneIdForFocus = newActiveId;
+          }
+          
           return { ...tab, columns: newColumns, columnWidths: newWidths, activePaneId: newActiveId };
-      }).filter(tab => tab.columns.length > 0)); // Remove active tab if empty?
+      }).filter(tab => tab.columns.length > 0)); // Remove empty tabs
+      
+      // Update activeTabId if the active tab was removed
+      setTabs(currentTabs => {
+          if (activeTabId && !currentTabs.find(t => t.id === activeTabId)) {
+              // Active tab was removed, switch to another
+              if (currentTabs.length > 0) {
+                  const newActiveTab = currentTabs[currentTabs.length - 1]; // Last tab, or could find nearest
+                  setActiveTabId(newActiveTab.id);
+                  // Update focus target
+                  newActivePaneIdForFocus = newActiveTab.activePaneId;
+              } else {
+                  setActiveTabId(null);
+                  newActivePaneIdForFocus = null;
+              }
+          }
+          return currentTabs;
+      });
+      
+      // Focus the new active pane after close
+      setTimeout(() => {
+          if (newActivePaneIdForFocus) {
+              const term = termRefs.current.get(newActivePaneIdForFocus);
+              term?.focus();
+          }
+      }, 100);
       
       // Separate effect to remove empty tabs if needed
       termRefs.current.delete(paneId);
@@ -349,12 +382,55 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
   
   const toggleMaximize = () => {
       if (!activeTabId) return;
-      setTabs(prev => prev.map(tab => {
-          if (tab.id !== activeTabId) return tab;
+      const tab = getActiveTab();
+      if (!tab) return;
+      
+      setTabs(prev => prev.map(t => {
+          if (t.id !== activeTabId) return t;
           // Toggle: if already maximized, restore; else maximize active pane
-          const newMaximized = tab.maximizedPaneId ? null : tab.activePaneId;
-          return { ...tab, maximizedPaneId: newMaximized };
+          const newMaximized = t.maximizedPaneId ? null : t.activePaneId;
+          return { ...t, maximizedPaneId: newMaximized };
       }));
+      
+      // Focus the active pane after toggle
+      requestAnimationFrame(() => {
+          const term = termRefs.current.get(tab.activePaneId);
+          term?.focus();
+      });
+  };
+
+  // --- Font Size Controls ---
+  const DEFAULT_FONT_SIZE = 12;
+  const MIN_FONT_SIZE = 8;
+  const MAX_FONT_SIZE = 32;
+  
+  const changeFontSize = (paneId: string, delta: number) => {
+      const term = termRefs.current.get(paneId);
+      if (!term) return;
+      const currentSize = term.getFontSize();
+      const newSize = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, currentSize + delta));
+      term.setFontSize(newSize);
+  };
+  
+  const resetFontSize = (paneId: string) => {
+      const term = termRefs.current.get(paneId);
+      if (!term) return;
+      term.setFontSize(DEFAULT_FONT_SIZE);
+  };
+  
+  const increaseFontSize = () => {
+      const tab = getActiveTab();
+      if (tab) changeFontSize(tab.activePaneId, 2);
+  };
+  
+  const decreaseFontSize = () => {
+      const tab = getActiveTab();
+      if (tab) changeFontSize(tab.activePaneId, -2);
+  };
+  
+  const resetActivePaneFontSize = () => {
+      const tab = getActiveTab();
+      if (tab) resetFontSize(tab.activePaneId);
   };
 
   // --- Shortcuts ---
@@ -391,6 +467,23 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
         if (isCmdOrCtrl && isShift && e.key === 'Enter') {
             e.preventDefault();
             toggleMaximize();
+            return;
+        }
+
+        // Font Size: Cmd+Plus, Cmd+Minus, Cmd+0
+        if (isCmdOrCtrl && !isShift && (e.key === '=' || e.key === '+')) {
+            e.preventDefault();
+            increaseFontSize();
+            return;
+        }
+        if (isCmdOrCtrl && !isShift && e.key === '-') {
+            e.preventDefault();
+            decreaseFontSize();
+            return;
+        }
+        if (isCmdOrCtrl && !isShift && e.key === '0') {
+            e.preventDefault();
+            resetActivePaneFontSize();
             return;
         }
 
@@ -697,6 +790,38 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                           <span>{isMaximized ? 'Restore' : 'Maximize'}</span>
                           <span className="text-text-muted text-[10px]">⌘⇧↩</span>
                       </button>
+                      <div className="h-[1px] bg-[#404040] my-1" />
+                      <button 
+                         onClick={() => { 
+                             if ('paneId' in contextMenu) changeFontSize(contextMenu.paneId, 2);
+                             setContextMenu(null); 
+                         }}
+                         className="w-full text-left px-3 py-1.5 flex justify-between items-center hover:bg-primary hover:text-white"
+                      >
+                          <span>Zoom In</span>
+                          <span className="text-text-muted text-[10px]">⌘+</span>
+                      </button>
+                      <button 
+                         onClick={() => { 
+                             if ('paneId' in contextMenu) changeFontSize(contextMenu.paneId, -2);
+                             setContextMenu(null); 
+                         }}
+                         className="w-full text-left px-3 py-1.5 flex justify-between items-center hover:bg-primary hover:text-white"
+                      >
+                          <span>Zoom Out</span>
+                          <span className="text-text-muted text-[10px]">⌘-</span>
+                      </button>
+                      <button 
+                         onClick={() => { 
+                             if ('paneId' in contextMenu) resetFontSize(contextMenu.paneId);
+                             setContextMenu(null); 
+                         }}
+                         className="w-full text-left px-3 py-1.5 flex justify-between items-center hover:bg-primary hover:text-white"
+                      >
+                          <span>Reset Zoom</span>
+                          <span className="text-text-muted text-[10px]">⌘0</span>
+                      </button>
+                      <div className="h-[1px] bg-[#404040] my-1" />
                       <button 
                          onClick={() => { 
                              if ('paneId' in contextMenu) closePane(contextMenu.paneId); 

@@ -219,6 +219,7 @@ export function SplitLayout({
                                 
                                 return (
                                     <div 
+                                        key={pane.id}
                                         style={{ height: isMaximized ? (isPaneMaximized ? '100%' : '0') : topHeight }} 
                                         className={clsx(
                                             "relative min-h-0 flex flex-col",
@@ -232,6 +233,7 @@ export function SplitLayout({
                                                 : "border-transparent"
                                         )}>
                                             <PaneContainer
+                                                key={pane.id}
                                                 id={pane.id}
                                                 isActive={activePaneId === pane.id}
                                                 onActivate={onPaneActivate}
@@ -264,6 +266,7 @@ export function SplitLayout({
                                 
                                 return (
                                     <div 
+                                        key={pane.id}
                                         className={clsx(
                                             "flex-1 relative min-h-0 flex flex-col",
                                             hidePane && "hidden"
@@ -277,6 +280,7 @@ export function SplitLayout({
                                                 : "border-transparent"
                                         )}>
                                             <PaneContainer
+                                                key={pane.id}
                                                 id={pane.id}
                                                 isActive={activePaneId === pane.id}
                                                 onActivate={onPaneActivate}

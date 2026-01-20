@@ -133,7 +133,13 @@ export function writeToPty(id: number, data: string): void {
 export function resizePty(id: number, cols: number, rows: number): void {
   const ptyProcess = ptyProcesses.get(id);
   if (ptyProcess) {
-    ptyProcess.resize(cols, rows);
+    try {
+      ptyProcess.resize(cols, rows);
+    } catch (e) {
+      // PTY may have already exited, ignore resize errors
+      console.log(`[PTY] Resize failed for id ${id}, likely already exited`);
+      ptyProcesses.delete(id);
+    }
   }
 }
 
