@@ -202,7 +202,7 @@ export function SplitLayout({
                             <div style={{ height: topHeight }} className="relative min-h-0 flex flex-col">
                                 {/* Border Wrapper */}
                                 <div className={clsx(
-                                    "flex-1 relative overflow-hidden flex flex-col transition-colors duration-200 border-2",
+                                    "flex-1 relative overflow-hidden flex flex-col transition-colors duration-200 border",
                                     (totalPanes > 1 && activePaneId === col.panes[0].id) 
                                         ? "border-[var(--split-border-active)]" 
                                         : "border-transparent"
@@ -234,7 +234,7 @@ export function SplitLayout({
                             {isMultiPane && col.panes[1] && (
                                 <div className="flex-1 relative min-h-0 flex flex-col">
                                     <div className={clsx(
-                                        "flex-1 relative overflow-hidden flex flex-col transition-colors duration-200 border-2",
+                                        "flex-1 relative overflow-hidden flex flex-col transition-colors duration-200 border",
                                         (totalPanes > 1 && activePaneId === col.panes[1].id) 
                                             ? "border-[var(--split-border-active)]" 
                                             : "border-transparent"
