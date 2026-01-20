@@ -21,16 +21,9 @@ export function PaneContainer({
   onContextMenu
 }: PaneContainerProps) {
   
-  // Simple click handler: just activate (select) the pane
-  // User will manually click the textarea to focus it
-  const handleClick = () => {
-      onActivate(id);
-  };
-  
   return (
     <div 
       className="relative h-full w-full flex flex-col overflow-hidden"
-      onClick={handleClick}
       onContextMenu={onContextMenu}
     >
         <TerminalInstance
@@ -40,6 +33,14 @@ export function PaneContainer({
             onTitleChange={onTitleChange}
             onExit={onExit}
         />
+        
+        {/* Transparent overlay for inactive panes - guarantees click selection */}
+        {!isActive && (
+            <div 
+                className="absolute inset-0 z-10 bg-transparent cursor-pointer"
+                onClick={() => onActivate(id)}
+            />
+        )}
     </div>
   );
 }

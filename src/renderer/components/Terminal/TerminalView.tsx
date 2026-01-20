@@ -312,6 +312,12 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
   const handlePaneActivate = (paneId: string) => {
      if (!activeTabId) return;
      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, activePaneId: paneId } : t));
+     
+     // Focus the terminal so keyboard input works immediately
+     requestAnimationFrame(() => {
+        const term = termRefs.current.get(paneId);
+        term?.focus();
+     });
   };
 
   const scrollTabs = (direction: 'left' | 'right') => {
