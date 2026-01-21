@@ -20,6 +20,7 @@ export class CommandService {
 
   /**
    * Check if command matches any blacklist pattern
+   * Patterns are automatically wrapped with ^...$ for exact matching
    */
   private isBlacklisted(command: string): boolean {
     const db = this.getDb();
@@ -27,11 +28,13 @@ export class CommandService {
     
     for (const { pattern } of patterns) {
       try {
-        const regex = new RegExp(pattern);
+        // Auto-wrap with ^...$ for exact matching
+        const wrappedPattern = `^${pattern}$`;
+        const regex = new RegExp(wrappedPattern);
         if (regex.test(command)) return true;
       } catch {
-        // Invalid regex, treat as literal match
-        if (command.includes(pattern)) return true;
+        // Invalid regex, treat as exact literal match
+        if (command === pattern) return true;
       }
     }
     return false;
@@ -45,8 +48,12 @@ export class CommandService {
     const cmd = command.trim();
     
     // Check blacklist
-    if (this.isBlacklisted(cmd)) return;
+    if (this.isBlacklisted(cmd)) {
+      console.log('[CommandService] Command blacklisted, not recording:', cmd);
+      return;
+    }
 
+    console.log('[CommandService] Recording command to DB:', cmd);
     const now = Date.now();
     const db = this.getDb();
     const stmt = db.prepare(`
@@ -57,6 +64,7 @@ export class CommandService {
         last_used = ?
     `);
     stmt.run(cmd, now, now);
+    console.log('[CommandService] Command recorded successfully');
   }
 
   /**
@@ -141,13 +149,21 @@ export class CommandService {
 
   addBlacklist(pattern: string): void {
     if (!pattern || !pattern.trim()) return;
+    // Strip ^...$ if user added them manually
+    let cleaned = pattern.trim();
+    if (cleaned.startsWith('^')) cleaned = cleaned.slice(1);
+    if (cleaned.endsWith('$')) cleaned = cleaned.slice(0, -1);
     const db = this.getDb();
-    db.prepare('INSERT OR IGNORE INTO command_blacklist (pattern) VALUES (?)').run(pattern.trim());
+    db.prepare('INSERT OR IGNORE INTO command_blacklist (pattern) VALUES (?)').run(cleaned);
   }
 
   updateBlacklist(id: number, pattern: string): void {
+    // Strip ^...$ if user added them manually
+    let cleaned = pattern.trim();
+    if (cleaned.startsWith('^')) cleaned = cleaned.slice(1);
+    if (cleaned.endsWith('$')) cleaned = cleaned.slice(0, -1);
     const db = this.getDb();
-    db.prepare('UPDATE command_blacklist SET pattern = ? WHERE id = ?').run(pattern.trim(), id);
+    db.prepare('UPDATE command_blacklist SET pattern = ? WHERE id = ?').run(cleaned, id);
   }
 
   removeBlacklist(id: number): void {

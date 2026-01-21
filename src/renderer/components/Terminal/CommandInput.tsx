@@ -283,7 +283,17 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
         !trimmed.includes('||');
       
       if (shouldRecord) {
+        console.log('[CommandInput] Recording command:', trimmed);
         invoke('shell:record-command', trimmed);
+      } else {
+        console.log('[CommandInput] NOT recording command:', trimmed, {
+          startsWithCd: trimmed.startsWith('cd '),
+          isCd: trimmed === 'cd',
+          hasNewline: trimmed.includes('\n'),
+          endsWithBackslash: trimmed.endsWith('\\'),
+          hasDoubleAmp: trimmed.includes('&&'),
+          hasDoublePipe: trimmed.includes('||')
+        });
       }
     }
     

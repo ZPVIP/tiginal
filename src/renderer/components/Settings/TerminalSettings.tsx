@@ -545,7 +545,7 @@ export function TerminalSettings() {
           <div className="border-t border-border pt-4">
             <h3 className="text-sm font-medium text-text-main mb-2 flex items-center gap-2">
               <Shield size={14} className="text-orange-400" />
-              Blacklist (regex patterns)
+              Blacklist (^pattern$)
             </h3>
             <div className="flex gap-2 mb-2">
               <input
@@ -663,7 +663,7 @@ export function TerminalSettings() {
           <div className="border-t border-border pt-4">
             <h3 className="text-sm font-medium text-text-main mb-2 flex items-center gap-2">
               <Shield size={14} className="text-orange-400" />
-              Blacklist (regex patterns)
+              Blacklist (^pattern$)
             </h3>
             <div className="flex gap-2 mb-2">
               <input
