@@ -59,7 +59,15 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
             }
         }
     },
-    getFontSize: () => xtermRef.current?.options.fontSize || 14
+    getFontSize: () => xtermRef.current?.options.fontSize || 14,
+    clear: () => {
+        // Clear scrollback locally
+        xtermRef.current?.write('\x1b[3J');
+        // Send Ctrl+L to shell to clear viewport and redraw prompt
+        if (ptyIdRef.current !== null) {
+            send('pty:write', ptyIdRef.current, '\u000C');
+        }
+    }
   }));
 
   // Update theme when it changes
@@ -143,6 +151,18 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
 
       // Let Ctrl+` trigger focus toggle via CustomEvent
       term.attachCustomKeyEventHandler((event) => {
+        // Cmd+K to clear
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+             event.preventDefault();
+             // Clear scrollback
+             term.write('\x1b[3J');
+             // Send Ctrl+L to shell
+             if (ptyIdRef.current !== null) {
+                send('pty:write', ptyIdRef.current, '\u000C');
+             }
+             return false;
+        }
+
         if (event.ctrlKey && event.key === '`') {
           window.dispatchEvent(new CustomEvent('toggle-command-input-focus'));
           return false;

@@ -9,6 +9,7 @@ interface CommandInputProps {
   onSend: (command: string, execute: boolean) => void;
   cwd: string;
   onFocus?: () => void;
+  onClear?: () => void;
 }
 
 export interface CommandInputHandle {
@@ -22,8 +23,10 @@ interface DirectorySuggestions {
 
 type SuggestionMode = 'none' | 'directory' | 'command';
 
-export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({ onSend, cwd, onFocus }, ref) => {
+export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({ onSend, cwd, onFocus, onClear }, ref) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // ... (rest of the component)
 
   useImperativeHandle(ref, () => ({
       focus: () => {
@@ -366,6 +369,13 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend(true);
+    }
+
+    // Cmd+K to clear terminal
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+       e.preventDefault();
+       onClear?.();
+       return;
     }
 
     // History navigation: when input is empty OR already in history mode
