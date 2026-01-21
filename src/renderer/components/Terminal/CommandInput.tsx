@@ -120,9 +120,14 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
         .then((res: unknown) => {
           const suggestions = res as string[];
           setCmdSuggestions(suggestions);
-          setShowSuggestions(suggestions.length > 0);
           
-          if (suggestions.length > 0) {
+          // Fix: If there's only one suggestion and it effectively matches what we typed, don't show the menu
+          // This prevents the "poup again" issue after selecting from history
+          const isExactMatch = suggestions.length === 1 && suggestions[0] === trimmed;
+          
+          setShowSuggestions(suggestions.length > 0 && !isExactMatch);
+          
+          if (suggestions.length > 0 && !isExactMatch) {
             setSelectedIndex(0);
           } else {
             setSelectedIndex(-1);
