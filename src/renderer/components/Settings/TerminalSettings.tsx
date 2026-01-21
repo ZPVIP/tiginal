@@ -35,11 +35,30 @@ const TABS = [
   { id: 'directories', label: 'Directories', icon: <FolderOpen size={14} /> },
 ];
 
+const FONT_OPTIONS = [
+  { value: 'monospace', label: 'System Monospace' },
+  { value: '"SF Mono", monospace', label: 'SF Mono' },
+  { value: '"Menlo", monospace', label: 'Menlo' },
+  { value: '"Monaco", monospace', label: 'Monaco' },
+  { value: '"Fira Code", monospace', label: 'Fira Code' },
+  { value: '"JetBrains Mono", monospace', label: 'JetBrains Mono' },
+  { value: '"Cascadia Code", monospace', label: 'Cascadia Code' },
+  { value: '"Source Code Pro", monospace', label: 'Source Code Pro' },
+  { value: '"IBM Plex Mono", monospace', label: 'IBM Plex Mono' },
+  { value: '"Consolas", monospace', label: 'Consolas' },
+  { value: '"Ubuntu Mono", monospace', label: 'Ubuntu Mono' },
+  { value: '"Inconsolata", monospace', label: 'Inconsolata' },
+  { value: '"Roboto Mono", monospace', label: 'Roboto Mono' },
+  { value: '"Hack", monospace', label: 'Hack' },
+  { value: '"Anonymous Pro", monospace', label: 'Anonymous Pro' },
+];
+
 export function TerminalSettings() {
   const [activeTab, setActiveTab] = useState('general');
   
   // General settings
   const [fontFamily, setFontFamily] = useState('monospace');
+  const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
   const [fontSize, setFontSize] = useState(14);
   const [aiModel, setAiModel] = useState('');
   const [cleanupInterval, setCleanupInterval] = useState(24);
@@ -113,6 +132,8 @@ export function TerminalSettings() {
       minScore,
       ...updates
     }));
+    // Notify terminals to update font
+    window.dispatchEvent(new CustomEvent('terminal-settings-changed'));
   };
 
   const loadCommands = async () => {
@@ -300,16 +321,63 @@ export function TerminalSettings() {
       {/* General Tab */}
       {activeTab === 'general' && (
         <div className="space-y-4">
-          <div>
+          <div className="relative">
             <label className="block text-sm font-medium text-text-main mb-2">Font Family</label>
-            <input
-              type="text"
-              value={fontFamily}
-              onChange={(e) => setFontFamily(e.target.value)}
-              onBlur={() => saveSettings()}
-              className="w-full bg-surface text-text-main text-sm rounded-lg py-2 px-3 border border-border focus:border-primary outline-none"
-              placeholder="monospace, Menlo, Consolas..."
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={fontFamily}
+                onChange={(e) => setFontFamily(e.target.value)}
+                onFocus={() => setFontDropdownOpen(true)}
+                onBlur={() => {
+                  setTimeout(() => setFontDropdownOpen(false), 150);
+                  saveSettings();
+                }}
+                className="w-full bg-surface text-text-main text-sm rounded-lg py-2 px-3 pr-8 border border-border focus:border-primary outline-none"
+                placeholder="Enter or select font..."
+              />
+              <ChevronDown 
+                size={14} 
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" 
+              />
+            </div>
+            {fontDropdownOpen && (() => {
+              const isExactMatch = FONT_OPTIONS.some(f => f.value === fontFamily);
+              const filtered = isExactMatch 
+                ? FONT_OPTIONS 
+                : FONT_OPTIONS.filter(f => 
+                    f.label.toLowerCase().includes(fontFamily.toLowerCase()) || 
+                    f.value.toLowerCase().includes(fontFamily.toLowerCase())
+                  );
+              return (
+                <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto bg-surface border border-border rounded-lg shadow-lg">
+                  {filtered.map(font => (
+                    <button
+                      key={font.value}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setFontFamily(font.value);
+                        setFontDropdownOpen(false);
+                        saveSettings({ fontFamily: font.value });
+                      }}
+                      className={clsx(
+                        "w-full text-left px-3 py-2 text-sm hover:bg-primary/20 transition-colors",
+                        fontFamily === font.value ? "bg-primary/10 text-primary" : "text-text-main"
+                      )}
+                    >
+                      <span className="font-medium">{font.label}</span>
+                      {font.label !== font.value && (
+                        <span className="text-text-muted text-xs ml-2 truncate">{font.value}</span>
+                      )}
+                    </button>
+                  ))}
+                  {filtered.length === 0 && (
+                    <div className="px-3 py-2 text-sm text-text-muted">Custom: {fontFamily}</div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           
           <div>

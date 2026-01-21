@@ -8,6 +8,7 @@ import { FavoriteCommandModal } from './FavoriteCommandModal';
 interface CommandInputProps {
   onSend: (command: string, execute: boolean) => void;
   cwd: string;
+  onFocus?: () => void;
 }
 
 export interface CommandInputHandle {
@@ -21,7 +22,7 @@ interface DirectorySuggestions {
 
 type SuggestionMode = 'none' | 'directory' | 'command';
 
-export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({ onSend, cwd }, ref) => {
+export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({ onSend, cwd, onFocus }, ref) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useImperativeHandle(ref, () => ({
@@ -328,6 +329,7 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
+        onFocus={onFocus}
         spellCheck={false}
         autoComplete="off"
         className="flex-1 w-full bg-surface text-text-main text-sm font-mono rounded-md py-2 px-2 outline-none resize-none border border-border placeholder-text-muted overflow-hidden min-h-[36px]"

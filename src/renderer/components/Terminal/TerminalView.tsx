@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Plus, X, Monitor, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { TerminalRef } from './TerminalInstance';
-import { CommandInput } from './CommandInput';
+import { CommandInput, CommandInputHandle } from './CommandInput';
 import { SplitLayout, Column, Pane } from './SplitLayout';
 
 interface Tab {
@@ -30,6 +30,9 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
   
   // Refs for terminal instances
   const termRefs = useRef<Map<string, TerminalRef>>(new Map());
+  
+  // Ref for CommandInput
+  const commandInputRef = useRef<CommandInputHandle>(null);
 
   // --- Helpers ---
   
@@ -486,6 +489,13 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
             resetActivePaneFontSize();
             return;
         }
+        
+        // Toggle focus: Ctrl+` (backtick)
+        if (e.ctrlKey && e.key === '`') {
+            e.preventDefault();
+            toggleInputFocus();
+            return;
+        }
 
         // Smart Close: Cmd+W
         // - If multiple panes, close active pane
@@ -577,6 +587,15 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
       });
       return cleanup;
   }, []);
+  
+  // Listen for toggle-command-input-focus from terminal
+  useEffect(() => {
+      const handler = () => {
+          commandInputRef.current?.focus();
+      };
+      window.addEventListener('toggle-command-input-focus', handler);
+      return () => window.removeEventListener('toggle-command-input-focus', handler);
+  }, []);
 
   // Notify parent about active path and record visit
   useEffect(() => {
@@ -606,8 +625,31 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
       if (tabs.length === 0) {
           initializedRef.current = true;
           createTab();
+          // Auto focus CommandInput on startup
+          setTimeout(() => {
+              commandInputRef.current?.focus();
+          }, 200);
       }
   }, []);
+  
+  // Toggle focus between terminal and CommandInput
+  const toggleInputFocus = () => {
+      const tab = getActiveTab();
+      if (!tab) return;
+      
+      // Check if any textarea has focus (CommandInput)
+      const activeElement = document.activeElement;
+      const isTextareaFocused = activeElement?.tagName === 'TEXTAREA';
+      
+      if (isTextareaFocused) {
+          // Focus terminal
+          const term = termRefs.current.get(tab.activePaneId);
+          term?.focus();
+      } else {
+          // Focus CommandInput
+          commandInputRef.current?.focus();
+      }
+  };
 
   const activeTab = getActiveTab();
 
@@ -709,6 +751,7 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
           
           <div className="shrink-0 z-10">
               <CommandInput 
+                  ref={commandInputRef}
                   onSend={handleSendCommand} 
                   cwd={activeTab?.cwd || ''}
               />

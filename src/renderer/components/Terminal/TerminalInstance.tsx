@@ -69,102 +69,153 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
     }
   }, [currentTheme]);
 
+  // Listen for font settings changes
+  useEffect(() => {
+    const handler = async () => {
+      if (!xtermRef.current) return;
+      try {
+        const settings = await invoke('settings:get', 'terminal');
+        if (settings) {
+          const parsed = JSON.parse(settings);
+          if (parsed.fontFamily) {
+            xtermRef.current.options.fontFamily = parsed.fontFamily;
+          }
+          if (parsed.fontSize) {
+            xtermRef.current.options.fontSize = parsed.fontSize;
+          }
+          fitAddonRef.current?.fit();
+        }
+      } catch (e) {
+        console.error('Failed to update terminal font', e);
+      }
+    };
+    window.addEventListener('terminal-settings-changed', handler);
+    return () => window.removeEventListener('terminal-settings-changed', handler);
+  }, []);
+
   useEffect(() => {
     if (!containerRef.current) return;
+    const container = containerRef.current;
 
-    // 1. Init XTerm
-    const term = new XTerm({
-      cursorBlink: true,
-      cursorStyle: 'bar',
-      fontSize: 14,
-      fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", Menlo, Monaco, "Courier New", monospace',
-      lineHeight: 1.2,
-      theme: currentTheme.terminal, // Initial theme
-      allowProposedApi: true,
-    });
-
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(containerRef.current);
-    
-    xtermRef.current = term;
-    fitAddonRef.current = fitAddon;
-
-    // Input handler - Local Echo is handled by PTY usually, so just send.
-    term.onData(data => {
-        if (ptyIdRef.current !== null) {
-             send('pty:write', ptyIdRef.current, data);
-        }
-    });
-
-    // 2. Setup PTY
+    let term: XTerm;
+    let fitAddon: FitAddon;
+    let ro: ResizeObserver;
     let myPtyId: number;
-    let cleanupData: () => void;
-    let cleanupExit: () => void;
+    let cleanupData: (() => void) | undefined;
+    let cleanupExit: (() => void) | undefined;
+    let disposed = false;
 
-    const setup = async () => {
-         try {
-             const { cols, rows } = term;
-             myPtyId = await invoke('pty:create', { cols, rows });
-             ptyIdRef.current = myPtyId;
-             // send('pty:subscribe', myPtyId); // Handled in create now for zero-latency
+    const init = async () => {
+      // Load terminal settings
+      let terminalFontFamily = '"SF Mono", "Fira Code", "Cascadia Code", Menlo, Monaco, "Courier New", monospace';
+      let terminalFontSize = 14;
+      
+      try {
+        const settings = await invoke('settings:get', 'terminal');
+        if (settings) {
+          const parsed = JSON.parse(settings);
+          if (parsed.fontFamily) terminalFontFamily = parsed.fontFamily;
+          if (parsed.fontSize) terminalFontSize = parsed.fontSize;
+        }
+      } catch (e) {
+        console.error('Failed to load terminal settings', e);
+      }
 
-             // Listeners - preload strips _event, so we receive (ptyId, data) directly
-             const dataHandler = (ptyId: number, data: string) => {
-                 if (ptyId === myPtyId) {
-                     term.write(data);
-                     // Title Update Logic
-                     const osc7Match = data.match(/\x1b\]7;file:\/\/[^\/]*([^\x07]+)\x07/);
-                     if (osc7Match) {
-                       onTitleChange(id, decodeURIComponent(osc7Match[1])); // Use component ID (prop)
-                     }
-                     const iterm2Match = data.match(/\x1b\]1337;CurrentDir=([^\x07]+)\x07/);
-                     if (iterm2Match) {
-                        onTitleChange(id, iterm2Match[1]);
-                     }
-                 }
-             };
+      if (disposed) return;
 
-             const exitHandler = (ptyId: number) => {
-                 if (ptyId === myPtyId) {
-                     onExit(id); // Use component ID (prop)
-                 }
-             };
+      // Init XTerm
+      term = new XTerm({
+        cursorBlink: true,
+        cursorStyle: 'bar',
+        fontSize: terminalFontSize,
+        fontFamily: terminalFontFamily,
+        lineHeight: 1.2,
+        theme: currentTheme.terminal,
+        allowProposedApi: true,
+      });
 
-             cleanupData = window.electron!.on('pty:data', dataHandler);
-             cleanupExit = window.electron!.on('pty:exit', exitHandler);
-             
-             // Initial fit after pty creation and slight delay to ensure container size is ready
-             setTimeout(() => {
-                 fitAddon.fit();
-                 send('pty:resize', myPtyId, term.cols, term.rows);
-             }, 100);
+      fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(container);
+      
+      xtermRef.current = term;
+      fitAddonRef.current = fitAddon;
 
-         } catch (e) {
-             console.error("Failed to setup PTY", e);
-             term.write('\r\n\x1b[31mFailed to start shell.\x1b[0m\r\n');
-         }
+      // Let Ctrl+` trigger focus toggle via CustomEvent
+      term.attachCustomKeyEventHandler((event) => {
+        if (event.ctrlKey && event.key === '`') {
+          window.dispatchEvent(new CustomEvent('toggle-command-input-focus'));
+          return false;
+        }
+        return true;
+      });
+
+      // Input handler
+      term.onData(data => {
+        if (ptyIdRef.current !== null) {
+          send('pty:write', ptyIdRef.current, data);
+        }
+      });
+
+      // Setup PTY
+      try {
+        const { cols, rows } = term;
+        myPtyId = await invoke('pty:create', { cols, rows });
+        ptyIdRef.current = myPtyId;
+
+        const dataHandler = (ptyId: number, data: string) => {
+          if (ptyId === myPtyId) {
+            term.write(data);
+            const osc7Match = data.match(/\x1b\]7;file:\/\/[^\/]*([^\x07]+)\x07/);
+            if (osc7Match) {
+              onTitleChange(id, decodeURIComponent(osc7Match[1]));
+            }
+            const iterm2Match = data.match(/\x1b\]1337;CurrentDir=([^\x07]+)\x07/);
+            if (iterm2Match) {
+              onTitleChange(id, iterm2Match[1]);
+            }
+          }
+        };
+
+        const exitHandler = (ptyId: number) => {
+          if (ptyId === myPtyId) {
+            onExit(id);
+          }
+        };
+
+        cleanupData = window.electron!.on('pty:data', dataHandler);
+        cleanupExit = window.electron!.on('pty:exit', exitHandler);
+        
+        setTimeout(() => {
+          fitAddon.fit();
+          send('pty:resize', myPtyId, term.cols, term.rows);
+        }, 100);
+      } catch (e) {
+        console.error("Failed to setup PTY", e);
+        term.write('\r\n\x1b[31mFailed to start shell.\x1b[0m\r\n');
+      }
+
+      // Resize observer
+      ro = new ResizeObserver(() => {
+        if (isActive && fitAddon && term) {
+          fitAddon.fit();
+          if (ptyIdRef.current !== null) {
+            send('pty:resize', ptyIdRef.current, term.cols, term.rows);
+          }
+        }
+      });
+      ro.observe(container);
     };
 
-    setup();
-
-    // Initial resize observer for container
-    const ro = new ResizeObserver(() => {
-        if (isActive && fitAddon && term) {
-            fitAddon.fit();
-            if (ptyIdRef.current !== null) {
-                send('pty:resize', ptyIdRef.current, term.cols, term.rows);
-            }
-        }
-    });
-    ro.observe(containerRef.current);
+    init();
 
     return () => {
-        ro.disconnect();
-        if (cleanupData) cleanupData();
-        if (cleanupExit) cleanupExit();
-        if (myPtyId) send('pty:kill', myPtyId); // Clean up PTY on unmount
-        term.dispose();
+      disposed = true;
+      ro?.disconnect();
+      cleanupData?.();
+      cleanupExit?.();
+      if (myPtyId) send('pty:kill', myPtyId);
+      term?.dispose();
     };
   }, []); // Mount ONCE
 
