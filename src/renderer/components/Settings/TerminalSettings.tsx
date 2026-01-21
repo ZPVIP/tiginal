@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Settings, Terminal, FolderOpen, Trash2, Star, StarOff, Search, Edit2, Save, X, Bot, ChevronDown, ArrowDown, Plus, Shield, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Settings, Terminal, FolderOpen, Trash2, Star, StarOff, Search, Edit2, Save, X, Bot, ChevronDown, ArrowDown, Plus, Shield, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
 
 interface CommandRow {
   id: number;
@@ -33,6 +33,7 @@ const TABS = [
   { id: 'general', label: 'General', icon: <Settings size={14} /> },
   { id: 'commands', label: 'Commands', icon: <Terminal size={14} /> },
   { id: 'directories', label: 'Directories', icon: <FolderOpen size={14} /> },
+  { id: 'history', label: 'History', icon: <Clock size={14} /> },
 ];
 
 const FONT_OPTIONS = [
@@ -63,6 +64,7 @@ export function TerminalSettings() {
   const [aiModel, setAiModel] = useState('');
   const [cleanupInterval, setCleanupInterval] = useState(24);
   const [minScore, setMinScore] = useState(2);
+  const [historyMaxCount, setHistoryMaxCount] = useState(10000);
   
   // AI Providers
   const [providers, setProviders] = useState<AIProvider[]>([]);
@@ -92,6 +94,15 @@ export function TerminalSettings() {
   const [dirPage, setDirPage] = useState(0);
   const [dirBlPage, setDirBlPage] = useState(0);
 
+  // History
+  const [history, setHistory] = useState<{ id: number; command: string; executed_at: number }[]>([]);
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyBlacklist, setHistoryBlacklist] = useState<BlacklistRow[]>([]);
+  const [historyBlPage, setHistoryBlPage] = useState(0);
+  const [editingHistBl, setEditingHistBl] = useState<number | null>(null);
+  const [editHistBlValue, setEditHistBlValue] = useState('');
+  const [newHistBlPattern, setNewHistBlPattern] = useState('');
+
   const invoke = window.electron?.invoke || (async () => null);
 
   useEffect(() => {
@@ -106,6 +117,14 @@ export function TerminalSettings() {
     return () => window.removeEventListener('ai-providers-updated', handleUpdate);
   }, []);
 
+  // Load history when switching to history tab
+  useEffect(() => {
+    if (activeTab === 'history') {
+      loadHistory();
+      loadHistoryBlacklist();
+    }
+  }, [activeTab]);
+
   const loadSettings = async () => {
     const settings = await invoke('settings:get', 'terminal');
     if (settings) {
@@ -115,6 +134,7 @@ export function TerminalSettings() {
       setAiModel(parsed.aiModel || '');
       setCleanupInterval(parsed.cleanupInterval || 24);
       setMinScore(parsed.minScore || 2);
+      setHistoryMaxCount(parsed.historyMaxCount || 10000);
     }
   };
 
@@ -130,6 +150,7 @@ export function TerminalSettings() {
       aiModel,
       cleanupInterval,
       minScore,
+      historyMaxCount,
       ...updates
     }));
     // Notify terminals to update font
@@ -151,6 +172,16 @@ export function TerminalSettings() {
     setCmdBlacklist(cmdBl || []);
     const dirBl = await invoke('shell:get-directory-blacklist');
     setDirBlacklist(dirBl || []);
+  };
+
+  const loadHistory = async () => {
+    const hist = await invoke('shell:get-all-history');
+    setHistory(hist || []);
+  };
+
+  const loadHistoryBlacklist = async () => {
+    const bl = await invoke('shell:get-history-blacklist');
+    setHistoryBlacklist(bl || []);
   };
 
   // Model list
@@ -272,6 +303,50 @@ export function TerminalSettings() {
     alert(`Cleaned up ${cmdDeleted} commands and ${dirDeleted} directories.`);
   };
 
+  // History handlers
+  const handleDeleteHistory = async (id: number) => {
+    await invoke('shell:delete-history', id);
+    loadHistory();
+  };
+
+  const handleClearAllHistory = async () => {
+    if (confirm('Are you sure you want to clear all command history?')) {
+      await invoke('shell:clear-all-history');
+      loadHistory();
+    }
+  };
+
+  const handleAddHistoryBlacklist = async () => {
+    if (newHistBlPattern.trim()) {
+      await invoke('shell:add-history-blacklist', newHistBlPattern.trim());
+      setNewHistBlPattern('');
+      loadHistoryBlacklist();
+    }
+  };
+
+  const handleUpdateHistoryBlacklist = async (id: number) => {
+    if (editHistBlValue.trim()) {
+      await invoke('shell:update-history-blacklist', id, editHistBlValue.trim());
+      setEditingHistBl(null);
+      loadHistoryBlacklist();
+    }
+  };
+
+  const handleRemoveHistoryBlacklist = async (id: number) => {
+    await invoke('shell:remove-history-blacklist', id);
+    loadHistoryBlacklist();
+  };
+
+  const handleHistoryMaxCountChange = (val: number) => {
+    const clamped = Math.max(100, Math.min(50000, val));
+    setHistoryMaxCount(clamped);
+  };
+
+  const handleTrimHistory = async () => {
+    await invoke('shell:trim-history', historyMaxCount);
+    loadHistory();
+  };
+
   const filteredCommands = commands.filter(c => 
     c.command.toLowerCase().includes(cmdSearch.toLowerCase())
   );
@@ -288,6 +363,8 @@ export function TerminalSettings() {
   const pagedCmdBlacklist = paginate(cmdBlacklist, cmdBlPage);
   const pagedDirectories = paginate(filteredDirectories, dirPage);
   const pagedDirBlacklist = paginate(dirBlacklist, dirBlPage);
+  const pagedHistory = paginate(history, historyPage);
+  const pagedHistoryBlacklist = paginate(historyBlacklist, historyBlPage);
 
   // Reset page when search changes
   useEffect(() => { setCmdPage(0); }, [cmdSearch]);
@@ -417,6 +494,31 @@ export function TerminalSettings() {
                 ))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-main mb-2">
+              History Max Count
+              <span className="text-text-muted text-xs ml-2">(100 - 50000)</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={100}
+                max={50000}
+                value={historyMaxCount}
+                onChange={(e) => handleHistoryMaxCountChange(Number(e.target.value))}
+                onBlur={() => saveSettings()}
+                className="w-32 bg-surface text-text-main text-sm rounded-lg py-2 px-3 border border-border focus:border-primary outline-none"
+              />
+              <button
+                onClick={handleTrimHistory}
+                className="px-3 py-2 text-sm bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 rounded-lg transition-colors"
+              >
+                Trim Now
+              </button>
+            </div>
+            <p className="text-xs text-text-muted mt-1">Maximum number of commands to keep in history.</p>
           </div>
 
           <div className="border-t border-border pt-4 mt-4">
@@ -717,6 +819,121 @@ export function TerminalSettings() {
                 </button>
                 <span className="text-xs text-text-muted">{dirBlPage + 1} / {totalPages(dirBlacklist.length)}</span>
                 <button onClick={() => setDirBlPage(p => Math.min(totalPages(dirBlacklist.length) - 1, p + 1))} disabled={dirBlPage >= totalPages(dirBlacklist.length) - 1} className="p-1 rounded hover:bg-surface-light disabled:opacity-30 disabled:cursor-not-allowed">
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* History Tab */}
+      {activeTab === 'history' && (
+        <div className="space-y-4">
+          {/* History List */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-text-main flex items-center gap-2">
+                <Clock size={14} className="text-primary" />
+                Command History ({history.length})
+              </h3>
+              <button
+                onClick={handleClearAllHistory}
+                className="px-3 py-1.5 text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-lg transition-colors"
+              >
+                Clear All
+              </button>
+            </div>
+            <div className="space-y-1">
+              {pagedHistory.map(h => (
+                <div key={h.id} className="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-surface-light">
+                  <span className="flex-1 text-sm font-mono text-text-main truncate">{h.command}</span>
+                  <span className="text-xs text-text-muted shrink-0">
+                    {new Date(h.executed_at).toLocaleString()}
+                  </span>
+                  <button
+                    onClick={() => handleDeleteHistory(h.id)}
+                    className="p-1 text-text-muted opacity-0 group-hover:opacity-100 hover:text-red-400 rounded"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              {history.length === 0 && (
+                <div className="text-sm text-text-muted text-center py-4">No history yet</div>
+              )}
+            </div>
+            {totalPages(history.length) > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-2">
+                <button onClick={() => setHistoryPage(p => Math.max(0, p - 1))} disabled={historyPage === 0} className="p-1 rounded hover:bg-surface-light disabled:opacity-30 disabled:cursor-not-allowed">
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-xs text-text-muted">{historyPage + 1} / {totalPages(history.length)}</span>
+                <button onClick={() => setHistoryPage(p => Math.min(totalPages(history.length) - 1, p + 1))} disabled={historyPage >= totalPages(history.length) - 1} className="p-1 rounded hover:bg-surface-light disabled:opacity-30 disabled:cursor-not-allowed">
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* History Blacklist */}
+          <div className="border-t border-border pt-4">
+            <h3 className="text-sm font-medium text-text-main mb-2 flex items-center gap-2">
+              <Shield size={14} className="text-orange-400" />
+              Blacklist (^pattern$)
+            </h3>
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={newHistBlPattern}
+                onChange={(e) => setNewHistBlPattern(e.target.value)}
+                className="flex-1 bg-surface text-text-main text-sm font-mono rounded-lg py-1.5 px-3 border border-border focus:border-primary outline-none"
+                placeholder="ls"
+              />
+              <button onClick={handleAddHistoryBlacklist} className="px-3 py-1.5 bg-primary text-white text-sm rounded-lg hover:opacity-90">
+                <Plus size={14} />
+              </button>
+            </div>
+            <div className="space-y-1">
+              {pagedHistoryBlacklist.map(bl => (
+                <div key={bl.id} className="group flex items-center gap-2 px-3 py-1.5 bg-orange-500/10 rounded-lg border border-orange-500/30">
+                  {editingHistBl === bl.id ? (
+                    <>
+                      <input
+                        type="text"
+                        value={editHistBlValue}
+                        onChange={(e) => setEditHistBlValue(e.target.value)}
+                        className="flex-1 bg-background text-text-main text-sm font-mono rounded py-1 px-2 border border-primary outline-none"
+                        autoFocus
+                      />
+                      <button onClick={() => handleUpdateHistoryBlacklist(bl.id)} className="p-1 text-green-400 hover:bg-green-500/20 rounded">
+                        <Save size={14} />
+                      </button>
+                      <button onClick={() => setEditingHistBl(null)} className="p-1 text-text-muted hover:bg-surface-light rounded">
+                        <X size={14} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm font-mono text-orange-300 truncate">{bl.pattern}</span>
+                      <button onClick={() => { setEditingHistBl(bl.id); setEditHistBlValue(bl.pattern); }} className="p-1 text-text-muted opacity-0 group-hover:opacity-100 hover:text-primary rounded">
+                        <Edit2 size={14} />
+                      </button>
+                      <button onClick={() => handleRemoveHistoryBlacklist(bl.id)} className="p-1 text-text-muted opacity-0 group-hover:opacity-100 hover:text-red-400 rounded">
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+            {totalPages(historyBlacklist.length) > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-2">
+                <button onClick={() => setHistoryBlPage(p => Math.max(0, p - 1))} disabled={historyBlPage === 0} className="p-1 rounded hover:bg-surface-light disabled:opacity-30 disabled:cursor-not-allowed">
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-xs text-text-muted">{historyBlPage + 1} / {totalPages(historyBlacklist.length)}</span>
+                <button onClick={() => setHistoryBlPage(p => Math.min(totalPages(historyBlacklist.length) - 1, p + 1))} disabled={historyBlPage >= totalPages(historyBlacklist.length) - 1} className="p-1 rounded hover:bg-surface-light disabled:opacity-30 disabled:cursor-not-allowed">
                   <ChevronRight size={16} />
                 </button>
               </div>

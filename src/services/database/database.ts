@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 /**
  * Database service for Tiginal
@@ -85,6 +85,10 @@ export class DatabaseService {
 
     if (currentVersion < 5) {
       this.migrateV5();
+    }
+
+    if (currentVersion < 6) {
+      this.migrateV6();
     }
 
     // Update schema version
@@ -214,6 +218,27 @@ export class DatabaseService {
       );
 
       CREATE TABLE IF NOT EXISTS directory_blacklist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pattern TEXT UNIQUE NOT NULL
+      );
+    `);
+  }
+
+  /**
+   * Migration v6: Create command history tables
+   */
+  private migrateV6(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS command_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        command TEXT NOT NULL,
+        executed_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_command_history_time ON command_history(executed_at DESC);
+
+      CREATE TABLE IF NOT EXISTS command_history_blacklist (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         pattern TEXT UNIQUE NOT NULL
       );
