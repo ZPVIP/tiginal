@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { Folder, Trash2, History } from 'lucide-react';
 
@@ -17,6 +17,17 @@ export function CommandSuggestion({ suggestions, selectedIndex, onSelect, onIgno
   const { local, frequent } = suggestions;
   const hasLocal = local.length > 0;
   const hasFrequent = frequent.length > 0;
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  
+  // 选中项变化时滚动到可视区域
+  useEffect(() => {
+      if (selectedIndex >= 0 && itemRefs.current[selectedIndex]) {
+          itemRefs.current[selectedIndex]?.scrollIntoView({
+              block: 'nearest',
+              behavior: 'smooth'
+          });
+      }
+  }, [selectedIndex]);
   
   if (!visible || (!hasLocal && !hasFrequent)) return null;
 
@@ -29,6 +40,7 @@ export function CommandSuggestion({ suggestions, selectedIndex, onSelect, onIgno
       return (
           <div
             key={`${isFrequent ? 'freq' : 'loc'}-${suggestion}`}
+            ref={el => { itemRefs.current[idx] = el; }}
             className={clsx(
               "group px-3 py-1.5 cursor-pointer flex items-center justify-between gap-2 text-sm font-mono transition-colors whitespace-nowrap",
               isSelected
@@ -68,7 +80,7 @@ export function CommandSuggestion({ suggestions, selectedIndex, onSelect, onIgno
 
   return (
     <div className="absolute bottom-full left-0 mb-2 z-50 px-2 max-w-full">
-      <div className="bg-surface/95 backdrop-blur-sm border border-border shadow-xl rounded-lg overflow-hidden max-h-[80vh] overflow-y-auto w-auto min-w-[200px] max-w-full block">
+      <div className="bg-surface/95 backdrop-blur-sm border border-border shadow-xl rounded-lg overflow-hidden max-h-[420px] overflow-y-auto w-auto min-w-[200px] max-w-full block">
         
         {/* Local Section */}
         {hasLocal && (

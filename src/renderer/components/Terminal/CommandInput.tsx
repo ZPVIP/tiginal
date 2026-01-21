@@ -171,24 +171,34 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
             return;
         }
         if (e.key === 'Tab') {
-            if (selectedIndex !== -1) {
-                applySuggestion(flatSuggestions[selectedIndex], false);
+            // 只有一个候选时，直接补全
+            if (flatSuggestions.length === 1) {
+                applySuggestionAndContinue(flatSuggestions[0]);
+            } else if (e.shiftKey) {
+                // Shift+Tab 往上选
+                const newIndex = selectedIndex <= 0 ? flatSuggestions.length - 1 : selectedIndex - 1;
+                setSelectedIndex(newIndex);
             } else {
-                setSelectedIndex(0); // If nothing selected, TAB selects first
+                // Tab 往下选
+                const newIndex = selectedIndex === -1 ? 0 : (selectedIndex + 1) % flatSuggestions.length;
+                setSelectedIndex(newIndex);
             }
             return;
         }
         if (e.key === 'Enter' && !e.shiftKey) {
              e.preventDefault();
              if (selectedIndex !== -1) {
-                  applySuggestion(flatSuggestions[selectedIndex], true);
+                  // 有选中项时：只补全，不执行，继续加载子目录
+                  applySuggestionAndContinue(flatSuggestions[selectedIndex]);
              } else {
+                  // 没有选中项时：执行命令
                   handleSend(true);
              }
              return; 
         }
         if (e.key === 'Escape') {
             setShowSuggestions(false);
+            setSelectedIndex(-1);
             return;
         }
     } else {
@@ -202,6 +212,42 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
       e.preventDefault();
       handleSend(true);
     }
+  };
+
+  // 补全后继续显示子目录
+  const applySuggestionAndContinue = (suggestion: string) => {
+      let newValue = '';
+      const safeSuggestion = suggestion.replace(/ /g, '\\ ');
+
+      if (value === 'cd' || value === 'cd ') {
+          newValue = `cd ${safeSuggestion}`;
+      } else if (value.startsWith('cd ')) {
+          const prefix = value.substring(3);
+          
+          if (suggestion.startsWith('/')) {
+              // 绝对路径
+              newValue = `cd ${safeSuggestion}`;
+          } else {
+              // 相对路径
+              const lastSlash = prefix.lastIndexOf('/');
+              let newPrefix = '';
+              if (lastSlash !== -1) {
+                 newPrefix = prefix.substring(0, lastSlash + 1);
+              }
+              newValue = `cd ${newPrefix}${safeSuggestion}`;
+          }
+      }
+
+      if (newValue) {
+          // 确保以 / 结尾，触发子目录加载
+          if (!newValue.endsWith('/')) {
+              newValue += '/';
+          }
+          setValue(newValue);
+          setSelectedIndex(-1);
+          textareaRef.current?.focus();
+          // fetchSuggestions 会通过 useEffect 自动触发
+      }
   };
 
   const handleSend = (execute: boolean) => {
