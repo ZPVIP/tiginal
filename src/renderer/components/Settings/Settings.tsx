@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Tabs } from '../ui/Tabs';
-import { Settings as SettingsIcon, Database, Shield, Palette } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Shield, Palette, Terminal } from 'lucide-react';
 import { GeneralSettings } from './GeneralSettings';
 import { AIProviders } from './AIProviders';
 import { ThemeSettings } from './ThemeSettings';
 import { ShortcutSettings } from './ShortcutSettings';
+import { TerminalSettings } from './TerminalSettings';
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState('general');
@@ -12,6 +13,7 @@ export function Settings() {
   const tabs = [
     { id: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
     { id: 'providers', label: 'AI Providers', icon: <Database size={16} /> },
+    { id: 'terminal', label: 'Terminal', icon: <Terminal size={16} /> },
     { id: 'ssh', label: 'SSH (Coming Soon)', icon: <Shield size={16} /> }, // Placeholder
     { id: 'theme', label: 'Theme', icon: <Palette size={16} /> },
     { id: 'shortcuts', label: 'Shortcuts', icon: <div className="font-bold text-[10px] w-4 text-center border border-current rounded">⌘</div> },
@@ -37,6 +39,7 @@ export function Settings() {
         <div className="max-w-3xl mx-auto">
           {activeTab === 'general' && <GeneralSettings />}
           {activeTab === 'providers' && <AIProviders />}
+          {activeTab === 'terminal' && <TerminalSettings />}
           {activeTab === 'ssh' && (
              <div className="flex flex-col items-center justify-center h-64 text-text-muted">
                 <Shield size={48} className="mb-4 opacity-50" />

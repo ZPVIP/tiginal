@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 5;
 
 /**
  * Database service for Tiginal
@@ -77,6 +77,14 @@ export class DatabaseService {
 
     if (currentVersion < 3) {
       this.migrateV3();
+    }
+
+    if (currentVersion < 4) {
+      this.migrateV4();
+    }
+
+    if (currentVersion < 5) {
+      this.migrateV5();
     }
 
     // Update schema version
@@ -172,6 +180,43 @@ export class DatabaseService {
     this.db.exec(`
       ALTER TABLE ai_providers ADD COLUMN custom_headers TEXT;
       ALTER TABLE ai_providers ADD COLUMN auto_cors_fix INTEGER DEFAULT 1;
+    `);
+  }
+
+  /**
+   * Migration v4: Create commands table for command history
+   */
+  private migrateV4(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS commands (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        command TEXT UNIQUE NOT NULL,
+        score INTEGER DEFAULT 1,
+        last_used INTEGER,
+        is_favorite INTEGER DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_commands_score ON commands(score DESC);
+    `);
+  }
+
+  /**
+   * Migration v5: Create blacklist tables
+   */
+  private migrateV5(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS command_blacklist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pattern TEXT UNIQUE NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS directory_blacklist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pattern TEXT UNIQUE NOT NULL
+      );
     `);
   }
 

@@ -7,10 +7,30 @@ A cross-platform terminal emulator built with Electron, xterm.js, and node-pty.
 - 🖥️ Cross-platform (macOS, Windows, Linux)
 - ⚡ Native PTY for true terminal experience
 - 🎨 Beautiful Catppuccin-inspired theme
+- 📜 Smart command history & suggestions
+- ⭐ Favorite commands with AI normalization
+- 🛡️ Blacklist patterns (regex) for commands & directories
+- 🧹 Auto-cleanup of low-frequency history
 - 🔐 SSH server management (encrypted storage) - *coming soon*
-- 📜 Command history with AI suggestions - *coming soon*
 - ☁️ Multi-device sync - *coming soon*
 - 🪟 Split Panes (Cmd+\ for split, Cmd+Opt+Arrow for nav)
+
+## Command History & Suggestions
+
+Commands are automatically recorded and suggested as you type (prefix match, sorted by frequency).
+
+### Auto-filter (not recorded)
+- `cd` commands (uses separate directory history)
+- Multi-line commands (`\n` or trailing `\`)
+- Compound commands (`&&` or `||`)
+- Commands matching blacklist patterns
+
+### Blacklist
+Add regex patterns to exclude specific commands/directories from history.
+Example: `git commit -am(.*)` will prevent all such commits from being recorded.
+
+### Cleanup
+Configure auto-cleanup in Settings → Terminal → General to remove entries with low usage scores.
 
 ## Keyboard Shortcuts
 

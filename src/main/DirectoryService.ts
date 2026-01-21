@@ -13,6 +13,11 @@ interface VisitRow {
   last_visited: number;
 }
 
+interface BlacklistRow {
+  id: number;
+  pattern: string;
+}
+
 export class DirectoryService {
   private db: Database.Database;
 
@@ -44,6 +49,32 @@ export class DirectoryService {
         path TEXT PRIMARY KEY
       )
     `);
+
+    // Blacklist table: regex patterns
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS directory_blacklist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pattern TEXT UNIQUE NOT NULL
+      )
+    `);
+  }
+
+  /**
+   * Check if directory matches any blacklist pattern
+   */
+  private isBlacklisted(dirPath: string): boolean {
+    const patterns = this.db.prepare('SELECT pattern FROM directory_blacklist').all() as { pattern: string }[];
+    
+    for (const { pattern } of patterns) {
+      try {
+        const regex = new RegExp(pattern);
+        if (regex.test(dirPath)) return true;
+      } catch {
+        // Invalid regex, treat as literal match
+        if (dirPath.includes(pattern)) return true;
+      }
+    }
+    return false;
   }
 
   public recordVisit(dirPath: string) {
@@ -52,6 +83,9 @@ export class DirectoryService {
     // Check if ignored
     const isIgnored = this.db.prepare('SELECT 1 FROM ignored WHERE path = ?').get(dirPath);
     if (isIgnored) return;
+
+    // Check blacklist
+    if (this.isBlacklisted(dirPath)) return;
 
     const now = Date.now();
     
@@ -77,24 +111,12 @@ export class DirectoryService {
   }
 
   public getFrequentDirectories(partial: string): string[] {
-    // Get top 20, filter for existence, return top 10
-    // We prioritize score, then recency
     const query = `
       SELECT path FROM visits 
       WHERE path LIKE ? 
       ORDER BY score DESC, last_visited DESC 
       LIMIT 20
     `;
-    
-    // Normalize partial for SQL LIKE
-    // If partial is "proj", we match "%proj%" or just "proj%"?
-    // User probably wants prefix match for "cd " but fuzzy for "frequent"?
-    // Let's stick to simple "contains" or "starts with" based on partial.
-    // If partial is empty, return top frequent.
-    // If partial has content, filtering is tricky. 
-    // Usually "Frequent" section is "Static" unless filtered?
-    // Let's say: if partial is empty, show top frequent.
-    // If partial is not empty, filter frequent by substring.
     
     const likePattern = partial ? `%${partial}%` : '%';
     const rows = this.db.prepare(query).all(likePattern) as { path: string }[];
@@ -105,9 +127,46 @@ export class DirectoryService {
         .slice(0, 10);
   }
 
+  public getAllDirectories(): { path: string; score: number; last_visited: number }[] {
+    const rows = this.db.prepare(`
+      SELECT path, score, last_visited
+      FROM visits
+      ORDER BY score DESC, last_visited DESC
+    `).all() as { path: string; score: number; last_visited: number }[];
+    return rows;
+  }
+
+  // === Blacklist CRUD ===
+
+  getBlacklist(): BlacklistRow[] {
+    return this.db.prepare('SELECT id, pattern FROM directory_blacklist ORDER BY id').all() as BlacklistRow[];
+  }
+
+  addBlacklist(pattern: string): void {
+    if (!pattern || !pattern.trim()) return;
+    this.db.prepare('INSERT OR IGNORE INTO directory_blacklist (pattern) VALUES (?)').run(pattern.trim());
+  }
+
+  updateBlacklist(id: number, pattern: string): void {
+    this.db.prepare('UPDATE directory_blacklist SET pattern = ? WHERE id = ?').run(pattern.trim(), id);
+  }
+
+  removeBlacklist(id: number): void {
+    this.db.prepare('DELETE FROM directory_blacklist WHERE id = ?').run(id);
+  }
+
+  /**
+   * Cleanup low-frequency directories
+   */
+  cleanupLowFrequency(minScore: number = 2): number {
+    const result = this.db.prepare('DELETE FROM visits WHERE score <= ?').run(minScore);
+    return result.changes;
+  }
+
   public close() {
     this.db.close();
   }
 }
 
 export const directoryService = new DirectoryService();
+
