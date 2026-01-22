@@ -72,7 +72,28 @@ export function setupChatHandlers(): void {
   ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string): Promise<{ response: string; error?: string }> => {
     const chatService = getChatService();
     const db = getDatabase().getDb();
+    const dbService = getDatabase();
     const crypto = getCrypto();
+
+    // Load system prompt from settings
+    const systemPrompt = dbService.getSetting('systemPrompt') || '';
+
+    // Load enabled tools
+    let enabledTools: Array<{ name: string; description: string; input_schema: object }> = [];
+    try {
+      const toolRows = db.prepare(`
+        SELECT name, description, input_schema
+        FROM tools WHERE enabled = 1 ORDER BY name ASC
+      `).all() as Array<{ name: string; description: string | null; input_schema: string }>;
+      
+      enabledTools = toolRows.map(row => ({
+        name: row.name,
+        description: row.description || '',
+        input_schema: JSON.parse(row.input_schema),
+      }));
+    } catch (e) {
+      console.error('Failed to load tools', e);
+    }
 
     // Get provider
     const provider = db.prepare(`
@@ -123,18 +144,32 @@ export function setupChatHandlers(): void {
           // Notify client that stream is starting (optional, but good for UI state)
       // _event.sender.send('chat:start', { conversationId });
 
+      // Build messages array with optional system prompt
+      const apiMessages: Array<{ role: string; content: string }> = [];
+      
+      if (systemPrompt) {
+        apiMessages.push({ role: 'system', content: systemPrompt });
+      }
+      
+      apiMessages.push(...messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })));
+
       try {
         await streamAIAPI(
           provider.type as 'openai-compatible' | 'copilot',
           provider.endpoint || 'https://api.openai.com/v1',
           apiKey,
           modelToUse,
-          messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })),
+          apiMessages,
           customHeaders,
           provider.auto_cors_fix === 1,
+          enabledTools,
           (chunkData) => {
              if (chunkData.content) fullResponse += chunkData.content;
              _event.sender.send('chat:chunk', { conversationId, ...chunkData });
+          },
+          (toolCall) => {
+             // Send tool call to frontend for user confirmation
+             _event.sender.send('chat:tool-call', { conversationId, ...toolCall });
           }
         );
       } catch (streamErr) {
@@ -166,6 +201,33 @@ export function setupChatHandlers(): void {
       return { response: '', error: errorMessage };
     }
   });
+
+  // Execute a tool (called after user approves)
+  ipcMain.handle('chat:execute-tool', async (_event, toolName: string, toolInput: any): Promise<{ success: boolean; result?: string; error?: string }> => {
+    try {
+      if (toolName === 'Bash') {
+        // Execute bash command
+        const { exec } = require('child_process');
+        const workspacePath = getDatabase().getSetting('workspacePath') || 
+          require('path').join(require('os').homedir(), '.config', 'tiginal', 'workspaces');
+        
+        return new Promise((resolve) => {
+          exec(toolInput.command, { cwd: workspacePath, timeout: 60000 }, (error: any, stdout: string, stderr: string) => {
+            if (error) {
+              resolve({ success: false, error: error.message, result: stderr });
+            } else {
+              resolve({ success: true, result: stdout || stderr || 'Command executed successfully' });
+            }
+          });
+        });
+      }
+      
+      // Unknown tool
+      return { success: false, error: `Unknown tool: ${toolName}` };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
 }
 
 /**
@@ -179,7 +241,9 @@ async function streamAIAPI(
   messages: Array<{ role: string; content: string }>,
   customHeaders: Record<string, string> = {},
   autoCORSFix: boolean = true,
-  onChunk: (data: { content?: string; reasoning?: string }) => void
+  tools: Array<{ name: string; description: string; input_schema: object }> = [],
+  onChunk: (data: { content?: string; reasoning?: string }) => void,
+  onToolCall?: (data: { id: string; name: string; input: any }) => void
 ): Promise<void> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -225,13 +289,26 @@ async function streamAIAPI(
     }
   }
 
-  const bodyPayload = {
+  const bodyPayload: any = {
     model,
     messages,
     temperature: 0.7,
     max_tokens: 4000,
     stream: true
   };
+
+  // Add tools if available
+  if (tools.length > 0) {
+    bodyPayload.tools = tools.map(t => ({
+      type: 'function',
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.input_schema,
+      }
+    }));
+    bodyPayload.tool_choice = 'auto';
+  }
 
   if (process.env.NODE_ENV !== 'production') {
       console.log('--- AI Request Debug ---');
@@ -324,13 +401,13 @@ async function streamAIAPI(
         buffer = lines.pop() || "";  
 
         for (const line of lines) {
-           processLine(line, onChunk);
+           processLine(line, onChunk, onToolCall);
         }
     }
     
     // Process remaining buffer
     if (buffer.trim()) {
-        processLine(buffer, onChunk);
+        processLine(buffer, onChunk, onToolCall);
     }
 
   } catch (err) {
@@ -339,7 +416,11 @@ async function streamAIAPI(
   }
 }
 
-function processLine(line: string, onChunk: (data: { content?: string; reasoning?: string }) => void) {
+function processLine(
+    line: string, 
+    onChunk: (data: { content?: string; reasoning?: string }) => void,
+    onToolCall?: (data: { id: string; name: string; input: any }) => void
+) {
     const trimmed = line.trim();
     if (!trimmed || trimmed === "data: [DONE]") return;
     
@@ -354,6 +435,47 @@ function processLine(line: string, onChunk: (data: { content?: string; reasoning
                 
                 if (content || reasoning) {
                    onChunk({ content, reasoning });
+                }
+                
+                // Handle tool calls
+                if (delta.tool_calls && onToolCall) {
+                    for (const toolCall of delta.tool_calls) {
+                        if (toolCall.function) {
+                            try {
+                                const input = toolCall.function.arguments 
+                                    ? JSON.parse(toolCall.function.arguments) 
+                                    : {};
+                                onToolCall({
+                                    id: toolCall.id || `tool_${Date.now()}`,
+                                    name: toolCall.function.name,
+                                    input
+                                });
+                            } catch (e) {
+                                console.warn('Failed to parse tool call arguments', e);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Also check for finish_reason with tool_calls
+            const finishReason = data.choices?.[0]?.finish_reason;
+            if (finishReason === 'tool_calls' && data.choices?.[0]?.message?.tool_calls && onToolCall) {
+                for (const toolCall of data.choices[0].message.tool_calls) {
+                    if (toolCall.function) {
+                        try {
+                            const input = toolCall.function.arguments 
+                                ? JSON.parse(toolCall.function.arguments) 
+                                : {};
+                            onToolCall({
+                                id: toolCall.id || `tool_${Date.now()}`,
+                                name: toolCall.function.name,
+                                input
+                            });
+                        } catch (e) {
+                            console.warn('Failed to parse tool call arguments', e);
+                        }
+                    }
                 }
             }
         } catch (e) {

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Tabs } from '../ui/Tabs';
-import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2 } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench } from 'lucide-react';
 import { GeneralSettings } from './GeneralSettings';
 import { AIProviders } from './AIProviders';
 import { ThemeSettings } from './ThemeSettings';
 import { ShortcutSettings } from './ShortcutSettings';
 import { TerminalSettings } from './TerminalSettings';
 import { SkillsSettings } from './SkillsSettings';
+import { ToolsSettings } from './ToolsSettings';
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState('general');
@@ -14,6 +15,7 @@ export function Settings() {
   const tabs = [
     { id: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
     { id: 'providers', label: 'AI Providers', icon: <Database size={16} /> },
+    { id: 'tools', label: 'Tools', icon: <Wrench size={16} /> },
     { id: 'terminal', label: 'Terminal', icon: <Terminal size={16} /> },
     { id: 'ssh', label: 'SSH (Coming Soon)', icon: <Shield size={16} /> },
     { id: 'skills', label: 'Skills', icon: <Wand2 size={16} /> },
@@ -41,6 +43,7 @@ export function Settings() {
         <div className="max-w-3xl mx-auto">
           {activeTab === 'general' && <GeneralSettings />}
           {activeTab === 'providers' && <AIProviders />}
+          {activeTab === 'tools' && <ToolsSettings />}
           {activeTab === 'terminal' && <TerminalSettings />}
           {activeTab === 'ssh' && (
              <div className="flex flex-col items-center justify-center h-64 text-text-muted">

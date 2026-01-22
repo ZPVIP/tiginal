@@ -4,6 +4,7 @@ import { MessageList } from './MessageList';
 import { ChatInput, ChatInputHandle } from './ChatInput';
 import { EmptyState } from './EmptyState';
 import { HistoryPanel } from './HistoryPanel';
+import { BashConfirmModal } from './BashConfirmModal';
 import { AIProvider, ModelConfig } from '../../settings/ai-constants';
 import { EyeOff, Trash2 } from 'lucide-react';
 
@@ -20,6 +21,16 @@ export function Chat() {
   const [isIncognito, setIsIncognito] = useState(false);
   const [incognitoMessages, setIncognitoMessages] = useState<any[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
+  // Tool call state
+  const [pendingToolCall, setPendingToolCall] = useState<{
+    id: string;
+    name: string;
+    input: any;
+    description?: string;
+    riskLevel?: 'safe' | 'low' | 'medium' | 'high';
+  } | null>(null);
+  const [allowAllTools, setAllowAllTools] = useState(false);
 
   useEffect(() => {
     loadProviders();
@@ -66,20 +77,55 @@ export function Chat() {
 
     const removeListener = window.electron?.on('chat:chunk', onChunk);
 
+    // Tool call listener
+    const onToolCall = async (data: { conversationId: string; id: string; name: string; input: any }) => {
+      console.log('Tool call received:', data);
+      
+      // If allow all is enabled, execute immediately
+      if (allowAllToolsRef.current) {
+        try {
+          const result = await invoke('chat:execute-tool', data.name, data.input);
+          // Show result in chat
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `\n\n> **Tool executed: ${data.name}**\n\`\`\`\n${result.result || result.error || 'Done'}\n\`\`\``
+          }]);
+        } catch (err) {
+          console.error('Tool execution failed', err);
+        }
+        return;
+      }
+      
+      // Show confirmation modal
+      setPendingToolCall({
+        id: data.id,
+        name: data.name,
+        input: data.input,
+        description: data.input?.description || `Execute ${data.name}`,
+        riskLevel: data.name === 'Bash' ? 'medium' : 'low'
+      });
+    };
+
+    const removeToolListener = window.electron?.on('chat:tool-call', onToolCall);
+
     return () => {
         window.removeEventListener('ai-providers-updated', handleUpdate);
         if (removeListener) removeListener();
+        if (removeToolListener) removeToolListener();
     };
   }, []);
 
   // Refs for event listeners to access current state
   const currentConversationIdRef = React.useRef(currentConversationId);
   const isIncognitoRef = React.useRef(isIncognito);
+  const allowAllToolsRef = React.useRef(allowAllTools);
 
   useEffect(() => {
       currentConversationIdRef.current = currentConversationId;
       isIncognitoRef.current = isIncognito;
-  }, [currentConversationId, isIncognito]);
+      allowAllToolsRef.current = allowAllTools;
+  }, [currentConversationId, isIncognito, allowAllTools]);
 
   const loadProviders = async () => {
     try {
@@ -448,6 +494,51 @@ export function Chat() {
          isOpen={isHistoryOpen}
          onClose={() => setIsHistoryOpen(false)}
          onSelectConversation={handleSelectConversation}
+      />
+
+      {/* Bash Confirm Modal */}
+      <BashConfirmModal
+        open={!!pendingToolCall}
+        command={pendingToolCall?.name === 'Bash' ? pendingToolCall.input?.command || '' : JSON.stringify(pendingToolCall?.input, null, 2)}
+        description={pendingToolCall?.description}
+        riskLevel={pendingToolCall?.riskLevel}
+        onAllow={async () => {
+          if (!pendingToolCall) return;
+          setPendingToolCall(null);
+          try {
+            const result = await invoke('chat:execute-tool', pendingToolCall.name, pendingToolCall.input) as { success: boolean; result?: string; error?: string };
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'assistant',
+              content: `\n\n> **Tool executed: ${pendingToolCall.name}**\n\`\`\`\n${result.result || result.error || 'Done'}\n\`\`\``
+            }]);
+          } catch (err) {
+            console.error('Tool execution failed', err);
+          }
+        }}
+        onAllowAll={async () => {
+          setAllowAllTools(true);
+          if (!pendingToolCall) return;
+          setPendingToolCall(null);
+          try {
+            const result = await invoke('chat:execute-tool', pendingToolCall.name, pendingToolCall.input) as { success: boolean; result?: string; error?: string };
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'assistant',
+              content: `\n\n> **Tool executed: ${pendingToolCall.name}**\n\`\`\`\n${result.result || result.error || 'Done'}\n\`\`\``
+            }]);
+          } catch (err) {
+            console.error('Tool execution failed', err);
+          }
+        }}
+        onDeny={() => {
+          setPendingToolCall(null);
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `\n\n> **Tool denied: ${pendingToolCall?.name}**\n> User denied execution of this command.`
+          }]);
+        }}
       />
     </div>
   );

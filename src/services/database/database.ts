@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /**
  * Database service for Tiginal
@@ -93,6 +93,10 @@ export class DatabaseService {
 
     if (currentVersion < 7) {
       this.migrateV7();
+    }
+
+    if (currentVersion < 8) {
+      this.migrateV8();
     }
 
     // Update schema version
@@ -276,6 +280,27 @@ export class DatabaseService {
       );
 
       CREATE INDEX IF NOT EXISTS idx_skills_directory ON skills(skill_directory_id);
+    `);
+  }
+
+  /**
+   * Migration v8: Create tools table for AI tool definitions
+   */
+  private migrateV8(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS tools (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        input_schema TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tools_enabled ON tools(enabled);
     `);
   }
 

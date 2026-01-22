@@ -1,0 +1,588 @@
+{
+  "defaultSystemPrompt": "You are Tiginal, a helpful AI assistant for terminal operations. You can execute bash commands to help users with their tasks.\n\nIMPORTANT:\n- When executing commands, always explain what you're about to do first.\n- Use the Bash tool to execute shell commands when needed.\n- Be careful with destructive operations - always ask for confirmation.\n- The working directory is set in Settings.\n\nToday's date: {{DATE}}",
+
+  "defaultTools": [
+    {
+      "name": "Task",
+      "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Task tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.\n- Explore: Fast agent specialized for exploring codebases.\n- Plan: Software architect agent for designing implementation plans.\n\nUsage notes:\n- Always include a short description (3-5 words) summarizing what the agent will do\n- Launch multiple agents concurrently whenever possible\n- Provide clear, detailed prompts so the agent can work autonomously",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 80,
+            "description": "A short (3-5 word) description of the task"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The task for the agent to perform. Should be clear and detailed so the agent can work autonomously."
+          },
+          "subagent_type": {
+            "type": "string",
+            "enum": ["general-purpose", "Explore", "Plan"],
+            "description": "The type of specialized agent to use for this task"
+          },
+          "model": {
+            "description": "Optional model to use for this agent.",
+            "type": "string"
+          },
+          "run_in_background": {
+            "description": "Set to true to run this agent in the background.",
+            "type": "boolean"
+          }
+        },
+        "required": ["description", "prompt", "subagent_type"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "TaskOutput",
+      "description": "Retrieves output from a running or completed task (background shell, agent, or remote session).\n- Takes a task_id parameter identifying the task\n- Returns the task output along with status information\n- Use block=true (default) to wait for task completion\n- Use block=false for non-blocking check of current status",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "The task ID to get output from"
+          },
+          "block": {
+            "default": true,
+            "description": "Whether to wait for completion",
+            "type": "boolean"
+          },
+          "timeout": {
+            "default": 30000,
+            "description": "Max wait time in ms",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 600000
+          }
+        },
+        "required": ["task_id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "Bash",
+      "description": "Execute bash commands inside the workspace. Supports foreground execution and background shells retrievable via BashOutput.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "timeout": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 600000
+          },
+          "run_in_background": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": ["command"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "Glob",
+      "description": "Find files by glob pattern relative to a workspace directory.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "default": ".",
+            "type": "string"
+          },
+          "limit": {
+            "default": 200,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2000
+          },
+          "includeStats": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": ["pattern"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "Grep",
+      "description": "Search file contents using ripgrep with optional glob/type filters.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "default": ".",
+            "type": "string"
+          },
+          "glob": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "output_mode": {
+            "default": "files_with_matches",
+            "type": "string",
+            "enum": ["content", "files_with_matches", "count"]
+          },
+          "-i": { "type": "boolean" },
+          "-n": { "type": "boolean" },
+          "-A": { "type": "integer", "minimum": 0 },
+          "-B": { "type": "integer", "minimum": 0 },
+          "-C": { "type": "integer", "minimum": 0 },
+          "multiline": { "type": "boolean" },
+          "head_limit": { "type": "integer", "exclusiveMinimum": 0 },
+          "offset": { "default": 0, "type": "integer", "minimum": 0 }
+        },
+        "required": ["pattern"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "Read",
+      "description": "Read text from a workspace file with optional offset/limit controls. Limit must be <= 10000 lines.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string"
+          },
+          "offset": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "default": 500,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 10000
+          },
+          "max_bytes": {
+            "default": 200000,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 1000000
+          }
+        },
+        "required": ["file_path"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "Edit",
+      "description": "Perform search-and-replace operations inside a file. Always inspect the file with Read first.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string"
+          },
+          "old_string": {
+            "type": "string",
+            "minLength": 1
+          },
+          "new_string": {
+            "default": "",
+            "type": "string"
+          },
+          "replace_all": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": ["file_path", "old_string"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "Write",
+      "description": "Write (or overwrite) a file inside the workspace. Always inspect files before overwriting.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "create_directories": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": ["file_path", "content"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "NotebookEdit",
+      "description": "Modify Jupyter notebook cells (insert, replace, delete).",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "notebook_path": {
+            "type": "string"
+          },
+          "new_source": {
+            "type": "string"
+          },
+          "cell_id": {
+            "type": "string"
+          },
+          "cell_type": {
+            "type": "string",
+            "enum": ["code", "markdown"]
+          },
+          "edit_mode": {
+            "default": "replace",
+            "type": "string",
+            "enum": ["replace", "insert", "delete"]
+          }
+        },
+        "required": ["notebook_path", "new_source"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "WebFetch",
+      "description": "Fetch a URL using hidden browser window to capture JS-rendered content, convert HTML to markdown, and return prompt-aligned highlights.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "max_bytes": {
+            "default": 200000,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2000000
+          }
+        },
+        "required": ["url", "prompt"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "WebSearch",
+      "description": "Search the web and return cleaned content from top results. Each result is numbered [1], [2], etc. When citing information from search results in your response, use these numbers as inline citations.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 2
+          },
+          "allowed_domains": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "blocked_domains": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "max_results": {
+            "default": 5,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 10
+          }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "TodoWrite",
+      "description": "Create and manage a structured task list for your current coding session. Use this tool proactively for complex multi-step tasks, when the user explicitly requests a todo list, or when users provide a list of things to be done.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "todos": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "activeForm": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["pending", "in_progress", "completed"]
+                }
+              },
+              "required": ["content", "status"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["todos"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "BashOutput",
+      "description": "Retrieve stdout/stderr from a running or completed background bash command.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "bash_id": {
+            "type": "string"
+          },
+          "filter": {
+            "type": "string"
+          }
+        },
+        "required": ["bash_id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "KillShell",
+      "description": "Terminate a running background bash shell.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "shell_id": {
+            "type": "string"
+          }
+        },
+        "required": ["shell_id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "EnterPlanMode",
+      "description": "Switch into plan mode before outlining multi-step solutions.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ExitPlanMode",
+      "description": "Exit plan mode after finalizing an execution strategy.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "Skill",
+      "description": "Execute a skill within the main conversation. When users ask you to perform tasks, check if any of the available skills can help complete the task more effectively.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "skill": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The skill name (no arguments). E.g., \"test-skill\" or \"code-review\""
+          }
+        },
+        "required": ["skill"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "SlashCommand",
+      "description": "Execute lightweight slash commands (e.g., /pwd, /ls, /cat, /todo).",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["command"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "Recall",
+      "description": "Search and retrieve relevant memories from the memory store using semantic similarity. Use this tool when you need to recall information from past conversations or stored knowledge.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The search query to find relevant memories"
+          },
+          "limit": {
+            "default": 5,
+            "description": "Maximum number of memories to retrieve",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 20
+          },
+          "threshold": {
+            "default": 0.3,
+            "description": "Minimum similarity threshold (0-1)",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "OperateMemory",
+      "description": "Manage memories by adding new memories or deleting existing ones. Only use this tool when the user EXPLICITLY asks you to remember or forget something.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": ["add", "delete"],
+            "description": "The operation to perform: \"add\" to create a new memory, \"delete\" to remove existing memories"
+          },
+          "content": {
+            "type": "string",
+            "description": "For \"add\": the memory content to store. For \"delete\": natural language description of memories to remove"
+          },
+          "durability": {
+            "default": "permanent",
+            "description": "Memory durability: \"permanent\" for stable long-term facts, \"temporary\" for time-sensitive information",
+            "type": "string",
+            "enum": ["permanent", "temporary"]
+          },
+          "tags": {
+            "description": "Optional tags to categorize the memory",
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "importance": {
+            "default": 0.5,
+            "description": "Importance score from 0 to 1",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "threshold": {
+            "default": 0.7,
+            "description": "Minimum similarity threshold for delete operation (0-1)",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "limit": {
+            "default": 5,
+            "description": "Maximum number of memories to delete",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 10
+          }
+        },
+        "required": ["operation", "content"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ToolSearch",
+      "description": "Search and discover available tools using semantic search. Use this tool to find relevant tools when you need to discover what tools are available for a specific task.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Search query to find tools - describe what you want to do or the type of tool you need"
+          },
+          "type": {
+            "default": "all",
+            "description": "Filter by tool type: \"builtin\", \"mcp\", \"plugin\", or \"all\"",
+            "type": "string",
+            "enum": ["builtin", "mcp", "plugin", "all"]
+          },
+          "limit": {
+            "default": 20,
+            "description": "Maximum number of tools to return",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 50
+          }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "AttemptCompletion",
+      "description": "After each tool use, the user will respond with the result. Once you've confirmed that the task is complete, use this tool to present the result of your work to the user.",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "string",
+            "description": "The result of the task. Formulate this result in a way that is final and does not require further input from the user."
+          },
+          "command": {
+            "description": "A CLI command to execute to show a live demo of the result to the user.",
+            "type": "string"
+          }
+        },
+        "required": ["result"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

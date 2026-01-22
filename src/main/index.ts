@@ -24,8 +24,13 @@ import { setupSearchHandlers } from './services/search';
 import { setupSettingsHandlers } from './settings-handlers';
 import { setupShellHandlers } from './shell-handlers';
 import { setupSkillHandlers } from './skill-handlers';
+import { setupToolHandlers } from './tool-handlers';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
+import * as crypto from 'crypto';
+
+// Default configuration for first run
+import defaults from './defaults.json';
 
 // Set app name for macOS menu bar
 app.name = 'Tiginal';
@@ -38,6 +43,46 @@ if (process.platform !== 'win32') {
     fs.mkdirSync(customUserDataPath, { recursive: true });
   }
   app.setPath('userData', customUserDataPath);
+}
+
+/**
+ * Initialize default system prompt and tools on first run
+ */
+function initializeDefaults(): void {
+  const db = getDatabase();
+  const dbConn = db.getDb();
+  
+  // Set default system prompt if not exists
+  const existingPrompt = db.getSetting('systemPrompt');
+  if (!existingPrompt) {
+    const dateStr = new Date().toISOString().split('T')[0];
+    const prompt = defaults.defaultSystemPrompt.replace('{{DATE}}', dateStr);
+    db.setSetting('systemPrompt', prompt);
+    console.log('[Init] Set default system prompt');
+  }
+  
+  // Insert default tools if tools table is empty
+  const toolCount = dbConn.prepare('SELECT COUNT(*) as count FROM tools').get() as { count: number };
+  if (toolCount.count === 0 && defaults.defaultTools) {
+    const now = Date.now();
+    const insertStmt = dbConn.prepare(`
+      INSERT INTO tools (id, name, description, input_schema, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    for (const tool of defaults.defaultTools) {
+      insertStmt.run(
+        crypto.randomUUID(),
+        tool.name,
+        tool.description,
+        JSON.stringify(tool.input_schema),
+        1, // enabled
+        now,
+        now
+      );
+    }
+    console.log(`[Init] Inserted ${defaults.defaultTools.length} default tools`);
+  }
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -217,6 +262,7 @@ app.whenReady().then(() => {
   setupSettingsHandlers();
   setupShellHandlers();
   setupSkillHandlers();
+  setupToolHandlers();
   
   // Initialize default skills directory
   getDatabase().getDb().prepare(
@@ -229,6 +275,9 @@ app.whenReady().then(() => {
       : require('path').join(require('os').homedir(), '.config', 'tiginal', 'skills'),
     1
   );
+  
+  // Initialize default system prompt and tools (only on first run)
+  initializeDefaults();
   
   // Try to auto-unlock crypto using saved key
   const autoUnlocked = getCrypto().tryAutoUnlock();
