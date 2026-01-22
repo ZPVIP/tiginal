@@ -55,9 +55,7 @@ function initializeDefaults(): void {
   // Set default system prompt if not exists
   const existingPrompt = db.getSetting('systemPrompt');
   if (!existingPrompt) {
-    const dateStr = new Date().toISOString().split('T')[0];
-    const prompt = defaults.defaultSystemPrompt.replace('{{DATE}}', dateStr);
-    db.setSetting('systemPrompt', prompt);
+    db.setSetting('systemPrompt', defaults.defaultSystemPrompt);
     console.log('[Init] Set default system prompt');
   }
   

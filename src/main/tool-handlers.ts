@@ -308,15 +308,13 @@ export function setupToolHandlers(): void {
 
   // Get default system prompt
   ipcMain.handle('settings:get-default-system-prompt', async (): Promise<string> => {
-    const dateStr = new Date().toISOString().split('T')[0];
-    return defaults.defaultSystemPrompt.replace('{{DATE}}', dateStr);
+    return defaults.defaultSystemPrompt;
   });
 
   // Reset system prompt to default
   ipcMain.handle('settings:reset-system-prompt', async (): Promise<string> => {
     const db = getDatabase();
-    const dateStr = new Date().toISOString().split('T')[0];
-    const prompt = defaults.defaultSystemPrompt.replace('{{DATE}}', dateStr);
+    const prompt = defaults.defaultSystemPrompt;
     db.setSetting('systemPrompt', prompt);
     return prompt;
   });

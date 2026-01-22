@@ -69,14 +69,15 @@ export function setupChatHandlers(): void {
   });
 
   // Send message to AI
-  ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string): Promise<{ response: string; error?: string }> => {
+  ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string, options?: { useSystemPrompt?: boolean }): Promise<{ response: string; error?: string }> => {
     const chatService = getChatService();
     const db = getDatabase().getDb();
     const dbService = getDatabase();
     const crypto = getCrypto();
 
-    // Load system prompt from settings
-    const systemPrompt = dbService.getSetting('systemPrompt') || '';
+    // Load system prompt from settings if enabled
+    const useSystemPrompt = options?.useSystemPrompt !== false; // Default true
+    const systemPrompt = useSystemPrompt ? (dbService.getSetting('systemPrompt') || '') : '';
 
     // Load enabled tools
     let enabledTools: Array<{ name: string; description: string; input_schema: object }> = [];
@@ -148,7 +149,42 @@ export function setupChatHandlers(): void {
       const apiMessages: Array<{ role: string; content: string }> = [];
       
       if (systemPrompt) {
-        apiMessages.push({ role: 'system', content: systemPrompt });
+        // 1. Dynamic Date
+        const dateStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const dateInfo = `\n\nIMPORTANT - Today's date is ${dateStr} (timezone: ${timezone}). Use this date accurately for time-sensitive questions.`;
+        
+        // 2. Dynamic Working Directory
+        let workspacePath = dbService.getSetting('workspacePath');
+        if (!workspacePath) {
+             const os = require('os');
+             const path = require('path');
+             if (process.platform === 'win32') {
+                  workspacePath = path.join(process.env.APPDATA || os.homedir(), 'Tiginal', 'workspaces');
+             } else {
+                  workspacePath = path.join(os.homedir(), '.config', 'tiginal', 'workspaces');
+             }
+        }
+        const wdInfo = `\n\nWORKING DIRECTORY - Your current working directory is: ${workspacePath}. All file operations and shell commands will be executed relative to this directory.`;
+
+        // 3. Dynamic Skills
+        let skillsInfo = '';
+        try {
+            // Check if skills table exists first (in case migration didn't run)
+            const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='skills'").get();
+            if (tableExists) {
+                const skillRows = db.prepare('SELECT name, description FROM skills WHERE enabled = 1').all() as {name:string, description:string}[];
+                if (skillRows.length > 0) {
+                    skillsInfo = '\n\n<available_skills>\n' + 
+                        skillRows.map(s => `- "${s.name}": ${s.description}`).join('\n') +
+                        '\n</available_skills>';
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load skills for system prompt', e);
+        }
+
+        apiMessages.push({ role: 'system', content: systemPrompt + dateInfo + wdInfo + skillsInfo });
       }
       
       apiMessages.push(...messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })));

@@ -1,6 +1,5 @@
 {
-  "defaultSystemPrompt": "You are Tiginal, a helpful AI assistant for terminal operations. You can execute bash commands to help users with their tasks.\n\nIMPORTANT:\n- When executing commands, always explain what you're about to do first.\n- Use the Bash tool to execute shell commands when needed.\n- Be careful with destructive operations - always ask for confirmation.\n- The working directory is set in Settings.\n\nToday's date: {{DATE}}",
-
+  "defaultSystemPrompt": "You are Tigi, a powerful AI assistant with memory capabilities and emotional system, developed by yetone.\n\nSYSTEM INFO - You are running on macOS (you can use osascript via Bash to interact with system features like Calendar, Reminders, Mail, Notifications, and other apps).\n\nIMPORTANT for AppleScript date handling: When setting dates in AppleScript (for Reminders, Calendar, etc.), use the current date as a base and modify it. Do NOT use string date parsing like 'date \"2025-12-09 16:00:00\"' as it's unreliable. Instead use:\n  set targetDate to current date\n  set year of targetDate to 2025\n  set month of targetDate to 12\n  set day of targetDate to 9\n  set hours of targetDate to 16\n  set minutes of targetDate to 0\n  set seconds of targetDate to 0.\n\nINFOGRAPHIC VISUALIZATION - When presenting structured data, comparisons, processes, timelines, or hierarchies, use the infographic code block:\n\nIMPORTANT SYNTAX RULES:\n1. Template name must be EXACTLY one of the valid full names (see examples below)\n2. The \"theme\" block must be at ROOT level (same indent as \"data\"), NOT inside \"data\"\n3. For hierarchy templates, use \"items\" array with \"children\" for nested items\n4. Use 2-space indentation consistently\n5. Item properties: label, value, desc, icon, children\n\nFEW-SHOT EXAMPLES:\n\nExample 1 - Horizontal Arrow List (for step-by-step processes):\n```infographic\ninfographic list-row-simple-horizontal-arrow\ndata\n  title Getting Started\n  items\n    - label Step 1\n      desc Install dependencies\n    - label Step 2\n      desc Configure settings\n    - label Step 3\n      desc Run the app\n```\n\nExample 2 - Hierarchy Tree (for org charts, taxonomies):\n```infographic\ninfographic hierarchy-tree-curved-line-rounded-rect-node\ndata\n  title Organization Structure\n  items\n    - label CEO\n      children\n        - label CTO\n          children\n            - label Engineering\n            - label QA\n        - label CFO\n          children\n            - label Finance\n            - label HR\n```\n\nExample 3 - Pie Chart (for proportions, distributions):\n```infographic\ninfographic chart-pie-plain-text\ndata\n  title Market Share 2024\n  items\n    - label Company A\n      value 45\n    - label Company B\n      value 30\n    - label Company C\n      value 15\n    - label Others\n      value 10\n```\n\nExample 4 - Grid Layout (for feature lists, comparisons):\n```infographic\ninfographic list-grid-badge-card\ndata\n  title Key Features\n  items\n    - label Fast\n      desc Optimized for speed\n      icon mdi:rocket-launch\n    - label Secure\n      desc End-to-end encryption\n      icon mdi:shield-check\n    - label Easy\n      desc Intuitive interface\n      icon mdi:hand-okay\n    - label Support\n      desc 24/7 available\n      icon mdi:headset\n```\n\nExample 5 - Timeline (for roadmaps, historical events):\n```infographic\ninfographic sequence-timeline-simple\ndata\n  title Project Roadmap\n  items\n    - label Q1 2024\n      desc Research & Planning\n    - label Q2 2024\n      desc Development Phase\n    - label Q3 2024\n      desc Beta Testing\n    - label Q4 2024\n      desc Launch\n```\n\nExample 6 - Snake Steps (for complex workflows):\n```infographic\ninfographic sequence-snake-steps-simple\ndata\n  title Development Process\n  items\n    - label Requirements\n      desc Gather user needs\n    - label Design\n      desc Create wireframes\n    - label Develop\n      desc Write code\n    - label Test\n      desc QA testing\n    - label Deploy\n      desc Release to prod\n```\n\nCOMMON TEMPLATE NAMES:\n- list-row-simple-horizontal-arrow, list-grid-badge-card, list-grid-compact-card, list-column-done-list\n- sequence-steps-simple, sequence-timeline-simple, sequence-snake-steps-simple, sequence-ascending-steps\n- hierarchy-tree-curved-line-rounded-rect-node, hierarchy-mindmap-curved-line-compact-card\n- chart-pie-plain-text, chart-bar-plain-text, chart-column-simple\n- compare-swot, compare-binary-horizontal-simple-fold\n- quadrant-quarter-simple-card\n\nIcons: Use Iconify format (mdi:icon-name). Theme auto-adapts to dark/light mode.\n\nLIVE CODING MUSIC - When users ask you to create music, beats, rhythms, melodies, bass lines, drum patterns, electronic music, ambient sounds, or any audio/music-related content, output code using the `strudel` language in a fenced code block. Strudel is a live coding music language that will render as an interactive, playable music card.\n\nExample format:\n```strudel\nsound(\"bd sd hh sd\")\n```\n\nCommon Strudel patterns:\n- `sound(\"bd sd hh cp\")` - drum samples (bd=kick, sd=snare, hh=hihat, cp=clap)\n- `note(\"c3 e3 g3 b3\").s(\"sawtooth\")` - synth notes with waveform\n- `stack(pattern1, pattern2)` - layer multiple patterns\n- `.lpf(800)` - low-pass filter\n- `.gain(0.5)` - volume control\n- `.fast(2)` / `.slow(2)` - tempo changes\n- `[a b]` - group elements, `a*4` - repeat 4 times, `~` - rest\n\nAlways use `strudel` as the language identifier for music code blocks.\n\nMEMORY RETRIEVAL - You have access to a persistent memory system containing valuable context from past interactions, including user preferences, prior decisions, project details, and historical conversations. When the information provided in the current conversation is insufficient to fully address the user's request, proactively use the Recall tool to search your memory for relevant context. Do not ask the user for information that may already exist in memory—retrieve it yourself first.\n\nTOOL DISCOVERY - You have access to a ToolSearch tool that can discover available tools (both built-in and MCP tools) using semantic search. When you need to find tools for a specific task, or when the user asks what tools are available, use ToolSearch to find relevant tools by describing what you want to do. This is especially useful for discovering MCP server tools whose capabilities you may not know about.\n\nTASK MANAGEMENT - You have access to the TodoWrite tool to help you manage and plan tasks. Use this tool VERY frequently to ensure that you are tracking your tasks and giving the user visibility into your progress.\nThese tools are also EXTREMELY helpful for planning tasks, and for breaking down larger complex tasks into smaller steps. If you do not use this tool when planning, you may forget to do important tasks - and that is unacceptable.\n\nIt is critical that you mark todos as completed as soon as you are done with a task. Do not batch up multiple tasks before marking them as completed.\n\nExamples:\n\n<example>\nuser: Run the build and fix any type errors\nassistant: I'm going to use the TodoWrite tool to write the following items to the todo list:\n- Run the build\n- Fix any type errors\n\nI'm now going to run the build using Bash.\n\nLooks like I found 10 type errors. I'm going to use the TodoWrite tool to write 10 items to the todo list.\n\nmarking the first todo as in_progress\n\nLet me start working on the first item...\n\nThe first item has been fixed, let me mark the first todo as completed, and move on to the second item...\n..\n..\n</example>\nIn the above example, the assistant completes all the tasks, including the 10 error fixes and running the build and fixing all errors.\n\n<example>\nuser: Help me write a new feature that allows users to track their usage metrics and export them to various formats\nassistant: I'll help you implement a usage metrics tracking and export feature. Let me first use the TodoWrite tool to plan this task.\nAdding the following todos to the todo list:\n1. Research existing metrics tracking in the codebase\n2. Design the metrics collection system\n3. Implement core metrics tracking functionality\n4. Create export functionality for different formats\n\nLet me start by researching the existing codebase to understand what metrics we might already be tracking and how we can build on that.\n\nI'm going to search for any existing metrics or telemetry code in the project.\n\nI've found some existing telemetry code. Let me mark the first todo as in_progress and start designing our metrics tracking system based on what I've learned...\n\n[Assistant continues implementing the feature step by step, marking todos as in_progress and completed as they go]\n</example>",
   "defaultTools": [
     {
       "name": "Task",
@@ -22,7 +21,11 @@
           },
           "subagent_type": {
             "type": "string",
-            "enum": ["general-purpose", "Explore", "Plan"],
+            "enum": [
+              "general-purpose",
+              "Explore",
+              "Plan"
+            ],
             "description": "The type of specialized agent to use for this task"
           },
           "model": {
@@ -34,7 +37,11 @@
             "type": "boolean"
           }
         },
-        "required": ["description", "prompt", "subagent_type"],
+        "required": [
+          "description",
+          "prompt",
+          "subagent_type"
+        ],
         "additionalProperties": false
       }
     },
@@ -62,7 +69,9 @@
             "maximum": 600000
           }
         },
-        "required": ["task_id"],
+        "required": [
+          "task_id"
+        ],
         "additionalProperties": false
       }
     },
@@ -90,7 +99,9 @@
             "type": "boolean"
           }
         },
-        "required": ["command"],
+        "required": [
+          "command"
+        ],
         "additionalProperties": false
       }
     },
@@ -120,7 +131,9 @@
             "type": "boolean"
           }
         },
-        "required": ["pattern"],
+        "required": [
+          "pattern"
+        ],
         "additionalProperties": false
       }
     },
@@ -148,18 +161,46 @@
           "output_mode": {
             "default": "files_with_matches",
             "type": "string",
-            "enum": ["content", "files_with_matches", "count"]
+            "enum": [
+              "content",
+              "files_with_matches",
+              "count"
+            ]
           },
-          "-i": { "type": "boolean" },
-          "-n": { "type": "boolean" },
-          "-A": { "type": "integer", "minimum": 0 },
-          "-B": { "type": "integer", "minimum": 0 },
-          "-C": { "type": "integer", "minimum": 0 },
-          "multiline": { "type": "boolean" },
-          "head_limit": { "type": "integer", "exclusiveMinimum": 0 },
-          "offset": { "default": 0, "type": "integer", "minimum": 0 }
+          "-i": {
+            "type": "boolean"
+          },
+          "-n": {
+            "type": "boolean"
+          },
+          "-A": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "-B": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "-C": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "multiline": {
+            "type": "boolean"
+          },
+          "head_limit": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "offset": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0
+          }
         },
-        "required": ["pattern"],
+        "required": [
+          "pattern"
+        ],
         "additionalProperties": false
       }
     },
@@ -191,7 +232,9 @@
             "maximum": 1000000
           }
         },
-        "required": ["file_path"],
+        "required": [
+          "file_path"
+        ],
         "additionalProperties": false
       }
     },
@@ -218,7 +261,10 @@
             "type": "boolean"
           }
         },
-        "required": ["file_path", "old_string"],
+        "required": [
+          "file_path",
+          "old_string"
+        ],
         "additionalProperties": false
       }
     },
@@ -240,7 +286,10 @@
             "type": "boolean"
           }
         },
-        "required": ["file_path", "content"],
+        "required": [
+          "file_path",
+          "content"
+        ],
         "additionalProperties": false
       }
     },
@@ -262,15 +311,25 @@
           },
           "cell_type": {
             "type": "string",
-            "enum": ["code", "markdown"]
+            "enum": [
+              "code",
+              "markdown"
+            ]
           },
           "edit_mode": {
             "default": "replace",
             "type": "string",
-            "enum": ["replace", "insert", "delete"]
+            "enum": [
+              "replace",
+              "insert",
+              "delete"
+            ]
           }
         },
-        "required": ["notebook_path", "new_source"],
+        "required": [
+          "notebook_path",
+          "new_source"
+        ],
         "additionalProperties": false
       }
     },
@@ -296,7 +355,10 @@
             "maximum": 2000000
           }
         },
-        "required": ["url", "prompt"],
+        "required": [
+          "url",
+          "prompt"
+        ],
         "additionalProperties": false
       }
     },
@@ -313,11 +375,15 @@
           },
           "allowed_domains": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "blocked_domains": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "max_results": {
             "default": 5,
@@ -326,7 +392,9 @@
             "maximum": 10
           }
         },
-        "required": ["query"],
+        "required": [
+          "query"
+        ],
         "additionalProperties": false
       }
     },
@@ -352,15 +420,24 @@
                 },
                 "status": {
                   "type": "string",
-                  "enum": ["pending", "in_progress", "completed"]
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed"
+                  ]
                 }
               },
-              "required": ["content", "status"],
+              "required": [
+                "content",
+                "status"
+              ],
               "additionalProperties": false
             }
           }
         },
-        "required": ["todos"],
+        "required": [
+          "todos"
+        ],
         "additionalProperties": false
       }
     },
@@ -378,7 +455,9 @@
             "type": "string"
           }
         },
-        "required": ["bash_id"],
+        "required": [
+          "bash_id"
+        ],
         "additionalProperties": false
       }
     },
@@ -393,7 +472,9 @@
             "type": "string"
           }
         },
-        "required": ["shell_id"],
+        "required": [
+          "shell_id"
+        ],
         "additionalProperties": false
       }
     },
@@ -430,7 +511,9 @@
             "description": "The skill name (no arguments). E.g., \"test-skill\" or \"code-review\""
           }
         },
-        "required": ["skill"],
+        "required": [
+          "skill"
+        ],
         "additionalProperties": false
       }
     },
@@ -446,7 +529,9 @@
             "minLength": 1
           }
         },
-        "required": ["command"],
+        "required": [
+          "command"
+        ],
         "additionalProperties": false
       }
     },
@@ -477,7 +562,9 @@
             "maximum": 1
           }
         },
-        "required": ["query"],
+        "required": [
+          "query"
+        ],
         "additionalProperties": false
       }
     },
@@ -490,7 +577,10 @@
         "properties": {
           "operation": {
             "type": "string",
-            "enum": ["add", "delete"],
+            "enum": [
+              "add",
+              "delete"
+            ],
             "description": "The operation to perform: \"add\" to create a new memory, \"delete\" to remove existing memories"
           },
           "content": {
@@ -501,12 +591,17 @@
             "default": "permanent",
             "description": "Memory durability: \"permanent\" for stable long-term facts, \"temporary\" for time-sensitive information",
             "type": "string",
-            "enum": ["permanent", "temporary"]
+            "enum": [
+              "permanent",
+              "temporary"
+            ]
           },
           "tags": {
             "description": "Optional tags to categorize the memory",
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "importance": {
             "default": 0.5,
@@ -530,7 +625,10 @@
             "maximum": 10
           }
         },
-        "required": ["operation", "content"],
+        "required": [
+          "operation",
+          "content"
+        ],
         "additionalProperties": false
       }
     },
@@ -550,7 +648,12 @@
             "default": "all",
             "description": "Filter by tool type: \"builtin\", \"mcp\", \"plugin\", or \"all\"",
             "type": "string",
-            "enum": ["builtin", "mcp", "plugin", "all"]
+            "enum": [
+              "builtin",
+              "mcp",
+              "plugin",
+              "all"
+            ]
           },
           "limit": {
             "default": 20,
@@ -560,7 +663,9 @@
             "maximum": 50
           }
         },
-        "required": ["query"],
+        "required": [
+          "query"
+        ],
         "additionalProperties": false
       }
     },
@@ -580,7 +685,9 @@
             "type": "string"
           }
         },
-        "required": ["result"],
+        "required": [
+          "result"
+        ],
         "additionalProperties": false
       }
     }

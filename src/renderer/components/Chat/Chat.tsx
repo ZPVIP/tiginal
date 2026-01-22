@@ -21,6 +21,7 @@ export function Chat() {
   const [isIncognito, setIsIncognito] = useState(false);
   const [incognitoMessages, setIncognitoMessages] = useState<any[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [useSystemPrompt, setUseSystemPrompt] = useState(true);
 
   // Tool call state
   const [pendingToolCall, setPendingToolCall] = useState<{
@@ -224,9 +225,10 @@ export function Chat() {
               // Since we don't store transient ID in state, we can't match it easily unless we store it.
               // Let's store "activeStreamingId" ref?
               
+
               activeStreamingId.current = conv.id;
 
-              await invoke('chat:send-message', conv.id, selectedProviderId, messageContent, selectedModel);
+              await invoke('chat:send-message', conv.id, selectedProviderId, messageContent, selectedModel, { useSystemPrompt });
               
               await invoke('chat:delete-conversation', conv.id);
           } catch (err) {
@@ -263,7 +265,7 @@ export function Chat() {
       activeStreamingId.current = convId!;
 
       try {
-          await invoke('chat:send-message', convId, selectedProviderId, messageContent, selectedModel);
+          await invoke('chat:send-message', convId, selectedProviderId, messageContent, selectedModel, { useSystemPrompt });
       } catch (err) {
           setMessages(prev => {
               const newMsgs = [...prev];
@@ -487,6 +489,8 @@ export function Chat() {
         ref={chatInputRef}
         onSend={handleSend} 
         disabled={isLoading} 
+        useSystemPrompt={useSystemPrompt}
+        onSystemPromptToggle={() => setUseSystemPrompt(!useSystemPrompt)}
       />
 
       {/* History Panel */}

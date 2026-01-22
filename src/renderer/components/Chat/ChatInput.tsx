@@ -5,7 +5,8 @@ import {
   Globe, 
   Image as ImageIcon,
   X,
-  Wand2
+  Wand2,
+  MessageSquareText
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -17,9 +18,11 @@ export interface ChatInputHandle {
 interface ChatInputProps {
   onSend: (text: string, images: string[], useSearch: boolean, useSkills: boolean) => void;
   disabled?: boolean;
+  useSystemPrompt?: boolean;
+  onSystemPromptToggle?: () => void;
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, disabled }, ref) => {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, disabled, useSystemPrompt = true, onSystemPromptToggle }, ref) => {
   const [text, setText] = useState('');
   const [useSearch, setUseSearch] = useState(false);
   const [useSkills, setUseSkills] = useState(false);
@@ -117,6 +120,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
         {/* Toolbar */}
         <div className="flex items-center justify-between px-2 pb-2">
             <div className="flex items-center gap-1">
+                <button 
+                   onClick={onSystemPromptToggle}
+                   className={clsx(
+                       "p-2 rounded-lg transition-colors",
+                       useSystemPrompt ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                   )}
+                   title={useSystemPrompt ? "System Prompt Enabled" : "System Prompt Disabled"}
+                >
+                    <MessageSquareText size={18} />
+                </button>
                 <button 
                    onClick={() => setUseSearch(!useSearch)}
                    className={clsx(
