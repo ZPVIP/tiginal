@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Tabs } from '../ui/Tabs';
-import { Settings as SettingsIcon, Database, Shield, Palette, Terminal } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2 } from 'lucide-react';
 import { GeneralSettings } from './GeneralSettings';
 import { AIProviders } from './AIProviders';
 import { ThemeSettings } from './ThemeSettings';
 import { ShortcutSettings } from './ShortcutSettings';
 import { TerminalSettings } from './TerminalSettings';
+import { SkillsSettings } from './SkillsSettings';
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState('general');
@@ -14,7 +15,8 @@ export function Settings() {
     { id: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
     { id: 'providers', label: 'AI Providers', icon: <Database size={16} /> },
     { id: 'terminal', label: 'Terminal', icon: <Terminal size={16} /> },
-    { id: 'ssh', label: 'SSH (Coming Soon)', icon: <Shield size={16} /> }, // Placeholder
+    { id: 'ssh', label: 'SSH (Coming Soon)', icon: <Shield size={16} /> },
+    { id: 'skills', label: 'Skills', icon: <Wand2 size={16} /> },
     { id: 'theme', label: 'Theme', icon: <Palette size={16} /> },
     { id: 'shortcuts', label: 'Shortcuts', icon: <div className="font-bold text-[10px] w-4 text-center border border-current rounded">⌘</div> },
   ];
@@ -46,6 +48,7 @@ export function Settings() {
                 <p>SSH Keys and Host Config coming soon.</p>
              </div>
           )}
+          {activeTab === 'skills' && <SkillsSettings />}
           {activeTab === 'theme' && <ThemeSettings />}
           {activeTab === 'shortcuts' && <ShortcutSettings />}
         </div>

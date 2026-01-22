@@ -120,13 +120,29 @@ export function Chat() {
     }
   };
 
-  const handleSend = async (text: string, images: string[], useSearch: boolean) => {
+  const handleSend = async (text: string, images: string[], useSearch: boolean, useSkills: boolean) => {
       if (!selectedProviderId) {
           alert("Please select a provider/model first.");
           return;
       }
 
       setIsLoading(true);
+      
+      // Prepare message content with skills prefix if enabled
+      let messageContent = text;
+      if (useSkills) {
+          try {
+              const enabledSkills = await invoke('skills:get-enabled') as Array<{ name: string; description: string; path: string }>;
+              if (enabledSkills && enabledSkills.length > 0) {
+                  const skillsPrompt = enabledSkills.map(s => 
+                      `---\nname: ${s.name}\ndescription: ${s.description}\npath: ${s.path}\n---`
+                  ).join('\n');
+                  messageContent = `可用 skill(s)：\n${skillsPrompt}\n\n${text}`;
+              }
+          } catch (err) {
+              console.error('Failed to get enabled skills', err);
+          }
+      }
 
       // Add User Message
       const userMsg = { id: Date.now().toString(), role: 'user', content: text, images };
@@ -164,7 +180,7 @@ export function Chat() {
               
               activeStreamingId.current = conv.id;
 
-              await invoke('chat:send-message', conv.id, selectedProviderId, text, selectedModel);
+              await invoke('chat:send-message', conv.id, selectedProviderId, messageContent, selectedModel);
               
               await invoke('chat:delete-conversation', conv.id);
           } catch (err) {
@@ -201,7 +217,7 @@ export function Chat() {
       activeStreamingId.current = convId!;
 
       try {
-          await invoke('chat:send-message', convId, selectedProviderId, text, selectedModel);
+          await invoke('chat:send-message', convId, selectedProviderId, messageContent, selectedModel);
       } catch (err) {
           setMessages(prev => {
               const newMsgs = [...prev];

@@ -4,7 +4,8 @@ import {
   Paperclip, 
   Globe, 
   Image as ImageIcon,
-  X
+  X,
+  Wand2
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -14,13 +15,14 @@ export interface ChatInputHandle {
 }
 
 interface ChatInputProps {
-  onSend: (text: string, images: string[], useSearch: boolean) => void;
+  onSend: (text: string, images: string[], useSearch: boolean, useSkills: boolean) => void;
   disabled?: boolean;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, disabled }, ref) => {
   const [text, setText] = useState('');
   const [useSearch, setUseSearch] = useState(false);
+  const [useSkills, setUseSkills] = useState(false);
   const [images, setImages] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,7 +59,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
 
   const handleSend = () => {
     if ((!text.trim() && images.length === 0) || disabled) return;
-    onSend(text, images, useSearch);
+    onSend(text, images, useSearch, useSkills);
     setText('');
     setImages([]);
     // Reset height
@@ -124,6 +126,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
                    title="Web Search"
                 >
                     <Globe size={18} />
+                </button>
+                <button 
+                   onClick={() => setUseSkills(!useSkills)}
+                   className={clsx(
+                       "p-2 rounded-lg transition-colors",
+                       useSkills ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                   )}
+                   title="Use Skills"
+                >
+                    <Wand2 size={18} />
                 </button>
                 <div className="h-4 w-[1px] bg-border mx-1" />
                 <button 

@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /**
  * Database service for Tiginal
@@ -89,6 +89,10 @@ export class DatabaseService {
 
     if (currentVersion < 6) {
       this.migrateV6();
+    }
+
+    if (currentVersion < 7) {
+      this.migrateV7();
     }
 
     // Update schema version
@@ -242,6 +246,36 @@ export class DatabaseService {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         pattern TEXT UNIQUE NOT NULL
       );
+    `);
+  }
+
+  /**
+   * Migration v7: Create skill_directories and skills tables
+   */
+  private migrateV7(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS skill_directories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        path TEXT UNIQUE NOT NULL,
+        enabled INTEGER DEFAULT 1
+      );
+
+      CREATE TABLE IF NOT EXISTS skills (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_folder TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        skill_directory_id TEXT NOT NULL,
+        scan_at INTEGER,
+        enabled INTEGER DEFAULT 0,
+        FOREIGN KEY (skill_directory_id) REFERENCES skill_directories(id) ON DELETE CASCADE,
+        UNIQUE(skill_folder, skill_directory_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_skills_directory ON skills(skill_directory_id);
     `);
   }
 

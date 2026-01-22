@@ -23,6 +23,7 @@ import { setupChatHandlers } from './chat-handlers';
 import { setupSearchHandlers } from './services/search';
 import { setupSettingsHandlers } from './settings-handlers';
 import { setupShellHandlers } from './shell-handlers';
+import { setupSkillHandlers } from './skill-handlers';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
 
@@ -215,6 +216,19 @@ app.whenReady().then(() => {
   setupSearchHandlers();
   setupSettingsHandlers();
   setupShellHandlers();
+  setupSkillHandlers();
+  
+  // Initialize default skills directory
+  getDatabase().getDb().prepare(
+    'INSERT OR IGNORE INTO skill_directories (id, name, path, enabled) VALUES (?, ?, ?, ?)'
+  ).run(
+    require('crypto').randomUUID(),
+    'Tiginal',
+    process.platform === 'win32'
+      ? require('path').join(process.env.APPDATA || require('os').homedir(), 'Tiginal', 'skills')
+      : require('path').join(require('os').homedir(), '.config', 'tiginal', 'skills'),
+    1
+  );
   
   // Try to auto-unlock crypto using saved key
   const autoUnlocked = getCrypto().tryAutoUnlock();
