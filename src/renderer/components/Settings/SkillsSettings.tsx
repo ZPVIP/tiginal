@@ -116,6 +116,17 @@ export function SkillsSettings() {
     await invoke('skills:open-folder', directoryPath, skillFolder);
   };
 
+  const handleBrowseDirectory = async (forEdit = false) => {
+    const path = await invoke('skills:choose-directory');
+    if (path) {
+      if (forEdit) {
+        setEditDirPath(path);
+      } else {
+        setNewDirPath(path);
+      }
+    }
+  };
+
   // Pagination helpers
   const paginate = <T,>(items: T[], page: number) => items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = (total: number) => Math.ceil(total / PAGE_SIZE);
@@ -174,13 +185,21 @@ export function SkillsSettings() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-main mb-1">Path</label>
-                <input
-                  type="text"
-                  value={newDirPath}
-                  onChange={(e) => setNewDirPath(e.target.value)}
-                  placeholder="e.g., ~/.claude/skills/"
-                  className="w-full bg-background text-text-main text-sm font-mono rounded-lg py-2 px-3 border border-border focus:border-primary outline-none"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newDirPath}
+                    readOnly
+                    placeholder="Click Browse to select..."
+                    className="flex-1 bg-surface-light text-text-main text-sm font-mono rounded-lg py-2 px-3 border border-border focus:border-primary outline-none cursor-not-allowed opacity-80"
+                  />
+                  <button
+                    onClick={() => handleBrowseDirectory(false)}
+                    className="px-3 py-2 bg-surface border border-border hover:border-primary hover:bg-surface-light text-text-main text-sm rounded-lg transition-colors"
+                  >
+                    Browse
+                  </button>
+                </div>
               </div>
               <div className="flex gap-2">
                 <button
@@ -233,13 +252,21 @@ export function SkillsSettings() {
                         className="w-32 bg-background text-text-main text-sm rounded py-1 px-2 border border-primary outline-none"
                         placeholder="Name"
                       />
-                      <input
-                        type="text"
-                        value={editDirPath}
-                        onChange={(e) => setEditDirPath(e.target.value)}
-                        className="flex-1 bg-background text-text-main text-sm font-mono rounded py-1 px-2 border border-primary outline-none"
-                        placeholder="Path"
-                      />
+                      <div className="flex gap-1 flex-1">
+                        <input
+                          type="text"
+                          value={editDirPath}
+                          readOnly
+                          className="flex-1 bg-surface-light text-text-main text-sm font-mono rounded py-1 px-2 border border-primary outline-none cursor-not-allowed opacity-80"
+                          placeholder="Path"
+                        />
+                         <button
+                           onClick={() => handleBrowseDirectory(true)}
+                           className="px-2 py-1 bg-surface border border-border hover:border-primary hover:bg-surface-light text-text-main text-xs rounded transition-colors"
+                         >
+                           Browse
+                         </button>
+                      </div>
                       <button onClick={() => handleUpdateDirectory(dir.id)} className="p-1 text-green-400 hover:bg-green-500/20 rounded">
                         <Save size={14} />
                       </button>

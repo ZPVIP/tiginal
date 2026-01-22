@@ -1,4 +1,4 @@
-import { ipcMain, shell } from 'electron';
+import { ipcMain, shell, dialog } from 'electron';
 import { getDatabase } from '../services/database/database';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -269,5 +269,20 @@ export function setupSkillHandlers(): void {
   ipcMain.handle('skills:open-folder', async (_event, directoryPath: string, skillFolder: string): Promise<void> => {
     const fullPath = path.join(expandPath(directoryPath), skillFolder);
     shell.openPath(fullPath);
+  });
+
+  // Open directory selection dialog
+  ipcMain.handle('skills:choose-directory', async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Select Skills Directory',
+      buttonLabel: 'Select'
+    });
+    
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+    
+    return result.filePaths[0];
   });
 }
