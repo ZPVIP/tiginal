@@ -34,8 +34,7 @@ export function ToolApprovalRequest({
   console.log('ToolApprovalRequest mounting', { name, riskLevel });
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <div className={clsx("rounded-lg border overflow-hidden shadow-sm", colors.bg, colors.border)}>
+        <div className={clsx("rounded-lg border overflow-hidden shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300", colors.bg, colors.border)}>
             {/* Header / Info */}
             <div className="flex items-start gap-3 p-3 border-b border-border/10">
                 <div className="mt-0.5">{colors.icon}</div>
@@ -82,6 +81,5 @@ export function ToolApprovalRequest({
                 </button>
             </div>
         </div>
-    </div>
   );
 }

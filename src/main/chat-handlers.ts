@@ -716,6 +716,11 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         completionOccurred = true;
                         resultStr = toolCall.input.result || 'Task completed.';
                         console.log('>>> COMPLETION ATTEMPTED:', resultStr);
+                        
+                        // Send as chunk so it appears in UI
+                        _event.sender.send('chat:chunk', { conversationId, content: resultStr });
+                        finalResponse += resultStr;
+                        
                     } else if (toolCall.name === 'ToolSearch') {
                         // Execute Tool Search
                          _event.sender.send('chat:chunk', { conversationId, content: `\n\n> 🔍 Searching tools for: "${toolCall.input.query}"...\n` });
@@ -768,18 +773,24 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         const isSafe = (toolCall.name === 'Bash' && analysis.needsPermission === false);
                         const isSkill = toolCall.name.toLowerCase().includes('skill'); // Skills might be safe? Let's default to confirm.
                         
+
                         if (allowAllOverride || isSafe) {
                              console.log('>>> Auto-approving tool execution');
                              // Execute immediately
                              const res = await invokeToolExecution(toolCall.name, toolCall.input);
-                             resultStr = res.result || res.error || 'Done';
                              
-                             // Send result to UI for display (Console Output) -- Skip for Skills (too verbose)
-                             if (toolCall.name !== 'Skill' && toolCall.name !== 'ExecuteSkill') {
+                             let displayResult = res.result || res.error || 'Done';
+                             // For Bash, prepend the command so it shows in the console window
+                             if (toolCall.name === 'Bash') {
+                                 displayResult = `> ${toolCall.input.command}\n\n${displayResult}`;
+                             }
+
+                             // Send result to UI for display (Console Output) -- Skip for Skills
+                             if (!isSkill) {
                                  _event.sender.send('chat:tool-result', { 
                                      conversationId, 
                                      toolName: toolCall.name, 
-                                     result: resultStr 
+                                     result: displayResult 
                                  });
                              }
                         } else {
@@ -789,11 +800,41 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                 pendingToolApprovals.set(toolCall.id, resolve);
                             });
                             
+                            // Resolve Skill Path for UI
+                            let skillPath = undefined;
+                            if (isSkill) {
+                                try {
+                                    const db = dbService.getDb();
+                                    const path = require('path');
+                                    const os = require('os');
+                                    
+                                    const skillNameInput = toolCall.input.skill || toolCall.input.name;
+                                    if (skillNameInput) {
+                                         const allSkills = db.prepare('SELECT * FROM skills').all() as any[];
+                                         const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                         const target = normalize(skillNameInput);
+                                         const skill = allSkills.find(s => normalize(s.name) === target || normalize(s.skill_folder) === target);
+                                         
+                                         if (skill) {
+                                             const dir = db.prepare('SELECT path FROM skill_directories WHERE id = ?').get(skill.skill_directory_id) as any;
+                                             if (dir) {
+                                                 const expandPath = (p: string) => p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p;
+                                                 const fullPath = path.join(expandPath(dir.path), skill.skill_folder);
+                                                 skillPath = path.join(fullPath, 'SKILL.md');
+                                             }
+                                         }
+                                    }
+                                } catch (e) {
+                                    console.error('Failed to resolve skill path', e);
+                                }
+                            }
+
                             // Send to UI
                             _event.sender.send('chat:tool-call', { 
                                 conversationId, 
                                 ...toolCall,
-                                analysis 
+                                analysis,
+                                skillPath 
                             });
                             
                             // Wait for UI
@@ -803,14 +844,20 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                             if (approval.approved) {
                                 if (approval.approvedAll) allowAllOverride = true;
                                 const res = await invokeToolExecution(toolCall.name, toolCall.input);
-                                resultStr = res.result || res.error || 'Done';
                                 
+                                let displayResult = res.result || res.error || 'Done';
+                                if (toolCall.name === 'Bash') {
+                                    displayResult = `> ${toolCall.input.command}\n\n${displayResult}`;
+                                }
+                                
+                                resultStr = res.result || res.error || 'Done'; // Keep raw result for context
+
                                 // Send result to UI for display (Console Output) -- Skip for Skills
-                                if (toolCall.name !== 'Skill' && toolCall.name !== 'ExecuteSkill') {
+                                if (!isSkill) {
                                     _event.sender.send('chat:tool-result', { 
                                         conversationId, 
                                         toolName: toolCall.name, 
-                                        result: resultStr 
+                                        result: displayResult 
                                     });
                                 }
                             } else {
@@ -828,11 +875,10 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         content: resultStr
                     });
                     
-                    // Emphasize result in UI if needed (LLM usually summarizes, but we can print block)
-                    if (toolCall.name !== 'ToolSearch' && toolCall.name !== 'AttemptCompletion') {
-                        // Maybe show output block?
-                         _event.sender.send('chat:chunk', { conversationId, content: `\n\n\`\`\`\n${resultStr.slice(0, 500)}${resultStr.length > 500 ? '...' : ''}\n\`\`\`\n` });
-                    }
+                    // Emphasize result in UI if needed - REMOVED per user request (handled by tool-result event or LLM summary)
+                    // if (toolCall.name !== 'ToolSearch' && toolCall.name !== 'AttemptCompletion') {
+                    //      _event.sender.send('chat:chunk', { conversationId, content: `\n\n\`\`\`\n${resultStr.slice(0, 500)}${resultStr.length > 500 ? '...' : ''}\n\`\`\`\n` });
+                    // }
                 }
             );
 
@@ -1029,7 +1075,7 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
           
           if (fs.existsSync(skillMdPath)) {
                const content = fs.readFileSync(skillMdPath, 'utf-8');
-               const resultMsg = `Skill Documentation for "${skill.name}":\n\n${content}\n\n[SYSTEM]: Skill instructions loaded. DO NOT output, summarize, or repeat these instructions to the user. The user does NOT want to see them. Immediately proceed to use the Bash tool to execute the commands described above.`;
+               const resultMsg = `Skill Documentation for "${skill.name}":\n\n${content}`;
                return { success: true, result: resultMsg };
           } else {
                return { success: false, error: 'SKILL.md not found' };

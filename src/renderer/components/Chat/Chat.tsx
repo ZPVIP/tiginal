@@ -8,7 +8,7 @@ import { HistoryPanel } from './HistoryPanel';
 import { AIProvider, ModelConfig } from '../../settings/ai-constants';
 import { EyeOff, Trash2 } from 'lucide-react';
 
-const invoke = window.electron?.invoke || (async () => {});
+const invoke = (window as any).electron?.invoke || (async () => {});
 
 export function Chat() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -24,13 +24,7 @@ export function Chat() {
   const [useSystemPrompt, setUseSystemPrompt] = useState(true);
 
   // Tool call state
-  const [pendingToolCall, setPendingToolCall] = useState<{
-    id: string;
-    name: string;
-    input: any;
-    description?: string;
-    riskLevel?: 'safe' | 'low' | 'medium' | 'high';
-  } | null>(null);
+  // Tool call state
   const [allowAllTools, setAllowAllTools] = useState(false);
 
   useEffect(() => {
@@ -76,7 +70,7 @@ export function Chat() {
         }
     };
 
-    const removeListener = window.electron?.on('chat:chunk', onChunk);
+    const removeListener = (window as any).electron?.on('chat:chunk', onChunk);
 
     // Tool call listener
     const onToolCall = async (data: { conversationId: string; id: string; name: string; input: any }) => {
@@ -97,7 +91,8 @@ export function Chat() {
               command: data.name === 'Bash' ? data.input.command : JSON.stringify(data.input, null, 2),
               description: analysis?.description || data.input?.description || `Execute ${data.name}`,
               riskLevel: analysis?.riskLevel || (data.name === 'Bash' ? 'medium' : 'low'),
-              status: shouldAutoRun ? 'auto-approved' : 'pending'
+              status: shouldAutoRun ? 'auto-approved' : 'pending',
+              skillPath: (data as any).skillPath
           }
       };
       
@@ -126,8 +121,8 @@ export function Chat() {
         }]);
     };
 
-    const removeToolListener = window.electron?.on('chat:tool-call', onToolCall);
-    const removeResultListener = window.electron?.on('chat:tool-result', onToolResult);
+    const removeToolListener = (window as any).electron?.on('chat:tool-call', onToolCall);
+    const removeResultListener = (window as any).electron?.on('chat:tool-result', onToolResult);
 
     return () => {
         window.removeEventListener('ai-providers-updated', handleUpdate);

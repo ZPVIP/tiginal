@@ -1,39 +1,44 @@
 import React, { useRef, useEffect } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { ToolApprovalRequest } from './ToolApprovalRequest';
+import { Folder } from 'lucide-react';
 
 interface Message {
     id: string;
-    role: 'user' | 'assistant' | 'tool';
+    role: 'user' | 'assistant' | 'tool' | 'tool-request';
     content: string;
     reasoning?: string;
     images?: string[];
     tool_call_id?: string;
+    approvalData?: {
+        id: string;
+        name: string;
+        command: string;
+        description?: string;
+        riskLevel?: 'safe' | 'low' | 'medium' | 'high';
+        status: 'pending' | 'approved' | 'denied' | 'auto-approved';
+        skillPath?: string;
+    };
 }
 
 interface MessageListProps {
     messages: Message[];
     isStreaming?: boolean;
     onEdit?: (content: string) => void;
-    pendingToolCall?: {
-        name: string;
-        input: any;
-        description?: string;
-        riskLevel?: 'safe' | 'low' | 'medium' | 'high';
-        onAllow: () => void;
-        onAllowAll: () => void;
-        onDeny: () => void;
-    };
+    onApproval?: (id: string, decision: 'approved' | 'denied' | 'always') => void;
 }
 
-export function MessageList({ messages, isStreaming, onEdit, pendingToolCall, onApproval }: MessageListProps) {
-    console.log('MessageList render, pendingToolCall:', pendingToolCall);
+export function MessageList({ messages, isStreaming, onEdit, onApproval }: MessageListProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
+    // Helper to open folder
+    const handleOpenFolder = (path: string) => {
+        (window as any).electron?.invoke('shell:show-item-in-folder', path);
+    };
 
     useEffect(() => {
         // Use 'auto' behavior during streaming for instant updates, 'smooth' otherwise
         bottomRef.current?.scrollIntoView({ behavior: 'auto' });
-    }, [messages, isStreaming, pendingToolCall]);
+    }, [messages, isStreaming]);
 
     if (messages.length === 0) return null;
 
@@ -43,34 +48,62 @@ export function MessageList({ messages, isStreaming, onEdit, pendingToolCall, on
                 if (msg.role === 'tool-request' && msg.approvalData) {
                     if (msg.approvalData.status === 'pending') {
                         return (
-                            <ToolApprovalRequest 
-                                key={msg.id}
-                                name={msg.approvalData.name}
-                                command={msg.approvalData.command}
-                                description={msg.approvalData.description}
-                                riskLevel={msg.approvalData.riskLevel}
-                                onAllow={() => onApproval?.(msg.id, 'approved')}
-                                onAllowAll={() => onApproval?.(msg.id, 'always')}
-                                onDeny={() => onApproval?.(msg.id, 'denied')}
-                            />
-                        );
-                    } else {
-                         return (
-                            <div key={msg.id} className="mx-auto max-w-3xl px-4 py-2 opacity-75 flex gap-4">
+                            <div key={msg.id} className="mx-auto max-w-3xl px-4 py-2 flex gap-4">
                                 <div className="w-8 shrink-0" /> {/* Spacer for Avatar alignment */}
                                 <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between p-3 rounded-lg bg-[#1e1e1e] border border-white/10">
-                                        <div className="flex items-center gap-2 text-sm">
-                                            <span className="text-gray-400">Tool Request:</span>
-                                            <span className="font-mono text-gray-200">{msg.approvalData.name}</span>
+                                    <ToolApprovalRequest 
+                                        name={msg.approvalData.name}
+                                        command={msg.approvalData.command}
+                                        description={msg.approvalData.description}
+                                        riskLevel={msg.approvalData.riskLevel}
+                                        onAllow={() => onApproval?.(msg.id, 'approved')}
+                                        onAllowAll={() => onApproval?.(msg.id, 'always')}
+                                        onDeny={() => onApproval?.(msg.id, 'denied')}
+                                    />
+                                </div>
+                            </div>
+                        );
+                     } else {
+                         return (
+                            <div key={msg.id} className="mx-auto max-w-3xl px-4 py-2 flex gap-4">
+                                <div className="w-8 shrink-0" /> {/* Spacer for Avatar alignment */}
+                                <div className="flex-1 min-w-0">
+                                    <div className="rounded-lg bg-[#1e1e1e] border border-white/10 overflow-hidden">
+                                        {/* Status Header */}
+                                        <div className="flex items-center justify-between p-2 pl-3 bg-white/5 border-b border-white/5">
+                                            <div className="flex items-center gap-2 text-xs text-gray-400">
+                                                <span>Tool Execution:</span>
+                                                <span className="font-mono text-gray-200">{msg.approvalData.name}</span>
+                                            </div>
+                                            <span className={`font-bold uppercase text-[10px] tracking-wider px-2 py-0.5 rounded ${
+                                                msg.approvalData.status.includes('approved') 
+                                                    ? "bg-green-500/10 text-green-400" 
+                                                    : "bg-red-500/10 text-red-400"
+                                            }`}>
+                                                {msg.approvalData.status}
+                                            </span>
                                         </div>
-                                        <span className={`font-bold uppercase text-[10px] tracking-wider px-2 py-1 rounded ${
-                                            msg.approvalData.status.includes('approved') 
-                                                ? "bg-green-500/20 text-green-400" 
-                                                : "bg-red-500/20 text-red-400"
-                                        }`}>
-                                            {msg.approvalData.status}
-                                        </span>
+                                        
+                                        {/* Skill Path (if available) */}
+                                        {msg.approvalData.skillPath && (
+                                            <div className="flex items-center gap-2 px-3 py-2 bg-black/20 border-b border-white/5">
+                                                <button 
+                                                    onClick={() => handleOpenFolder(msg.approvalData!.skillPath!)}
+                                                    className="p-1 hover:bg-white/10 rounded-md transition-colors text-blue-400"
+                                                    title="Open in Folder"
+                                                >
+                                                    <Folder size={14} />
+                                                </button>
+                                                <div className="font-mono text-[10px] text-gray-400 break-all">
+                                                    {msg.approvalData.skillPath}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Command / Input Details */}
+                                        <div className="p-3 font-mono text-xs text-gray-300 whitespace-pre-wrap overflow-x-auto bg-black/20">
+                                            {msg.approvalData.command}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
