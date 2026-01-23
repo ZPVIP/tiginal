@@ -14,6 +14,85 @@ interface AIProvider {
 
 import { getCopilotToken } from './services/ai/CopilotAuthService';
 
+// Module-level state for tool approvals
+const pendingToolApprovals = new Map<string, (result: { approved: boolean; approvedAll: boolean }) => void>();
+
+// Tool Definitions
+const TOOL_SEARCH_DEF = {
+  name: "ToolSearch",
+  description: "Search and discover available tools using semantic search.\nUse this tool to find relevant tools when you need to:\n- Discover what tools are available for a specific task\n- Find MCP server tools by describing what you want to do\n- Get tool definitions and input schemas before using them\n- Explore capabilities across built-in and MCP tools\n\nThis tool uses AI to understand your query and find matching tools semantically.",
+  input_schema: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        minLength: 1,
+        description: "Search query to find tools - describe what you want to do or the type of tool you need"
+      },
+      type: {
+        default: "all",
+        description: "Filter by tool type: 'builtin' for built-in tools, 'mcp' for MCP server tools, 'plugin' for plugin-registered tools, or 'all' for all",
+        type: "string",
+        enum: ["builtin", "mcp", "plugin", "all"]
+      },
+      limit: {
+        default: 20,
+        description: "Maximum number of tools to return",
+        type: "integer",
+        exclusiveMinimum: 0,
+        maximum: 50
+      }
+    },
+    required: ["query"],
+    additionalProperties: false
+  }
+};
+
+const ATTEMPT_COMPLETION_DEF = {
+  name: "AttemptCompletion",
+  description: "Signal that the task is completed with a final results summary.",
+  input_schema: {
+    type: "object",
+    properties: {
+      result: {
+        type: "string",
+        description: "Final result summary of the task execution"
+      }
+    },
+    required: ["result"],
+    additionalProperties: false
+  }
+};
+
+const TOOL_SEARCH_PROMPT = `You are a tool search assistant. Your task is to find tools that match the user's search query.
+
+Available tools:
+Built-in tools:
+- Task: [builtin] Launch sub-agents for complex multi-step tasks
+- Bash: [builtin] Run shell commands
+- Glob: [builtin] Find files matching glob patterns
+- Grep: [builtin] Search file contents with ripgrep
+- Read: [builtin] Read file contents
+- Edit: [builtin] Modify files
+- Write: [builtin] Create or overwrite files
+- WebFetch: [builtin] Fetch URL contents
+- WebSearch: [builtin] Search the web
+- TodoWrite: [builtin] Manage TODO lists
+- BashOutput: [builtin] Get output from running shell commands
+- KillShell: [builtin] Terminate running shell commands
+- Skill: [builtin] Invoke saved skills or workflows
+- AttemptCompletion: [builtin] Signal completion
+
+Based on the search query, select all tools that are relevant. Return your response as a JSON object with:
+- "tools": an array of tool IDs that match the search query
+- "reasoning": a brief explanation of why these tools were selected
+
+Guidelines:
+1. Select tools that semantically match what the user is looking for
+2. If the query is broad, include multiple relevant tools
+3. If no tools match, return an empty array
+`;
+
 /**
  * Setup Chat-related IPC handlers
  */
@@ -67,175 +146,18 @@ export function setupChatHandlers(): void {
       
       update();
   });
-
-  // Send message to AI
-  ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string, options?: { useSystemPrompt?: boolean }): Promise<{ response: string; error?: string }> => {
-    const chatService = getChatService();
-    const db = getDatabase().getDb();
-    const dbService = getDatabase();
-    const crypto = getCrypto();
-
-    // Load system prompt from settings if enabled
-    const useSystemPrompt = options?.useSystemPrompt !== false; // Default true
-    const systemPrompt = useSystemPrompt ? (dbService.getSetting('systemPrompt') || '') : '';
-
-    // Load enabled tools
-    let enabledTools: Array<{ name: string; description: string; input_schema: object }> = [];
-    try {
-      const toolRows = db.prepare(`
-        SELECT name, description, input_schema
-        FROM tools WHERE enabled = 1 ORDER BY name ASC
-      `).all() as Array<{ name: string; description: string | null; input_schema: string }>;
-      
-      enabledTools = toolRows.map(row => ({
-        name: row.name,
-        description: row.description || '',
-        input_schema: JSON.parse(row.input_schema),
-      }));
-    } catch (e) {
-      console.error('Failed to load tools', e);
-    }
-
-    // Get provider
-    const provider = db.prepare(`
-      SELECT id, name, type, endpoint, api_key_encrypted, model, custom_headers, auto_cors_fix
-      FROM ai_providers WHERE id = ?
-    `).get(providerId) as {
-      id: string;
-      name: string;
-      type: string;
-      endpoint: string | null;
-      api_key_encrypted: string | null;
-      model: string;
-      custom_headers: string | null;
-      auto_cors_fix: number | null;
-    } | undefined;
-
-    if (!provider) {
-      return { response: '', error: 'Provider not found' };
-    }
-
-    // Add user message to conversation
-    chatService.addMessage(conversationId, 'user', content);
-
-    // Get conversation history
-    const messages = chatService.getMessages(conversationId);
-
-    // Get API key
-    let apiKey: string | null = null;
-    if (provider.api_key_encrypted && crypto.isUnlocked()) {
-      try {
-        apiKey = crypto.decrypt(provider.api_key_encrypted);
-      } catch {
-        // Key decryption failed
+  // Submit tool approval (User clicked Allow/Deny)
+  ipcMain.handle('chat:submit-tool-approval', async (_event, { toolCallId, approved, approvedAll }: { toolCallId: string; approved: boolean; approvedAll: boolean }): Promise<void> => {
+      const resolver = pendingToolApprovals.get(toolCallId);
+      if (resolver) {
+          resolver({ approved, approvedAll });
+          pendingToolApprovals.delete(toolCallId);
       }
-    }
+  });
 
-    try {
-      // Determine model to use
-      const modelToUse = specificModel || provider.model;
-
-      // Parse custom headers
-      const customHeaders = provider.custom_headers ? JSON.parse(provider.custom_headers) : {};
-
-      // Call AI API
-      // Call AI API with streaming
-      let fullResponse = '';
-      
-          // Notify client that stream is starting (optional, but good for UI state)
-      // _event.sender.send('chat:start', { conversationId });
-
-      // Build messages array with optional system prompt
-      const apiMessages: Array<{ role: string; content: string }> = [];
-      
-      if (systemPrompt) {
-        // 1. Dynamic Date
-        const dateStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
-        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const dateInfo = `\n\nIMPORTANT - Today's date is ${dateStr} (timezone: ${timezone}). Use this date accurately for time-sensitive questions.`;
-        
-        // 2. Dynamic Working Directory
-        let workspacePath = dbService.getSetting('workspacePath');
-        if (!workspacePath) {
-             const os = require('os');
-             const path = require('path');
-             if (process.platform === 'win32') {
-                  workspacePath = path.join(process.env.APPDATA || os.homedir(), 'Tiginal', 'workspaces');
-             } else {
-                  workspacePath = path.join(os.homedir(), '.config', 'tiginal', 'workspaces');
-             }
-        }
-        const wdInfo = `\n\nWORKING DIRECTORY - Your current working directory is: ${workspacePath}. All file operations and shell commands will be executed relative to this directory.`;
-
-        // 3. Dynamic Skills
-        let skillsInfo = '';
-        try {
-            // Check if skills table exists first (in case migration didn't run)
-            const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='skills'").get();
-            if (tableExists) {
-                const skillRows = db.prepare('SELECT name, description FROM skills WHERE enabled = 1').all() as {name:string, description:string}[];
-                if (skillRows.length > 0) {
-                    skillsInfo = '\n\n<available_skills>\n' + 
-                        skillRows.map(s => `- "${s.name}": ${s.description}`).join('\n') +
-                        '\n</available_skills>';
-                }
-            }
-        } catch (e) {
-            console.error('Failed to load skills for system prompt', e);
-        }
-
-        apiMessages.push({ role: 'system', content: systemPrompt + dateInfo + wdInfo + skillsInfo });
-      }
-      
-      apiMessages.push(...messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })));
-
-      try {
-        await streamAIAPI(
-          provider.type as 'openai-compatible' | 'copilot',
-          provider.endpoint || 'https://api.openai.com/v1',
-          apiKey,
-          modelToUse,
-          apiMessages,
-          customHeaders,
-          provider.auto_cors_fix === 1,
-          enabledTools,
-          (chunkData) => {
-             if (chunkData.content) fullResponse += chunkData.content;
-             _event.sender.send('chat:chunk', { conversationId, ...chunkData });
-          },
-          (toolCall) => {
-             // Send tool call to frontend for user confirmation
-             _event.sender.send('chat:tool-call', { conversationId, ...toolCall });
-          }
-        );
-      } catch (streamErr) {
-         return { response: fullResponse, error: (streamErr as Error).message };
-      }
-
-      // Add assistant response to conversation
-      // Note: We might want to save reasoning too if we want to persist it, but current DB/Service might only support content
-      // For now, we just save the final full content. Reasoning is transient in UI unless we persist it.
-      // IF we want to save reasoning, we need to accumulate it too.
-      // Let's stick to saving content for now to minimize DB changes, or just append reasoning?
-      // Usually reasoning is separated. Let's assume standard behavior is just saving content.
-      
-      chatService.addMessage(conversationId, 'assistant', fullResponse); // we only save content to DB for now
-
-      // Generate title if this is the first response
-      if (messages.length <= 2) {
-        const firstUserMsg = messages.find(m => m.role === 'user');
-        if (firstUserMsg) {
-          const words = firstUserMsg.content.split(/\s+/).slice(0, 5).join(' ');
-          const title = words.length > 30 ? words.slice(0, 30) + '...' : words;
-          chatService.updateTitle(conversationId, title);
-        }
-      }
-
-      return { response: fullResponse };
-    } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error';
-      return { response: '', error: errorMessage };
-    }
+  // Send message to AI (Autonomous Agent Loop)
+  ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string, options: { useSystemPrompt?: boolean, useSkills?: boolean } = {}): Promise<{ response: string; error?: string }> => {
+    return runAgentLoop(_event, conversationId, providerId, content, specificModel, options);
   });
 
   // Execute a tool (called after user approves)
@@ -257,6 +179,52 @@ export function setupChatHandlers(): void {
           });
         });
       }
+
+      // Handle "Skill" or "ExecuteSkill" tool
+      if (toolName.toLowerCase() === 'skill' || toolName.toLowerCase() === 'executeskill') {
+          const db = getDatabase().getDb();
+          const path = require('path');
+          const fs = require('fs');
+          const os = require('os');
+          
+          const skillNameInput = toolInput.skill || toolInput.name;
+          if (!skillNameInput) {
+              return { success: false, error: 'Skill name is required in arguments' };
+          }
+
+          // Fetch all skills to perform fuzzy matching
+          const allSkills = db.prepare('SELECT * FROM skills').all() as any[];
+          
+          // Normalize string helper: lowercase and remove non-alphanumeric chars
+          const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const target = normalize(skillNameInput);
+          
+          const skill = allSkills.find(s => normalize(s.name) === target || normalize(s.skill_folder) === target); // Also match folder name
+          
+          if (!skill) {
+              // Try partial match or more lenient if needed, but exact normalized match is usually enough
+              return { success: false, error: `Skill not found: ${skillNameInput}` };
+          }
+          
+          // Get directory
+          const dir = db.prepare('SELECT path FROM skill_directories WHERE id = ?').get(skill.skill_directory_id) as any;
+          if (!dir) {
+               return { success: false, error: 'Skill directory configuration error' };
+          }
+          
+          // Helper to expand path
+          const expandPath = (p: string) => p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p;
+          const fullPath = path.join(expandPath(dir.path), skill.skill_folder);
+          const skillMdPath = path.join(fullPath, 'SKILL.md');
+          
+          if (fs.existsSync(skillMdPath)) {
+               const content = fs.readFileSync(skillMdPath, 'utf-8');
+               const resultMsg = `Skill Documentation for "${skill.name}":\n\n${content}\n\n[SYSTEM]: Skill instructions loaded. Use the Bash tool to execute the commands or scripts described above.`;
+               return { success: true, result: resultMsg };
+          } else {
+               return { success: false, error: 'SKILL.md not found in skill folder' };
+          }
+      }
       
       // Unknown tool
       return { success: false, error: `Unknown tool: ${toolName}` };
@@ -264,6 +232,135 @@ export function setupChatHandlers(): void {
       return { success: false, error: (error as Error).message };
     }
   });
+}
+
+/**
+ * Security Analyzer: Analyze a bash command for risk and risk description
+ */
+async function analyzeCommand(
+  command: string, 
+  apiConfig: { 
+      type: 'openai-compatible' | 'copilot',
+      endpoint: string,
+      apiKey: string | null,
+      model: string
+  }
+): Promise<{ needsPermission: boolean; description: string; riskLevel: string }> {
+    const prompt = `You are a security analyzer for shell commands. Your task is to analyze a bash command and determine:
+1. Whether it needs user permission before execution
+2. A brief description of what the command does (IMPORTANT: write the description in Chinese (Simplified))
+3. The risk level of the command
+
+Commands that are SAFE and do NOT need permission (return needsPermission: false):
+- Read-only commands: ls, pwd, cat, head, tail, less, more, file, stat, wc, du, df, find (without -exec/-delete), locate, which, whereis, type, echo, printf
+- Information commands: date, cal, uptime, whoami, id, groups, hostname, uname, env, printenv
+- Text processing (read-only): grep, awk, sed (without -i), sort, uniq, cut, tr, diff, comm
+- Git read commands: git status, git log, git diff, git branch, git show, git remote -v
+- Package info: npm list, pip list, cargo --version, node --version, python --version
+- Process info: ps, top (non-interactive), pgrep, jobs
+
+Commands that NEED permission (return needsPermission: true):
+- File modification: rm, mv, cp, mkdir, rmdir, touch, chmod, chown, ln
+- File editing: sed -i, any editor commands
+- Git write commands: git add, git commit, git push, git pull, git checkout, git merge, git rebase
+- Package management: npm install, pip install, apt install, brew install, cargo install
+- Process control: kill, killall, pkill, nohup, disown
+- Network commands: curl (POST/PUT/DELETE), wget, ssh, scp, rsync
+- System commands: sudo, su, systemctl, service, mount, umount
+- Script execution: bash script.sh, ./script.sh, python script.py, node script.js
+- Any command with pipes to write operations
+- Any command with output redirection (>, >>)
+- Any unknown or complex commands
+- yt-dlp used for downloading videos (medium risk)
+
+Respond with JSON only:
+{
+  "needsPermission": boolean,
+  "description": "Brief description of what this command does in Chinese (Simplified)",
+  "riskLevel": "safe" | "low" | "medium" | "high"
+}
+
+Risk levels:
+- safe: Read-only, no side effects
+- low: Minor changes, easily reversible
+- medium: Significant changes, may affect files or system state
+- high: Destructive operations, system modifications, network access`;
+
+    try {
+        // We use fetch inside electron main process (Node 18+ has fetch)
+        // If not available, we can require it or use axios if installed, but let's assume global fetch or require('node-fetch').
+        // Electron usually has fetch in main process for recent versions.
+        
+        const messages = [
+            { role: 'system', content: prompt },
+            { role: 'user', content: `Analyze this bash command: ${command}` }
+        ];
+
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json'
+        };
+        
+        let endpoint = apiConfig.endpoint;
+
+        if (apiConfig.type === 'copilot' && apiConfig.apiKey) {
+             if (!endpoint || endpoint.includes('api.openai.com')) {
+                 endpoint = 'https://api.githubcopilot.com'; 
+             }
+             const copilotToken = await getCopilotToken(apiConfig.apiKey);
+             headers['Authorization'] = `Bearer ${copilotToken}`;
+             headers['Copilot-Integration-Id'] = 'vscode-chat';
+             headers['Editor-Version'] = 'vscode/1.107.0'; 
+             headers['Editor-Plugin-Version'] = 'copilot-chat/0.35.0';
+             headers['User-Agent'] = 'GitHubCopilotChat/0.35.0';
+             headers['Openai-Intent'] = 'conversation-edits';
+        } else if (apiConfig.apiKey) {
+            headers['Authorization'] = `Bearer ${apiConfig.apiKey}`;
+        }
+        
+        try { const url = new URL(endpoint); headers['Origin'] = url.origin; } catch(e){}
+
+        const body = JSON.stringify({
+            model: apiConfig.model,
+            messages,
+            temperature: 0.1, 
+            max_tokens: 1000,
+            stream: false
+        });
+
+        const response = await fetch(`${endpoint}/chat/completions`, {
+            method: 'POST',
+            headers,
+            body
+        });
+
+        if (!response.ok) {
+            console.error('Analyzer API failed', response.status);
+            return { needsPermission: true, description: `Execute: ${command}`, riskLevel: 'medium' };
+        }
+
+        const data = await response.json() as any;
+        const content = data.choices?.[0]?.message?.content;
+        
+        if (content) {
+            const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/{[\s\S]*}/);
+            const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : content;
+            try {
+                const result = JSON.parse(jsonStr);
+                return {
+                    needsPermission: result.needsPermission,
+                    description: result.description || `Execute: ${command}`,
+                    riskLevel: result.riskLevel || 'medium'
+                };
+            } catch (e) {
+                console.warn('Failed to parse analyzer response', content);
+            }
+        }
+        
+    } catch (e) {
+        console.error('Analyzer execution error', e);
+    }
+    
+    return { needsPermission: true, description: `Execute: ${command}`, riskLevel: 'medium' };
 }
 
 /**
@@ -279,7 +376,7 @@ async function streamAIAPI(
   autoCORSFix: boolean = true,
   tools: Array<{ name: string; description: string; input_schema: object }> = [],
   onChunk: (data: { content?: string; reasoning?: string }) => void,
-  onToolCall?: (data: { id: string; name: string; input: any }) => void
+  onToolCall?: (data: { id: string; name: string; input: any }) => void | Promise<void>
 ): Promise<void> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -287,20 +384,13 @@ async function streamAIAPI(
   };
 
   if (type === 'copilot' && apiKey) {
-      // If endpoint is missing or is the default OpenAI endpoint, use the official Copilot endpoint.
-      // We check for 'api.openai.com' to catch the default value often set by the UI.
-      // We DO NOT unconditionally set this, because we want to allow custom endpoints for GitHub Enterprise.
       if (!endpoint || endpoint.includes('api.openai.com')) {
            endpoint = 'https://api.githubcopilot.com'; 
       }
 
       try {
-          // Exchange OAuth token for API token
           const copilotToken = await getCopilotToken(apiKey);
           headers['Authorization'] = `Bearer ${copilotToken}`;
-          // Add required Copilot headers
-          headers['Authorization'] = `Bearer ${copilotToken}`;
-          // Add required Copilot headers to match opencode-copilot-auth
           headers['Copilot-Integration-Id'] = 'vscode-chat';
           headers['Editor-Version'] = 'vscode/1.107.0'; 
           headers['Editor-Plugin-Version'] = 'copilot-chat/0.35.0';
@@ -314,10 +404,8 @@ async function streamAIAPI(
     headers['Authorization'] = `Bearer ${apiKey}`;
   }
 
-  // Auto CORS fix simulation
   if (autoCORSFix) {
     try {
-      // For Copilot, we might not need this or it might break it, but let's keep it safe
       const url = new URL(endpoint);
       headers['Origin'] = url.origin;
     } catch (e) {
@@ -333,7 +421,6 @@ async function streamAIAPI(
     stream: true
   };
 
-  // Add tools if available
   if (tools.length > 0) {
     bodyPayload.tools = tools.map(t => ({
       type: 'function',
@@ -366,7 +453,6 @@ async function streamAIAPI(
     const errorText = await response.text();
     console.error(`AI API Error: ${response.status} - ${errorText}`);
 
-    // Handle specific Copilot "model not supported" error
     if (type === 'copilot' && response.status === 400) {
         try {
             const errorJson = JSON.parse(errorText);
@@ -385,11 +471,10 @@ async function streamAIAPI(
                  return;
             }
         } catch (e) {
-            // ignore JSON parse error, throw original text
+            // ignore JSON parse error
         }
     }
 
-    // Handle generic errors
     let errorMessage = errorText;
     try {
         const errorJson = JSON.parse(errorText);
@@ -419,31 +504,48 @@ async function streamAIAPI(
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
+  
+  // Accumulator for tool calls across chunks
+  const toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }> = {};
 
   try {
     while (true) {
         const { done, value } = await reader.read();
-        if (done) {
-            console.log('Stream done signal received.');
-            break;
-        }
+        if (done) break;
 
         const chunkText = decoder.decode(value, { stream: true });
-        console.log(`Received chunk (${value.length} bytes):`, chunkText); 
         buffer += chunkText;
         
-        // Process buffer line by line
         const lines = buffer.split('\n');
         buffer = lines.pop() || "";  
 
         for (const line of lines) {
-           processLine(line, onChunk, onToolCall);
+           processLine(line, onChunk, toolCallAccumulator);
         }
     }
     
     // Process remaining buffer
     if (buffer.trim()) {
-        processLine(buffer, onChunk, onToolCall);
+        processLine(buffer, onChunk, toolCallAccumulator);
+    }
+
+    // Finalize any pending tool calls after stream ends
+    if (onToolCall) {
+        const toolsToCall = Object.values(toolCallAccumulator);
+        for (const tool of toolsToCall) {
+            try {
+                if (tool.name && tool.arguments) {
+                     const input = JSON.parse(tool.arguments);
+                     await onToolCall({
+                         id: tool.id,
+                         name: tool.name,
+                         input
+                     });
+                }
+            } catch (e) {
+                console.warn('Failed to parse pending tool call at stream end', e);
+            }
+        }
     }
 
   } catch (err) {
@@ -452,10 +554,430 @@ async function streamAIAPI(
   }
 }
 
+async function runAgentLoop(_event: any, conversationId: string, providerId: string, content: string, specificModel?: string, options: { useSystemPrompt?: boolean, useSkills?: boolean } = {}): Promise<{ response: string; error?: string }> {
+    const chatService = getChatService();
+    const db = getDatabase().getDb();
+    const dbService = getDatabase();
+    const crypto = getCrypto();
+    const MAX_TURNS = 10;
+    
+    // 1. Setup Provider & API Key
+    const provider = db.prepare(`SELECT * FROM ai_providers WHERE id = ?`).get(providerId) as any;
+    if (!provider) return { response: '', error: 'Provider not found' };
+
+    let apiKey: string | null = null;
+    if (provider.api_key_encrypted && crypto.isUnlocked()) {
+        try { apiKey = crypto.decrypt(provider.api_key_encrypted); } catch {}
+    }
+    const modelToUse = specificModel || provider.model;
+    const customHeaders = provider.custom_headers ? JSON.parse(provider.custom_headers) : {};
+    
+    // 2. Build Initial Messages
+    chatService.addMessage(conversationId, 'user', content);
+    const dbMessages = chatService.getMessages(conversationId);
+    
+    // Construct System Prompt
+    const useSystemPrompt = options?.useSystemPrompt !== false;
+    const baseSystemPrompt = useSystemPrompt ? (dbService.getSetting('systemPrompt') || '') : '';
+    
+    const dateStr = new Date().toLocaleDateString('en-CA');
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const dateInfo = `\n\nIMPORTANT - Today's date is ${dateStr} (timezone: ${timezone}).`;
+    
+    let workspacePath = dbService.getSetting('workspacePath');
+    if (!workspacePath) {
+        const os = require('os');
+        const path = require('path');
+        workspacePath = process.platform === 'win32' 
+            ? path.join(process.env.APPDATA || os.homedir(), 'Tiginal', 'workspaces')
+            : path.join(os.homedir(), '.config', 'tiginal', 'workspaces');
+    }
+    const wdInfo = `\n\nWORKING DIRECTORY - Your current working directory is: ${workspacePath}.`;
+    
+    let skillsInfo = '';
+    // Load skills info if requested (for prompt context)
+    if (options && options.useSkills) {
+        try {
+            const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='skills'").get();
+            if (tableExists) {
+                const skillRows = db.prepare('SELECT name, description FROM skills WHERE enabled = 1').all() as {name:string, description:string}[];
+                if (skillRows.length > 0) {
+                    skillsInfo = '\n\n<available_skills>\n' + 
+                        skillRows.map(s => `- "${s.name}": ${s.description}`).join('\n') +
+                        '\n</available_skills>';
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load skills', e);
+        }
+    }
+
+    const systemMessage = { 
+        role: 'system', 
+        content: baseSystemPrompt + dateInfo + wdInfo + skillsInfo 
+    };
+
+    // Current conversation context (will grow with tool calls)
+    const currentMessages: any[] = [
+        systemMessage,
+        ...dbMessages.map((m: any) => ({ role: m.role, content: m.content }))
+    ];
+
+    // 3. Prepare Tools (Initial Set)
+    // We start with ToolSearch and AttemptCompletion, PLUS any enabled DB tools (Bash, etc.)
+    // Note: The logic says "Use ToolSearch to find tools". 
+    // BUT we also want common tools (Bash) to be available if enabled.
+    // Let's load enabled tools from DB.
+    let currentTools: Array<any> = [];
+    try {
+      const toolRows = db.prepare(`SELECT name, description, input_schema FROM tools WHERE enabled = 1`).all() as any[];
+      currentTools = toolRows.map(row => ({
+        name: row.name,
+        description: row.description || '',
+        input_schema: JSON.parse(row.input_schema),
+      }));
+    } catch (e) {}
+
+    // Ensure ToolSearch and AttemptCompletion are present
+    if (!currentTools.find(t => t.name === 'ToolSearch')) currentTools.push(TOOL_SEARCH_DEF);
+    if (!currentTools.find(t => t.name === 'AttemptCompletion')) currentTools.push(ATTEMPT_COMPLETION_DEF);
+
+    let finalResponse = '';
+    let turnCount = 0;
+    let allowAllOverride = false; // Session-based allow all
+
+    // AGENT LOOP
+    while (turnCount < MAX_TURNS) {
+        turnCount++;
+        let toolCallOccurred = false;
+        let completionOccurred = false;
+
+        try {
+            await streamAIAPI(
+                provider.type as 'openai-compatible' | 'copilot',
+                provider.endpoint || 'https://api.openai.com/v1',
+                apiKey,
+                modelToUse,
+                currentMessages,
+                customHeaders,
+                provider.auto_cors_fix === 1,
+                currentTools,
+                (chunkData) => {
+                    // Stream to UI. 
+                    // Note: If we are in turn > 1, this appends to the SAME UI bubble? 
+                    // Chat.tsx handles appending. 
+                    // We might want to persist "finalResponse" accumulator for specific logic.
+                    if (chunkData.content) {
+                         finalResponse += chunkData.content;
+                    }
+                    _event.sender.send('chat:chunk', { conversationId, ...chunkData });
+                },
+                async (toolCall) => {
+                    toolCallOccurred = true;
+                    // Append Assistant Message with Tool Call
+                    currentMessages.push({
+                        role: 'assistant',
+                        content: '', // Content likely streamed already, but for tool call msg structure we need tool_calls
+                        tool_calls: [{
+                            id: toolCall.id,
+                            type: 'function',
+                            function: {
+                                name: toolCall.name,
+                                arguments: JSON.stringify(toolCall.input)
+                            }
+                        }]
+                    } as any);
+
+                    // HANDLE TOOL EXECUTION
+                    let resultStr = '';
+
+                    if (toolCall.name === 'AttemptCompletion') {
+                        completionOccurred = true;
+                        resultStr = toolCall.input.result || 'Task completed.';
+                    } else if (toolCall.name === 'ToolSearch') {
+                        // Execute Tool Search
+                         _event.sender.send('chat:chunk', { conversationId, content: `\n\n> 🔍 Searching tools for: "${toolCall.input.query}"...\n` });
+                        const foundTools = await callToolsModel(toolCall.input.query, dbService);
+                        
+                        // Add found tools to currentTools if not exists
+                        let newCount = 0;
+                        for (const ft of foundTools) {
+                             if (!currentTools.find(t => t.name === ft.name)) {
+                                 currentTools.push({
+                                     name: ft.name,
+                                     description: ft.description,
+                                     input_schema: ft.inputSchema || {} // Simplify
+                                 });
+                                 newCount++;
+                             }
+                        }
+                        
+                        // Respond to LLM
+                        const foundNames = foundTools.map(t => t.name).join(', ');
+                        resultStr = JSON.stringify({
+                            query: toolCall.input.query,
+                            found: foundTools.length,
+                            tools: foundTools,
+                            reasoning: `Found ${foundTools.length} tools. Added to available tools: ${foundNames}`
+                        });
+                        
+                    } else {
+                        // Bash, Skill, or other Tools -> REQUIRE PERMISSION
+                        
+                        // 1. Analyze Safety
+                        const analysis = await analyzeCommand(
+                            toolCall.name === 'Bash' ? toolCall.input.command : JSON.stringify(toolCall.input),
+                            {
+                                type: provider.type,
+                                endpoint: provider.endpoint || 'https://api.openai.com/v1',
+                                apiKey,
+                                model: modelToUse // Use same model for analysis or toolModel? 
+                                // Plan said "Use Tools Model for safety". 
+                                // Let's try to use toolModel for safety if available, else current.
+                            }
+                        );
+
+                        // Quick override check
+                        // If tool is explicitly safe (needsPermission=false) OR allowAllOverride is true
+                        const isSafe = (toolCall.name === 'Bash' && analysis.needsPermission === false);
+                        const isSkill = toolCall.name.toLowerCase().includes('skill'); // Skills might be safe? Let's default to confirm.
+                        
+                        if (allowAllOverride || isSafe) {
+                             // Execute immediately
+                             const res = await invokeToolExecution(toolCall.name, toolCall.input);
+                             resultStr = res.result || res.error || 'Done';
+                        } else {
+                            // Ask User
+                            const approvalPromise = new Promise<{ approved: boolean; approvedAll: boolean }>((resolve) => {
+                                pendingToolApprovals.set(toolCall.id, resolve);
+                            });
+                            
+                            // Send to UI
+                            _event.sender.send('chat:tool-call', { 
+                                conversationId, 
+                                ...toolCall,
+                                analysis 
+                            });
+                            
+                            // Wait for UI
+                            const approval = await approvalPromise;
+                            
+                            if (approval.approved) {
+                                if (approval.approvedAll) allowAllOverride = true;
+                                const res = await invokeToolExecution(toolCall.name, toolCall.input);
+                                resultStr = res.result || res.error || 'Done';
+                            } else {
+                                resultStr = "User denied permission to execute this tool.";
+                            }
+                        }
+                    }
+
+                    // Append Tool Result
+                    currentMessages.push({
+                        role: 'tool',
+                        tool_call_id: toolCall.id,
+                        content: resultStr
+                    });
+                    
+                    // Emphasize result in UI if needed (LLM usually summarizes, but we can print block)
+                    if (toolCall.name !== 'ToolSearch' && toolCall.name !== 'AttemptCompletion') {
+                        // Maybe show output block?
+                         _event.sender.send('chat:chunk', { conversationId, content: `\n\n\`\`\`\n${resultStr.slice(0, 500)}${resultStr.length > 500 ? '...' : ''}\n\`\`\`\n` });
+                    }
+                }
+            );
+
+            if (!toolCallOccurred) {
+                // LLM finished without calling a tool. 
+                // This means it's done or asking a question.
+                // We treat this as completion of the turn.
+                break;
+            }
+            
+            if (completionOccurred) {
+                break;
+            }
+
+        } catch (err) {
+            console.error('Agent loop error', err);
+            return { response: finalResponse, error: (err as Error).message };
+        }
+    }
+
+    // Save final response (accumulated) to DB
+    // Note: The intermediate chunks were already sent to UI. 
+    // We just save the text content to DB for history.
+    // If we want to save the *whole* chain, we need to save intermediate messages.
+    // For now, save the final aggregated text.
+    chatService.addMessage(conversationId, 'assistant', finalResponse);
+    
+    return { response: finalResponse };
+}
+
+// Helper: Call Tools AI Model
+async function callToolsModel(query: string, dbService: any): Promise<any[]> {
+    try {
+        const toolModelSetting = dbService.getSetting('toolModel'); // e.g. "providerId:modelId" or just "modelId"
+        if (!toolModelSetting) return []; // Fallback?
+
+        // Parse setting
+        const db = dbService.getDb();
+        let providerId = ''; 
+        let model = '';
+        
+        if (toolModelSetting.includes(':')) {
+            const parts = toolModelSetting.split(':');
+            providerId = parts[0];
+            model = parts.slice(1).join(':');
+        } else {
+             // Fallback: search for provider with this model
+             const p = db.prepare('SELECT id FROM ai_providers WHERE model = ?').get(toolModelSetting) as any;
+             if (p) { providerId = p.id; model = toolModelSetting; }
+             // Else use default provider
+             else {
+                 const def = db.prepare('SELECT id, model FROM ai_providers WHERE is_default = 1').get() as any;
+                 if (def) { providerId = def.id; model = def.model; } // Use default as fallback
+             }
+        }
+        
+        const provider = db.prepare('SELECT * FROM ai_providers WHERE id = ?').get(providerId) as any;
+        if (!provider) return [];
+        
+        const crypto = getCrypto();
+        let apiKey = null;
+        if (provider.api_key_encrypted && crypto.isUnlocked()) {
+             try { apiKey = crypto.decrypt(provider.api_key_encrypted); } catch {}
+        }
+        
+        const messages = [
+            { role: 'system', content: TOOL_SEARCH_PROMPT },
+            { role: 'user', content: `Search query: "${query}"\n\nFind all tools that match this query and return as JSON.` }
+        ];
+
+        // Call API (non-streaming)
+        const response = await fetch(`${provider.endpoint || 'https://api.openai.com/v1'}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: messages,
+                temperature: 0,
+                max_tokens: 2000
+            })
+        });
+        
+        if (!response.ok) return [];
+        
+        const data = await response.json() as any;
+        const jsonStr = data.choices?.[0]?.message?.content || '';
+        
+        // Parse JSON from text
+        const match = jsonStr.match(/```json\n([\s\S]*?)\n```/) || jsonStr.match(/{[\s\S]*}/);
+        const cleanJson = match ? match[1] || match[0] : jsonStr;
+        const result = JSON.parse(cleanJson);
+        
+        // Map Result codes to actual tool definitions
+        // The prompt asks for "tools": ["Bash", ...]
+        // We need to look up these IDs in our hardcoded known tools or DB.
+        // For now, we return valid tool objects.
+        const foundTools: any[] = [];
+        
+        // Define known built-in tool templates (simplified)
+        const builtIns: Record<string, any> = {
+            'Bash': { name: 'Bash', description: 'Run shell commands', inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } },
+            'BashOutput': { name: 'BashOutput', description: 'Get shell output', inputSchema: { type: 'object', properties: { bash_id: { type: 'string' } }, required: ['bash_id'] } },
+            'KillShell': { name: 'KillShell', description: 'Kill shell', inputSchema: { type: 'object', properties: { shell_id: { type: 'string' } }, required: ['shell_id'] } }
+            // Add other built-ins as needed or load from DB if they are there
+        };
+        
+        if (result.tools && Array.isArray(result.tools)) {
+            for (const tId of result.tools) {
+                if (builtIns[tId]) foundTools.push(builtIns[tId]);
+                // If it's in DB, we already have it in currentTools? 
+                // Checks DB again? 
+                // The main loop loaded enabled tools from DB.
+                // ToolSearch might find *disabled* tools? 
+                // Or tools not yet loaded. 
+            }
+        }
+        return foundTools;
+
+    } catch (e) {
+        console.error('Tools Model call failed', e);
+        return [];
+    }
+}
+
+// Helper: Local execution of tools (reused logic from chat:execute-tool)
+async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ success: boolean; result?: string; error?: string }> {
+    // We can reuse the existing IPC handler logic by extracting it or calling it.
+    // Since we are in main process, let's extract the logic from the existing handler (lines 255-325)
+    // refactoring would be better but for now let's duplicate or call the registered handler if possible?
+    // We can't easily call other handlers. I'll copy the logic for now or move it to a function.
+    
+    // ... Copy of logic ...
+      try {
+      if (toolName === 'Bash') {
+        const { exec } = require('child_process');
+        const workspacePath = getDatabase().getSetting('workspacePath') || 
+          require('path').join(require('os').homedir(), '.config', 'tiginal', 'workspaces');
+        
+        return new Promise((resolve) => {
+          exec(toolInput.command, { cwd: workspacePath, timeout: 60000 }, (error: any, stdout: string, stderr: string) => {
+            if (error) {
+              resolve({ success: false, error: error.message, result: stderr });
+            } else {
+              resolve({ success: true, result: stdout || stderr || 'Command executed successfully' });
+            }
+          });
+        });
+      }
+
+      if (toolName.toLowerCase() === 'skill' || toolName.toLowerCase() === 'executeskill') {
+          const db = getDatabase().getDb();
+          const path = require('path');
+          const fs = require('fs');
+          const os = require('os');
+          
+          const skillNameInput = toolInput.skill || toolInput.name;
+          if (!skillNameInput) return { success: false, error: 'Skill name required' };
+
+          const allSkills = db.prepare('SELECT * FROM skills').all() as any[];
+          const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const target = normalize(skillNameInput);
+          const skill = allSkills.find(s => normalize(s.name) === target || normalize(s.skill_folder) === target);
+          
+          if (!skill) return { success: false, error: `Skill not found: ${skillNameInput}` };
+          
+          const dir = db.prepare('SELECT path FROM skill_directories WHERE id = ?').get(skill.skill_directory_id) as any;
+          if (!dir) return { success: false, error: 'Skill directory error' };
+          
+          const expandPath = (p: string) => p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p;
+          const fullPath = path.join(expandPath(dir.path), skill.skill_folder);
+          const skillMdPath = path.join(fullPath, 'SKILL.md');
+          
+          if (fs.existsSync(skillMdPath)) {
+               const content = fs.readFileSync(skillMdPath, 'utf-8');
+               const resultMsg = `Skill Documentation for "${skill.name}":\n\n${content}\n\n[SYSTEM]: Skill instructions loaded. Use the Bash tool to execute the commands.`;
+               return { success: true, result: resultMsg };
+          } else {
+               return { success: false, error: 'SKILL.md not found' };
+          }
+      }
+      
+      return { success: false, error: `Unknown tool: ${toolName}` };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+}
+
 function processLine(
     line: string, 
     onChunk: (data: { content?: string; reasoning?: string }) => void,
-    onToolCall?: (data: { id: string; name: string; input: any }) => void
+    toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }>
 ) {
     const trimmed = line.trim();
     if (!trimmed || trimmed === "data: [DONE]") return;
@@ -465,52 +987,27 @@ function processLine(
         try {
             const data = JSON.parse(jsonStr);
             const delta = data.choices?.[0]?.delta;
-            if (delta) {
-                const content = delta.content;
-                const reasoning = delta.reasoning;
-                
-                if (content || reasoning) {
-                   onChunk({ content, reasoning });
-                }
-                
-                // Handle tool calls
-                if (delta.tool_calls && onToolCall) {
-                    for (const toolCall of delta.tool_calls) {
-                        if (toolCall.function) {
-                            try {
-                                const input = toolCall.function.arguments 
-                                    ? JSON.parse(toolCall.function.arguments) 
-                                    : {};
-                                onToolCall({
-                                    id: toolCall.id || `tool_${Date.now()}`,
-                                    name: toolCall.function.name,
-                                    input
-                                });
-                            } catch (e) {
-                                console.warn('Failed to parse tool call arguments', e);
-                            }
-                        }
-                    }
-                }
-            }
             
-            // Also check for finish_reason with tool_calls
-            const finishReason = data.choices?.[0]?.finish_reason;
-            if (finishReason === 'tool_calls' && data.choices?.[0]?.message?.tool_calls && onToolCall) {
-                for (const toolCall of data.choices[0].message.tool_calls) {
-                    if (toolCall.function) {
-                        try {
-                            const input = toolCall.function.arguments 
-                                ? JSON.parse(toolCall.function.arguments) 
-                                : {};
-                            onToolCall({
-                                id: toolCall.id || `tool_${Date.now()}`,
-                                name: toolCall.function.name,
-                                input
-                            });
-                        } catch (e) {
-                            console.warn('Failed to parse tool call arguments', e);
+            if (delta) {
+                if (delta.content || delta.reasoning) {
+                   onChunk({ content: delta.content, reasoning: delta.reasoning });
+                }
+                
+                // Accumulate tool call parts
+                if (delta.tool_calls) {
+                    for (const toolCall of delta.tool_calls) {
+                        const index = toolCall.index;
+                        if (!toolCallAccumulator[index]) {
+                            toolCallAccumulator[index] = { 
+                                id: toolCall.id || '', 
+                                name: toolCall.function?.name || '', 
+                                arguments: '' 
+                            };
                         }
+                        
+                        if (toolCall.id) toolCallAccumulator[index].id = toolCall.id;
+                        if (toolCall.function?.name) toolCallAccumulator[index].name = toolCall.function.name;
+                        if (toolCall.function?.arguments) toolCallAccumulator[index].arguments += toolCall.function.arguments;
                     }
                 }
             }
@@ -518,16 +1015,11 @@ function processLine(
             console.warn("Failed to parse SSE line", trimmed, e);
         }
     } else {
-        console.log("Ignored line (not SSE):", trimmed);
-        // Attempt to parse as standard JSON error
+        // Handle non-SSE JSON errors
         try {
             const data = JSON.parse(trimmed);
             if (data.error) {
-                console.error("API returned JSON error in stream:", data.error);
                 onChunk({ content: `[Error: ${data.error.message || JSON.stringify(data.error)}]` });
-            } else if (data.choices?.[0]?.message?.content) {
-                // Maybe it rolled back to non-streaming response?
-                onChunk({ content: data.choices[0].message.content });
             }
         } catch (ignore) {}
     }
