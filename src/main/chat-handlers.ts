@@ -328,13 +328,13 @@ Risk levels:
         });
 
         if (process.env.NODE_ENV !== 'production' || true) {
-             console.log('\n--- ANALYZE COMMAND REQUEST ---');
-             console.log('URL:', `${endpoint}/chat/completions`);
+             process.stdout.write('\n--- ANALYZE COMMAND REQUEST ---\n');
+             process.stdout.write('URL: ' + `${endpoint}/chat/completions` + '\n');
              const safeHeaders = { ...headers };
              if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
-             console.log('Headers:', JSON.stringify(safeHeaders, null, 2));
-             console.log('Body:', JSON.stringify(JSON.parse(body), null, 2)); // Parse/Stringify for pretty print
-             console.log('-------------------------------\n');
+             process.stdout.write('Headers: ' + JSON.stringify(safeHeaders, null, 2) + '\n');
+             process.stdout.write('Body: ' + JSON.stringify(JSON.parse(body), null, 2) + '\n');
+             process.stdout.write('-------------------------------\n\n');
         }
 
         const response = await fetch(`${endpoint}/chat/completions`, {
@@ -351,10 +351,10 @@ Risk levels:
         const data = await response.json() as any;
         
         if (process.env.NODE_ENV !== 'production' || true) {
-             console.log('\n--- ANALYZE COMMAND RESPONSE ---');
-             console.log('Status:', response.status);
-             console.log('Body:', JSON.stringify(data, null, 2));
-             console.log('--------------------------------\n');
+             process.stdout.write('\n--- ANALYZE COMMAND RESPONSE ---\n');
+             process.stdout.write('Status: ' + response.status + '\n');
+             process.stdout.write('Body: ' + JSON.stringify(data, null, 2) + '\n');
+             process.stdout.write('--------------------------------\n\n');
         }
 
         const content = data.choices?.[0]?.message?.content;
@@ -452,13 +452,13 @@ async function streamAIAPI(
   }
 
   if (process.env.NODE_ENV !== 'production' || true) {
-      console.log('\n--- STREAM AI API REQUEST ---');
-      console.log('URL:', `${endpoint}/chat/completions`);
+      process.stdout.write('\n--- STREAM AI API REQUEST ---\n');
+      process.stdout.write('URL: ' + `${endpoint}/chat/completions` + '\n');
       const safeHeaders = { ...headers };
       if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
-      console.log('Headers:', JSON.stringify(safeHeaders, null, 2));
-      console.log('Body:', JSON.stringify(bodyPayload, null, 2));
-      console.log('-----------------------------\n');
+      process.stdout.write('Headers: ' + JSON.stringify(safeHeaders, null, 2) + '\n');
+      process.stdout.write('Body: ' + JSON.stringify(bodyPayload, null, 2) + '\n');
+      process.stdout.write('-----------------------------\n\n');
   }
 
   const response = await fetch(`${endpoint}/chat/completions`, {
@@ -686,9 +686,6 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                 currentTools,
                 (chunkData) => {
                     // Stream to UI. 
-                    // Note: If we are in turn > 1, this appends to the SAME UI bubble? 
-                    // Chat.tsx handles appending. 
-                    // We might want to persist "finalResponse" accumulator for specific logic.
                     if (chunkData.content) {
                          finalResponse += chunkData.content;
                     }
@@ -1039,6 +1036,7 @@ function processLine(
         const jsonStr = trimmed.substring(6);
         try {
             const data = JSON.parse(jsonStr);
+            process.stdout.write('RAW JSON: ' + JSON.stringify(data) + '\n');
             const delta = data.choices?.[0]?.delta;
             
             if (delta) {
