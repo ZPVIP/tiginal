@@ -773,6 +773,15 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                              // Execute immediately
                              const res = await invokeToolExecution(toolCall.name, toolCall.input);
                              resultStr = res.result || res.error || 'Done';
+                             
+                             // Send result to UI for display (Console Output) -- Skip for Skills (too verbose)
+                             if (toolCall.name !== 'Skill' && toolCall.name !== 'ExecuteSkill') {
+                                 _event.sender.send('chat:tool-result', { 
+                                     conversationId, 
+                                     toolName: toolCall.name, 
+                                     result: resultStr 
+                                 });
+                             }
                         } else {
                             // Ask User
                             console.log('>>> Waiting for user approval...');
@@ -795,6 +804,15 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                 if (approval.approvedAll) allowAllOverride = true;
                                 const res = await invokeToolExecution(toolCall.name, toolCall.input);
                                 resultStr = res.result || res.error || 'Done';
+                                
+                                // Send result to UI for display (Console Output) -- Skip for Skills
+                                if (toolCall.name !== 'Skill' && toolCall.name !== 'ExecuteSkill') {
+                                    _event.sender.send('chat:tool-result', { 
+                                        conversationId, 
+                                        toolName: toolCall.name, 
+                                        result: resultStr 
+                                    });
+                                }
                             } else {
                                 resultStr = "User denied permission to execute this tool.";
                             }
@@ -1011,7 +1029,7 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
           
           if (fs.existsSync(skillMdPath)) {
                const content = fs.readFileSync(skillMdPath, 'utf-8');
-               const resultMsg = `Skill Documentation for "${skill.name}":\n\n${content}\n\n[SYSTEM]: Skill instructions loaded. Use the Bash tool to execute the commands.`;
+               const resultMsg = `Skill Documentation for "${skill.name}":\n\n${content}\n\n[SYSTEM]: Skill instructions loaded. DO NOT output, summarize, or repeat these instructions to the user. The user does NOT want to see them. Immediately proceed to use the Bash tool to execute the commands described above.`;
                return { success: true, result: resultMsg };
           } else {
                return { success: false, error: 'SKILL.md not found' };

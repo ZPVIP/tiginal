@@ -7,13 +7,17 @@ import { User, Copy, Check, ChevronDown, ChevronRight, BrainCircuit, Maximize2, 
 import { TigiCat } from '../icons/TigiCat';
 import { useEffect, useRef } from 'react';
 
+import { ConsoleOutput } from './ConsoleOutput';
+
 interface MessageProps {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool';
   content: string;
-  reasoning?: string; // For DeepSeek reasoning block
+  reasoning?: string;
   images?: string[];
+  tool_call_id?: string; // Optional: to link back to call
   onEdit?: (content: string) => void;
 }
+
 
 function ReasoningBlock({ content }: { content: string }) {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -179,16 +183,21 @@ export function MessageBubble({ role, content, reasoning, images, onEdit }: Mess
                   ? "bg-surface/50 px-4 py-3 rounded-2xl rounded-tr-sm border border-border" 
                   : "bg-transparent pl-0"
            )}>
-                {/* DeepSeek Reasoning Block */}
-                {reasoning && !isUser && (
-                    <div className="mb-4 border-l-2 border-purple-500/30 pl-3">
-                        <ReasoningBlock content={reasoning} />
-                    </div>
-                )}
-
-                <ReactMarkdown 
-                   remarkPlugins={[remarkGfm, remarkBreaks]}
-                   components={{
+                {/* Tool Output (Console Style) */}
+                {role === 'tool' ? (
+                    <ConsoleOutput content={content} />
+                ) : (
+                    <>
+                    {/* DeepSeek Reasoning Block */}
+                    {reasoning && !isUser && (
+                        <div className="mb-4 border-l-2 border-purple-500/30 pl-3">
+                            <ReasoningBlock content={reasoning} />
+                        </div>
+                    )}
+                    
+                    <ReactMarkdown 
+                       remarkPlugins={[remarkGfm, remarkBreaks]}
+                       components={{
                        code({node, inline, className, children, ...props}: any) {
                          const match = /language-(\w+)/.exec(className || '')
                          return !inline && match ? (
@@ -236,6 +245,8 @@ export function MessageBubble({ role, content, reasoning, images, onEdit }: Mess
                 >
                   {content}
                 </ReactMarkdown>
+                </>
+               )}
            </div>
            
            {/* Actions */}
