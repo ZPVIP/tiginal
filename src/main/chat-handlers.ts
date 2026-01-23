@@ -327,6 +327,16 @@ Risk levels:
             stream: false
         });
 
+        if (process.env.NODE_ENV !== 'production' || true) {
+             console.log('\n--- ANALYZE COMMAND REQUEST ---');
+             console.log('URL:', `${endpoint}/chat/completions`);
+             const safeHeaders = { ...headers };
+             if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
+             console.log('Headers:', JSON.stringify(safeHeaders, null, 2));
+             console.log('Body:', JSON.stringify(JSON.parse(body), null, 2)); // Parse/Stringify for pretty print
+             console.log('-------------------------------\n');
+        }
+
         const response = await fetch(`${endpoint}/chat/completions`, {
             method: 'POST',
             headers,
@@ -334,11 +344,19 @@ Risk levels:
         });
 
         if (!response.ok) {
-            console.error('Analyzer API failed', response.status);
+            console.error(`Analyzer API failed: ${response.status} - ${await response.text()}`);
             return { needsPermission: true, description: `Execute: ${command}`, riskLevel: 'medium' };
         }
 
         const data = await response.json() as any;
+        
+        if (process.env.NODE_ENV !== 'production' || true) {
+             console.log('\n--- ANALYZE COMMAND RESPONSE ---');
+             console.log('Status:', response.status);
+             console.log('Body:', JSON.stringify(data, null, 2));
+             console.log('--------------------------------\n');
+        }
+
         const content = data.choices?.[0]?.message?.content;
         
         if (content) {
@@ -433,14 +451,14 @@ async function streamAIAPI(
     bodyPayload.tool_choice = 'auto';
   }
 
-  if (process.env.NODE_ENV !== 'production') {
-      console.log('--- AI Request Debug ---');
+  if (process.env.NODE_ENV !== 'production' || true) {
+      console.log('\n--- STREAM AI API REQUEST ---');
       console.log('URL:', `${endpoint}/chat/completions`);
       const safeHeaders = { ...headers };
-      if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer sk-xxx';
-      console.log('Headers:', safeHeaders);
+      if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
+      console.log('Headers:', JSON.stringify(safeHeaders, null, 2));
       console.log('Body:', JSON.stringify(bodyPayload, null, 2));
-      console.log('------------------------');
+      console.log('-----------------------------\n');
   }
 
   const response = await fetch(`${endpoint}/chat/completions`, {
@@ -649,10 +667,14 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     // AGENT LOOP
     while (turnCount < MAX_TURNS) {
         turnCount++;
+        console.log(`\n=== AGENT LOOP TURN ${turnCount} ===`);
+        console.log('Current Messages State:', JSON.stringify(currentMessages, null, 2));
+        
         let toolCallOccurred = false;
         let completionOccurred = false;
 
         try {
+            console.log('--- Calling Provider ---');
             await streamAIAPI(
                 provider.type as 'openai-compatible' | 'copilot',
                 provider.endpoint || 'https://api.openai.com/v1',
@@ -674,6 +696,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                 },
                 async (toolCall) => {
                     toolCallOccurred = true;
+                    console.log('>>> TOOL CALL RECEIVED:', JSON.stringify(toolCall, null, 2));
+
                     // Append Assistant Message with Tool Call
                     currentMessages.push({
                         role: 'assistant',
@@ -694,10 +718,13 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                     if (toolCall.name === 'AttemptCompletion') {
                         completionOccurred = true;
                         resultStr = toolCall.input.result || 'Task completed.';
+                        console.log('>>> COMPLETION ATTEMPTED:', resultStr);
                     } else if (toolCall.name === 'ToolSearch') {
                         // Execute Tool Search
                          _event.sender.send('chat:chunk', { conversationId, content: `\n\n> 🔍 Searching tools for: "${toolCall.input.query}"...\n` });
+                        console.log(`>>> Executing ToolSearch: ${toolCall.input.query}`);
                         const foundTools = await callToolsModel(toolCall.input.query, dbService);
+                        console.log('>>> ToolSearch Results:', JSON.stringify(foundTools, null, 2));
                         
                         // Add found tools to currentTools if not exists
                         let newCount = 0;
@@ -725,6 +752,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         // Bash, Skill, or other Tools -> REQUIRE PERMISSION
                         
                         // 1. Analyze Safety
+                        console.log(`>>> Analyzing command safety for ${toolCall.name}...`);
                         const analysis = await analyzeCommand(
                             toolCall.name === 'Bash' ? toolCall.input.command : JSON.stringify(toolCall.input),
                             {
@@ -736,6 +764,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                 // Let's try to use toolModel for safety if available, else current.
                             }
                         );
+                        console.log('>>> Safety Analysis:', JSON.stringify(analysis, null, 2));
 
                         // Quick override check
                         // If tool is explicitly safe (needsPermission=false) OR allowAllOverride is true
@@ -743,11 +772,13 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         const isSkill = toolCall.name.toLowerCase().includes('skill'); // Skills might be safe? Let's default to confirm.
                         
                         if (allowAllOverride || isSafe) {
+                             console.log('>>> Auto-approving tool execution');
                              // Execute immediately
                              const res = await invokeToolExecution(toolCall.name, toolCall.input);
                              resultStr = res.result || res.error || 'Done';
                         } else {
                             // Ask User
+                            console.log('>>> Waiting for user approval...');
                             const approvalPromise = new Promise<{ approved: boolean; approvedAll: boolean }>((resolve) => {
                                 pendingToolApprovals.set(toolCall.id, resolve);
                             });
@@ -761,6 +792,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                             
                             // Wait for UI
                             const approval = await approvalPromise;
+                            console.log('>>> User approval result:', approval);
                             
                             if (approval.approved) {
                                 if (approval.approvedAll) allowAllOverride = true;
@@ -771,6 +803,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                             }
                         }
                     }
+
+                    console.log('>>> Tool Execution Result:', resultStr.slice(0, 200) + (resultStr.length > 200 ? '...' : ''));
 
                     // Append Tool Result
                     currentMessages.push({
@@ -854,6 +888,14 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
             { role: 'user', content: `Search query: "${query}"\n\nFind all tools that match this query and return as JSON.` }
         ];
 
+        if (process.env.NODE_ENV !== 'production' || true) {
+             console.log('\n--- TOOL SEARCH REQUEST ---');
+             console.log('URL:', `${provider.endpoint || 'https://api.openai.com/v1'}/chat/completions`);
+             console.log('Model:', model);
+             console.log('Messages:', JSON.stringify(messages, null, 2));
+             console.log('---------------------------\n');
+        }
+
         // Call API (non-streaming)
         const response = await fetch(`${provider.endpoint || 'https://api.openai.com/v1'}/chat/completions`, {
             method: 'POST',
@@ -869,9 +911,20 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
             })
         });
         
-        if (!response.ok) return [];
+        if (!response.ok) {
+             console.error(`ToolSearch API failed: ${response.status} - ${await response.text()}`);
+             return [];
+        }
         
         const data = await response.json() as any;
+        
+        if (process.env.NODE_ENV !== 'production' || true) {
+             console.log('\n--- TOOL SEARCH RESPONSE ---');
+             console.log('Status:', response.status);
+             console.log('Body:', JSON.stringify(data, null, 2));
+             console.log('----------------------------\n');
+        }
+
         const jsonStr = data.choices?.[0]?.message?.content || '';
         
         // Parse JSON from text

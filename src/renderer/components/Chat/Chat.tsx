@@ -4,7 +4,7 @@ import { MessageList } from './MessageList';
 import { ChatInput, ChatInputHandle } from './ChatInput';
 import { EmptyState } from './EmptyState';
 import { HistoryPanel } from './HistoryPanel';
-import { BashConfirmModal } from './BashConfirmModal';
+
 import { AIProvider, ModelConfig } from '../../settings/ai-constants';
 import { EyeOff, Trash2 } from 'lucide-react';
 
@@ -82,51 +82,34 @@ export function Chat() {
     const onToolCall = async (data: { conversationId: string; id: string; name: string; input: any }) => {
       console.log('Tool call received:', data);
       
-      // If allow all is enabled, execute immediately
+      // If allow all is enabled, approve immediately
       if (allowAllToolsRef.current) {
         try {
-          const result = await invoke('chat:execute-tool', data.name, data.input);
-          // Show result in chat
-          setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: `\n\n> **Tool executed: ${data.name}**\n\`\`\`\n${result.result || result.error || 'Done'}\n\`\`\``
-          }]);
+          await invoke('chat:submit-tool-approval', { toolCallId: data.id, approved: true, approvedAll: true });
         } catch (err) {
-          console.error('Tool execution failed', err);
+          console.error('Auto-approval failed', err);
         }
         return;
       }
       
-      // Logic for Auto-Execution
+      // Logic for Auto-Execution (Safe commands)
+      // Note: Backend usually auto-executes safe commands without sending this event, 
+      // but if we receive one that is marked safe, we should auto-approve.
       const analysis = (data as any).analysis;
       const needsPermission = analysis?.needsPermission;
-      const isSkill = data.name.toLowerCase().includes('skill'); // 'Skill' or 'ExecuteSkill'
       
-      // Auto-execute if:
-      // 1. It is a Skill tool
-      // 2. It is a Bash tool AND explicitly marked as safe (needsPermission === false)
-      // 3. User globally enabled allowAllTools (already handled above)
-      const shouldAutoRun = 
-          isSkill || 
-          (data.name === 'Bash' && needsPermission === false);
+      const shouldAutoRun = needsPermission === false;
 
       if (shouldAutoRun) {
         try {
-          const result = await invoke('chat:execute-tool', data.name, data.input);
-          // Show result in chat
-          setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: `\n\n> **Tool executed: ${data.name}**\n\`\`\`\n${result.result || result.error || 'Done'}\n\`\`\``
-          }]);
+           await invoke('chat:submit-tool-approval', { toolCallId: data.id, approved: true, approvedAll: false });
         } catch (err) {
-          console.error('Tool execution failed', err);
+           console.error('Auto-approval failed', err);
         }
         return;
       }
       
-      // Show confirmation modal for risky tools
+      // Show confirmation UI for risky tools
       setPendingToolCall({
         id: data.id,
         name: data.name,
@@ -505,6 +488,40 @@ export function Chat() {
             messages={displayMessages} 
             isStreaming={isLoading} 
             onEdit={handleEditMessage}
+            pendingToolCall={pendingToolCall ? {
+                ...pendingToolCall,
+                onAllow: async () => {
+                   if (!pendingToolCall) return;
+                   const id = pendingToolCall.id;
+                   setPendingToolCall(null);
+                   try {
+                     await invoke('chat:submit-tool-approval', { toolCallId: id, approved: true, approvedAll: false });
+                   } catch (err) {
+                     console.error('Tool approval failed', err);
+                   }
+                },
+                onAllowAll: async () => {
+                   setAllowAllTools(true);
+                   if (!pendingToolCall) return;
+                   const id = pendingToolCall.id;
+                   setPendingToolCall(null);
+                   try {
+                     await invoke('chat:submit-tool-approval', { toolCallId: id, approved: true, approvedAll: true });
+                   } catch (err) {
+                      console.error('Tool approval failed', err);
+                   }
+                },
+                onDeny: async () => {
+                   if (!pendingToolCall) return;
+                   const id = pendingToolCall.id;
+                   setPendingToolCall(null);
+                   try {
+                      await invoke('chat:submit-tool-approval', { toolCallId: id, approved: false, approvedAll: false });
+                   } catch (err) {
+                      console.error('Tool denial failed', err);
+                   }
+                }
+            } : undefined}
           />
       )}
 
@@ -521,45 +538,6 @@ export function Chat() {
          isOpen={isHistoryOpen}
          onClose={() => setIsHistoryOpen(false)}
          onSelectConversation={handleSelectConversation}
-      />
-
-      {/* Bash Confirm Modal */}
-      <BashConfirmModal
-        open={!!pendingToolCall}
-        command={pendingToolCall?.name === 'Bash' ? pendingToolCall.input?.command || '' : JSON.stringify(pendingToolCall?.input, null, 2)}
-        description={pendingToolCall?.description}
-        riskLevel={pendingToolCall?.riskLevel}
-        onAllow={async () => {
-          if (!pendingToolCall) return;
-          const id = pendingToolCall.id;
-          setPendingToolCall(null);
-          try {
-            await invoke('chat:submit-tool-approval', { toolCallId: id, approved: true, approvedAll: false });
-          } catch (err) {
-            console.error('Tool approval failed', err);
-          }
-        }}
-        onAllowAll={async () => {
-          setAllowAllTools(true);
-          if (!pendingToolCall) return;
-          const id = pendingToolCall.id;
-          setPendingToolCall(null);
-          try {
-            await invoke('chat:submit-tool-approval', { toolCallId: id, approved: true, approvedAll: true });
-          } catch (err) {
-             console.error('Tool approval failed', err);
-          }
-        }}
-        onDeny={async () => {
-          if (!pendingToolCall) return;
-          const id = pendingToolCall.id;
-          setPendingToolCall(null);
-          try {
-             await invoke('chat:submit-tool-approval', { toolCallId: id, approved: false, approvedAll: false });
-          } catch (err) {
-             console.error('Tool denial failed', err);
-          }
-        }}
       />
     </div>
   );
