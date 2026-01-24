@@ -3,6 +3,7 @@
   "defaultTools": [
     {
       "name": "Task",
+      "category": "Planning & delegation",
       "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Task tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.\n- Explore: Fast agent specialized for exploring codebases.\n- Plan: Software architect agent for designing implementation plans.\n\nUsage notes:\n- Always include a short description (3-5 words) summarizing what the agent will do\n- Launch multiple agents concurrently whenever possible\n- Provide clear, detailed prompts so the agent can work autonomously",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -77,6 +78,7 @@
     },
     {
       "name": "Bash",
+      "category": "Shell & processes",
       "description": "Execute bash commands inside the workspace. Supports foreground execution and background shells retrievable via BashOutput.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -107,6 +109,7 @@
     },
     {
       "name": "Glob",
+      "category": "Workspace & files",
       "description": "Find files by glob pattern relative to a workspace directory.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -139,6 +142,7 @@
     },
     {
       "name": "Grep",
+      "category": "Workspace & files",
       "description": "Search file contents using ripgrep with optional glob/type filters.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -206,6 +210,7 @@
     },
     {
       "name": "Read",
+      "category": "Workspace & files",
       "description": "Read text from a workspace file with optional offset/limit controls. Limit must be <= 10000 lines.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -240,6 +245,7 @@
     },
     {
       "name": "Edit",
+      "category": "Workspace & files",
       "description": "Perform search-and-replace operations inside a file. Always inspect the file with Read first.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -270,6 +276,7 @@
     },
     {
       "name": "Write",
+      "category": "Workspace & files",
       "description": "Write (or overwrite) a file inside the workspace. Always inspect files before overwriting.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -295,6 +302,7 @@
     },
     {
       "name": "NotebookEdit",
+      "category": "Workspace & files",
       "description": "Modify Jupyter notebook cells (insert, replace, delete).",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -335,6 +343,7 @@
     },
     {
       "name": "WebFetch",
+      "category": "Web & research",
       "description": "Fetch a URL using hidden browser window to capture JS-rendered content, convert HTML to markdown, and return prompt-aligned highlights.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -364,6 +373,7 @@
     },
     {
       "name": "WebSearch",
+      "category": "Web & research",
       "description": "Search the web and return cleaned content from top results. Each result is numbered [1], [2], etc. When citing information from search results in your response, use these numbers as inline citations.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -400,6 +410,7 @@
     },
     {
       "name": "TodoWrite",
+      "category": "Planning & delegation",
       "description": "Create and manage a structured task list for your current coding session. Use this tool proactively for complex multi-step tasks, when the user explicitly requests a todo list, or when users provide a list of things to be done.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -443,6 +454,7 @@
     },
     {
       "name": "BashOutput",
+      "category": "Shell & processes",
       "description": "Retrieve stdout/stderr from a running or completed background bash command.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -463,6 +475,7 @@
     },
     {
       "name": "KillShell",
+      "category": "Shell & processes",
       "description": "Terminate a running background bash shell.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -480,6 +493,7 @@
     },
     {
       "name": "EnterPlanMode",
+      "category": "Planning & delegation",
       "description": "Switch into plan mode before outlining multi-step solutions.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -490,6 +504,7 @@
     },
     {
       "name": "ExitPlanMode",
+      "category": "Planning & delegation",
       "description": "Exit plan mode after finalizing an execution strategy.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -500,6 +515,7 @@
     },
     {
       "name": "Skill",
+      "category": "Planning & delegation",
       "description": "Execute a skill within the main conversation. When users ask you to perform tasks, check if any of the available skills can help complete the task more effectively.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -519,6 +535,7 @@
     },
     {
       "name": "SlashCommand",
+      "category": "Planning & delegation",
       "description": "Execute lightweight slash commands (e.g., /pwd, /ls, /cat, /todo).",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -634,6 +651,7 @@
     },
     {
       "name": "ToolSearch",
+      "category": "Planning & delegation",
       "description": "Search and discover available tools using semantic search. Use this tool to find relevant tools when you need to discover what tools are available for a specific task.",
       "input_schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
