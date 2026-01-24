@@ -13,6 +13,18 @@ interface AIProvider {
 
 
 import { getCopilotToken } from './services/ai/CopilotAuthService';
+import { printRequestEndSeparator, printRequestStartSeparator, printRespondEndSeparator, printRespondStartSeparator, printVisualSeparator } from './utils/DebugUtils';
+
+interface LogAccumulator {
+    id?: string;
+    model?: string;
+    created?: number;
+    role?: string;
+    contentParts: string[];
+    reasoningParts: string[];
+    toolCalls: any[];
+    usage?: any;
+}
 
 // Module-level state for tool approvals
 const pendingToolApprovals = new Map<string, (result: { approved: boolean; approvedAll: boolean }) => void>();
@@ -327,21 +339,22 @@ Risk levels:
             stream: false
         });
 
-        if (process.env.NODE_ENV !== 'production' || true) {
+        if (process.env.NODE_ENV !== 'production') {
              process.stdout.write('\n--- ANALYZE COMMAND REQUEST ---\n');
              process.stdout.write('URL: ' + `${endpoint}/chat/completions` + '\n');
              const safeHeaders = { ...headers };
              if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
              process.stdout.write('Headers: ' + JSON.stringify(safeHeaders, null, 2) + '\n');
              process.stdout.write('Body: ' + JSON.stringify(JSON.parse(body), null, 2) + '\n');
-             process.stdout.write('-------------------------------\n\n');
         }
 
+        printRequestStartSeparator();
         const response = await fetch(`${endpoint}/chat/completions`, {
             method: 'POST',
             headers,
             body
         });
+        printRequestEndSeparator();
 
         if (!response.ok) {
             console.error(`Analyzer API failed: ${response.status} - ${await response.text()}`);
@@ -350,11 +363,12 @@ Risk levels:
 
         const data = await response.json() as any;
         
-        if (process.env.NODE_ENV !== 'production' || true) {
+        if (process.env.NODE_ENV !== 'production') {
+             printRespondStartSeparator();
              process.stdout.write('\n--- ANALYZE COMMAND RESPONSE ---\n');
              process.stdout.write('Status: ' + response.status + '\n');
              process.stdout.write('Body: ' + JSON.stringify(data, null, 2) + '\n');
-             process.stdout.write('--------------------------------\n\n');
+             printRespondEndSeparator();
         }
 
         const content = data.choices?.[0]?.message?.content;
@@ -451,7 +465,8 @@ async function streamAIAPI(
     bodyPayload.tool_choice = 'auto';
   }
 
-  if (process.env.NODE_ENV !== 'production' || true) {
+  if (process.env.NODE_ENV !== 'production') {
+      printRequestStartSeparator();
       process.stdout.write('\n--- STREAM AI API REQUEST ---\n');
       process.stdout.write('URL: ' + `${endpoint}/chat/completions` + '\n');
       const safeHeaders = { ...headers };
@@ -461,11 +476,13 @@ async function streamAIAPI(
       process.stdout.write('-----------------------------\n\n');
   }
 
+
   const response = await fetch(`${endpoint}/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify(bodyPayload),
   });
+  printRequestEndSeparator();
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -518,13 +535,22 @@ async function streamAIAPI(
      throw new Error('No response body for stream');
   }
 
-  console.log(`Stream started. Status: ${response.status}, Type: ${response.headers.get('content-type')}`);
+  if (process.env.NODE_ENV !== 'production') {
+      console.log(`Stream started. Status: ${response.status}, Type: ${response.headers.get('content-type')}`);
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
   
   // Accumulator for tool calls across chunks
   const toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }> = {};
+  
+  // Log accumulator for console output
+  const logAccumulator: LogAccumulator = {
+      contentParts: [],
+      reasoningParts: [],
+      toolCalls: []
+  };
 
   try {
     while (true) {
@@ -538,13 +564,13 @@ async function streamAIAPI(
         buffer = lines.pop() || "";  
 
         for (const line of lines) {
-           processLine(line, onChunk, toolCallAccumulator);
+           processLine(line, onChunk, toolCallAccumulator, logAccumulator);
         }
     }
     
     // Process remaining buffer
     if (buffer.trim()) {
-        processLine(buffer, onChunk, toolCallAccumulator);
+        processLine(buffer, onChunk, toolCallAccumulator, logAccumulator);
     }
 
     // Finalize any pending tool calls after stream ends
@@ -565,6 +591,11 @@ async function streamAIAPI(
             }
         }
     }
+
+    // Print Consolidated Log
+    printRespondStartSeparator();
+    printLogAccumulator(logAccumulator);
+    printRespondEndSeparator();
 
   } catch (err) {
       console.error('Stream read error:', err);
@@ -667,14 +698,13 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     // AGENT LOOP
     while (turnCount < MAX_TURNS) {
         turnCount++;
-        console.log(`\n=== AGENT LOOP TURN ${turnCount} ===`);
-        console.log('Current Messages State:', JSON.stringify(currentMessages, null, 2));
-        
         let toolCallOccurred = false;
         let completionOccurred = false;
 
         try {
-            console.log('--- Calling Provider ---');
+            if (process.env.NODE_ENV !== 'production') {
+                printRequestStartSeparator();
+            }
             await streamAIAPI(
                 provider.type as 'openai-compatible' | 'copilot',
                 provider.endpoint || 'https://api.openai.com/v1',
@@ -693,7 +723,11 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                 },
                 async (toolCall) => {
                     toolCallOccurred = true;
-                    console.log('>>> TOOL CALL RECEIVED:', JSON.stringify(toolCall, null, 2));
+                    if (process.env.NODE_ENV !== 'production') {
+                        printRespondStartSeparator();
+                        console.log('>>> TOOL CALL RECEIVED:', JSON.stringify(toolCall, null, 2));
+                        printRespondEndSeparator();
+                    }
 
                     // Append Assistant Message with Tool Call
                     currentMessages.push({
@@ -715,7 +749,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                     if (toolCall.name === 'AttemptCompletion') {
                         completionOccurred = true;
                         resultStr = toolCall.input.result || 'Task completed.';
-                        console.log('>>> COMPLETION ATTEMPTED:', resultStr);
+                        if (process.env.NODE_ENV !== 'production') console.log('>>> COMPLETION ATTEMPTED:', resultStr);
                         
                         // Send as chunk so it appears in UI
                         _event.sender.send('chat:chunk', { conversationId, content: resultStr });
@@ -724,9 +758,9 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                     } else if (toolCall.name === 'ToolSearch') {
                         // Execute Tool Search
                          _event.sender.send('chat:chunk', { conversationId, content: `\n\n> 🔍 Searching tools for: "${toolCall.input.query}"...\n` });
-                        console.log(`>>> Executing ToolSearch: ${toolCall.input.query}`);
+                        if (process.env.NODE_ENV !== 'production') console.log(`>>> Executing ToolSearch: ${toolCall.input.query}`);
                         const foundTools = await callToolsModel(toolCall.input.query, dbService);
-                        console.log('>>> ToolSearch Results:', JSON.stringify(foundTools, null, 2));
+                        if (process.env.NODE_ENV !== 'production') console.log('>>> ToolSearch Results:', JSON.stringify(foundTools, null, 2));
                         
                         // Add found tools to currentTools if not exists
                         let newCount = 0;
@@ -754,7 +788,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         // Bash, Skill, or other Tools -> REQUIRE PERMISSION
                         
                         // 1. Analyze Safety
-                        console.log(`>>> Analyzing command safety for ${toolCall.name}...`);
+                        if (process.env.NODE_ENV !== 'production') console.log(`>>> Analyzing command safety for ${toolCall.name}...`);
                         const analysis = await analyzeCommand(
                             toolCall.name === 'Bash' ? toolCall.input.command : JSON.stringify(toolCall.input),
                             {
@@ -766,7 +800,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                 // Let's try to use toolModel for safety if available, else current.
                             }
                         );
-                        console.log('>>> Safety Analysis:', JSON.stringify(analysis, null, 2));
+                        if (process.env.NODE_ENV !== 'production') console.log('>>> Safety Analysis:', JSON.stringify(analysis, null, 2));
 
                         // Quick override check
                         // If tool is explicitly safe (needsPermission=false) OR allowAllOverride is true
@@ -775,7 +809,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         
 
                         if (allowAllOverride || isSafe) {
-                             console.log('>>> Auto-approving tool execution');
+                             if (process.env.NODE_ENV !== 'production') console.log('>>> Auto-approving tool execution');
                              // Execute immediately
                              const res = await invokeToolExecution(toolCall.name, toolCall.input);
                              
@@ -793,9 +827,10 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                      result: displayResult 
                                  });
                              }
+                             resultStr = res.result || res.error || 'Done';
                         } else {
                             // Ask User
-                            console.log('>>> Waiting for user approval...');
+                            if (process.env.NODE_ENV !== 'production') console.log('>>> Waiting for user approval...');
                             const approvalPromise = new Promise<{ approved: boolean; approvedAll: boolean }>((resolve) => {
                                 pendingToolApprovals.set(toolCall.id, resolve);
                             });
@@ -839,7 +874,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                             
                             // Wait for UI
                             const approval = await approvalPromise;
-                            console.log('>>> User approval result:', approval);
+                            if (process.env.NODE_ENV !== 'production') console.log('>>> User approval result:', approval);
                             
                             if (approval.approved) {
                                 if (approval.approvedAll) allowAllOverride = true;
@@ -866,15 +901,28 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         }
                     }
 
-                    console.log('>>> Tool Execution Result:', resultStr.slice(0, 200) + (resultStr.length > 200 ? '...' : ''));
+
+
+                    if (process.env.NODE_ENV !== 'production') {
+                        printRespondStartSeparator();
+                        console.log('>>> Tool Execution Result:', resultStr);
+                        printRespondEndSeparator();
+                    }
 
                     // Append Tool Result
                     if (modelToUse.toLowerCase().includes('claude')) {
                          // Copilot/OpenAI proxies often reject 'tool_result' content type (400 Bad Request).
-                         // We format it as a User Text Message with XML tags, which Claude understands perfectly.
+                         // We format it as a User Message but with specific content structure that they might expect if they support tool_use blocks.
+                         // Per user request, we use the standard structure:
                          currentMessages.push({
                             role: 'user',
-                            content: `<tool_result tool_use_id="${toolCall.id}">\n${resultStr}\n</tool_result>`
+                            content: [
+                                {
+                                    type: 'tool_result',
+                                    tool_use_id: toolCall.id,
+                                    content: resultStr
+                                }
+                            ]
                          });
                     } else {
                          currentMessages.push({
@@ -958,12 +1006,12 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
             { role: 'user', content: `Search query: "${query}"\n\nFind all tools that match this query and return as JSON.` }
         ];
 
-        if (process.env.NODE_ENV !== 'production' || true) {
-             console.log('\n--- TOOL SEARCH REQUEST ---');
+        if (process.env.NODE_ENV !== 'production') {
+             printRequestStartSeparator();
+             console.log('--- TOOL SEARCH REQUEST ---');
              console.log('URL:', `${provider.endpoint || 'https://api.openai.com/v1'}/chat/completions`);
              console.log('Model:', model);
              console.log('Messages:', JSON.stringify(messages, null, 2));
-             console.log('---------------------------\n');
         }
 
         // Call API (non-streaming)
@@ -980,6 +1028,7 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
                 max_tokens: 2000
             })
         });
+        printRequestEndSeparator();
         
         if (!response.ok) {
              console.error(`ToolSearch API failed: ${response.status} - ${await response.text()}`);
@@ -988,11 +1037,12 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
         
         const data = await response.json() as any;
         
-        if (process.env.NODE_ENV !== 'production' || true) {
+        if (process.env.NODE_ENV !== 'production') {
+             printRespondStartSeparator();
              console.log('\n--- TOOL SEARCH RESPONSE ---');
              console.log('Status:', response.status);
              console.log('Body:', JSON.stringify(data, null, 2));
-             console.log('----------------------------\n');
+             printRespondEndSeparator();
         }
 
         const jsonStr = data.choices?.[0]?.message?.content || '';
@@ -1099,8 +1149,9 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
 
 function processLine(
     line: string, 
-    onChunk: (data: { content?: string; reasoning?: string }) => void,
-    toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }>
+     onChunk: (data: { content?: string; reasoning?: string }) => void,
+     toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }>,
+     logAccumulator?: LogAccumulator
 ) {
     const trimmed = line.trim();
     if (!trimmed || trimmed === "data: [DONE]") return;
@@ -1109,7 +1160,7 @@ function processLine(
         const jsonStr = trimmed.substring(6);
         try {
             const data = JSON.parse(jsonStr);
-            process.stdout.write('RAW JSON: ' + JSON.stringify(data) + '\n');
+
             const delta = data.choices?.[0]?.delta;
             
             if (delta) {
@@ -1135,6 +1186,12 @@ function processLine(
                     }
                 }
             }
+            
+            
+            // Populate Log Accumulator
+            if (logAccumulator) {
+                 updateLogAccumulator(logAccumulator, data, toolCallAccumulator);
+            }
         } catch (e) {
             console.warn("Failed to parse SSE line", trimmed, e);
         }
@@ -1147,4 +1204,63 @@ function processLine(
             }
         } catch (ignore) {}
     }
+}
+
+/**
+ * Updates the log accumulator with new chunk data
+ */
+function updateLogAccumulator(
+    acc: LogAccumulator, 
+    data: any, 
+    toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }>
+) {
+     if (!acc.id && data.id) acc.id = data.id;
+     if (!acc.model && data.model) acc.model = data.model;
+     if (!acc.created && data.created) acc.created = data.created;
+     if (!acc.usage && data.usage) acc.usage = data.usage;
+     
+     const choice = data.choices?.[0];
+     if (choice) {
+         if (choice.delta?.role && !acc.role) acc.role = choice.delta.role;
+         if (choice.delta?.content) acc.contentParts.push(choice.delta.content);
+         if (choice.delta?.reasoning) acc.reasoningParts.push(choice.delta.reasoning);
+     }
+     
+     // Update tool calls reference (always points to latest state of accumulator)
+     acc.toolCalls = Object.values(toolCallAccumulator);
+}
+
+/**
+ * Prints the accumulated log to stdout in a clean format
+ */
+function printLogAccumulator(acc: LogAccumulator) {
+    if (process.env.NODE_ENV === 'production') return;
+
+    const consolidated = {
+         ...acc,
+         content: acc.contentParts.join(''),
+         reasoning: acc.reasoningParts.join(''),
+         // Cleanup parts for cleaner print if we were JSON.stringifying the whole object, 
+         // but here we manually print fields, so it's fine.
+    };
+
+    process.stdout.write('\n--- STREAM COMPLETE ---\n');
+    process.stdout.write('Metadata: ' + JSON.stringify({ 
+        id: consolidated.id, 
+        model: consolidated.model, 
+        created: consolidated.created,
+        role: consolidated.role,
+        usage: consolidated.usage
+    }) + '\n');
+    
+    if (consolidated.content) {
+        process.stdout.write('Content: ' + consolidated.content + '\n');
+    }
+    if (consolidated.reasoning) {
+         process.stdout.write('Reasoning: ' + consolidated.reasoning + '\n');
+    }
+    if (consolidated.toolCalls && consolidated.toolCalls.length > 0) {
+         process.stdout.write('ToolCalls: ' + JSON.stringify(consolidated.toolCalls, null, 2) + '\n');
+    }
+    printVisualSeparator('=*');
 }
