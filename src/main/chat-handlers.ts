@@ -910,7 +910,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                     }
 
                     // Append Tool Result
-                    if (modelToUse.toLowerCase().includes('claude')) {
+                    if (modelToUse.toLowerCase().includes('claude') && provider.type !== 'copilot') {
                          // Copilot/OpenAI proxies often reject 'tool_result' content type (400 Bad Request).
                          // We format it as a User Message but with specific content structure that they might expect if they support tool_use blocks.
                          // Per user request, we use the standard structure:
