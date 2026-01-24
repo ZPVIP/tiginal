@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
+import { fetchWithLocalhostFallback } from './utils/NetworkUtils';
 
 interface AIProviderInput {
   id?: string;
@@ -271,9 +272,12 @@ export function setupAIHandlers(): void {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
       
-      let endpoint = provider.endpoint;
+      let endpoint = provider.endpoint || '';
+      // Remove trailing slash
+      if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
+
       let headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...provider.customHeaders
@@ -300,65 +304,81 @@ export function setupAIHandlers(): void {
       if (provider.type === 'copilot') {
           if (!finalApiKey) throw new Error("No API Key provided");
           
-          // 1. Get Token using our shared service
           const { getCopilotToken } = require('./services/ai/CopilotAuthService');
           const copilotToken = await getCopilotToken(finalApiKey);
           
           headers['Authorization'] = `Bearer ${copilotToken}`;
-          // Copilot Headers
           headers['Copilot-Integration-Id'] = 'vscode-chat';
           headers['Editor-Version'] = 'vscode/1.107.0'; 
           headers['Editor-Plugin-Version'] = 'copilot-chat/0.35.0';
           headers['User-Agent'] = 'GitHubCopilotChat/0.35.0'; 
-          headers['Openai-Intent'] = 'conversation-panel'; // Changed from edits to panel for better model access
-          headers['x-github-api-version'] = '2025-04-01'; // Specific Copilot API version
           
-      // 2. Fetch Models
-          // Standard OpenAI endpoint is /models. Copilot usually honors this on their proxy.
-          // Ensure endpoint is correct. If default or empty, use standard Copilot.
+          // Copilot usually needs the standard github endpoint if not set
           if (!endpoint || endpoint === 'https://api.openai.com/v1') {
               endpoint = 'https://api.githubcopilot.com'; 
           }
       } else {
-         // Standard OpenAI Logic
+         // Standard OpenAI / Ollama Logic
          if (finalApiKey) {
            headers['Authorization'] = `Bearer ${finalApiKey}`;
          }
       }
 
-      // Auto CORS fix simulation (setting Origin header)
+      // Auto CORS fix
       if (provider.autoCORSFix) {
         try {
           const url = new URL(endpoint);
           headers['Origin'] = url.origin;
-        } catch (e) {
-          // invalid url, ignore
-        }
+        } catch (e) { }
       }
 
       let models: string[] = [];
-      try {
-          const response = await fetch(`${endpoint}/models`, {
-            method: 'GET',
-            headers,
-            signal: controller.signal,
-          });
+      let fetchSuccess = false;
+      let usedUrl = '';
+      let errorLog: string[] = [];
 
-          if (response.ok) {
-              const data = await response.json() as { data: Array<{ id: string }> };
-              if (Array.isArray(data.data)) {
-                  models = data.data.map(m => m.id).sort();
+      // Helper for trying a URL
+      const tryFetch = async (url: string, isOllamaNative: boolean = false) => {
+          if (fetchSuccess) return;
+          try {
+              if (process.env.NODE_ENV !== 'production') console.log(`Testing connection URL: ${url}`);
+              const res = await fetchWithLocalhostFallback(url, { method: 'GET', headers, signal: controller.signal });
+              
+              if (res.ok) {
+                  const data = await res.json() as any;
+                  
+                  if (isOllamaNative && data.models && Array.isArray(data.models)) {
+                      // Ollama native format: { models: [ { name: "llama2", ... }, ... ] }
+                      models = data.models.map((m: any) => m.name || m.model);
+                      fetchSuccess = true;
+                      usedUrl = url;
+                  } else if (Array.isArray(data.data)) {
+                      // OpenAI format: { data: [ { id: "gpt-4", ... }, ... ] }
+                      models = data.data.map((m: any) => m.id);
+                      fetchSuccess = true;
+                      usedUrl = url;
+                  }
+              } else {
+                  const text = await res.text();
+                  errorLog.push(`${url} returned ${res.status}: ${text}`);
               }
+          } catch (e) {
+              errorLog.push(`${url} failed: ${(e as Error).message}`);
           }
-      } catch (fetchErr) {
-          console.warn("Failed to fetch models dynamically:", fetchErr);
-      }
-      
+      };
+
+      // 1. Try Standard OpenAI path (e.g. endpoint/models)
+      await tryFetch(`${endpoint}/models`);
+
       clearTimeout(timeoutId);
+
+      if (models.length > 0) {
+          models.sort();
+      }
 
       // -- Copilot Fallback & Merging --
       if (provider.type === 'copilot') {
-          // Known Copilot Models (updated list)
+          // Known Copilot Models
           const fallbackModels = [
               'gpt-4',
               'gpt-3.5-turbo',
@@ -366,14 +386,16 @@ export function setupAIHandlers(): void {
               'o1-mini',
               'claude-3.5-sonnet'
           ];
-          
-          // Merge with fetched models, ensuring no duplicates
           const uniqueModels = new Set([...models, ...fallbackModels]);
           models = Array.from(uniqueModels).sort();
+          return { success: true, models };
       }
 
-      if (models.length === 0) {
-          return { success: true, models: [] }; 
+      // If we failed to fetch models and it's NOT copilot, we should warn user unless we decide to succeed anyway?
+      // For generic OpenAI, listing models is crucial.
+      // If we failed to fetch models and it's NOT copilot
+      if (!fetchSuccess || models.length === 0) {
+           return { success: false, error: `Could not fetch models. Verified: ${endpoint}. Details: ${errorLog.join('; ')}` }; 
       }
 
       return { success: true, models };

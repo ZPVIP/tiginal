@@ -14,6 +14,7 @@ interface AIProvider {
 
 import { getCopilotToken } from './services/ai/CopilotAuthService';
 import { printRequestEndSeparator, printRequestStartSeparator, printRespondEndSeparator, printRespondStartSeparator, printVisualSeparator } from './utils/DebugUtils';
+import { fetchWithLocalhostFallback } from './utils/NetworkUtils';
 
 interface LogAccumulator {
     id?: string;
@@ -349,11 +350,12 @@ Risk levels:
              process.stdout.write('Body: ' + JSON.stringify(JSON.parse(body), null, 2) + '\n');
         }
 
-        const response = await fetch(`${endpoint}/chat/completions`, {
+        const response = await fetchWithLocalhostFallback(`${endpoint}/chat/completions`, {
             method: 'POST',
             headers,
             body
         });
+
         printRequestEndSeparator();
 
         if (!response.ok) {
@@ -477,11 +479,12 @@ async function streamAIAPI(
   }
 
 
-  const response = await fetch(`${endpoint}/chat/completions`, {
+  const response = await fetchWithLocalhostFallback(`${endpoint}/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify(bodyPayload),
   });
+
   printRequestEndSeparator();
 
   if (!response.ok) {
