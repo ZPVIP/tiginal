@@ -869,11 +869,20 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                     console.log('>>> Tool Execution Result:', resultStr.slice(0, 200) + (resultStr.length > 200 ? '...' : ''));
 
                     // Append Tool Result
-                    currentMessages.push({
-                        role: 'tool',
-                        tool_call_id: toolCall.id,
-                        content: resultStr
-                    });
+                    if (modelToUse.toLowerCase().includes('claude')) {
+                         // Copilot/OpenAI proxies often reject 'tool_result' content type (400 Bad Request).
+                         // We format it as a User Text Message with XML tags, which Claude understands perfectly.
+                         currentMessages.push({
+                            role: 'user',
+                            content: `<tool_result tool_use_id="${toolCall.id}">\n${resultStr}\n</tool_result>`
+                         });
+                    } else {
+                         currentMessages.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            content: resultStr
+                        });
+                    }
                     
                     // Emphasize result in UI if needed - REMOVED per user request (handled by tool-result event or LLM summary)
                     // if (toolCall.name !== 'ToolSearch' && toolCall.name !== 'AttemptCompletion') {
