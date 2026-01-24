@@ -339,6 +339,7 @@ Risk levels:
             stream: false
         });
 
+        printRequestStartSeparator();
         if (process.env.NODE_ENV !== 'production') {
              process.stdout.write('\n--- ANALYZE COMMAND REQUEST ---\n');
              process.stdout.write('URL: ' + `${endpoint}/chat/completions` + '\n');
@@ -348,7 +349,6 @@ Risk levels:
              process.stdout.write('Body: ' + JSON.stringify(JSON.parse(body), null, 2) + '\n');
         }
 
-        printRequestStartSeparator();
         const response = await fetch(`${endpoint}/chat/completions`, {
             method: 'POST',
             headers,
