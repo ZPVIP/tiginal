@@ -259,6 +259,20 @@ export function setupToolHandlers(): void {
     db.setSetting('toolModel', model);
   });
 
+  // Get global tools enabled setting
+  ipcMain.handle('tools:get-global-enabled', async (): Promise<boolean> => {
+    const db = getDatabase();
+    // Default to true if not set
+    const val = db.getSetting('toolBoxGlobalEnabled');
+    return val !== 'false';
+  });
+
+  // Set global tools enabled setting
+  ipcMain.handle('tools:set-global-enabled', async (_event, enabled: boolean): Promise<void> => {
+    const db = getDatabase();
+    db.setSetting('toolBoxGlobalEnabled', String(enabled));
+  });
+
   // Import system preset tools (upsert by name)
   ipcMain.handle('tools:import-preset', async (): Promise<{ added: number; updated: number }> => {
     const db = getDatabase().getDb();

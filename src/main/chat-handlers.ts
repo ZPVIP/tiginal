@@ -666,7 +666,11 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
 
     const systemMessage = { 
         role: 'system', 
-        content: baseSystemPrompt + dateInfo + wdInfo + skillsInfo 
+        content: useSystemPrompt 
+           ? baseSystemPrompt + dateInfo + wdInfo + skillsInfo 
+           : '' + skillsInfo  // Keep skills info if enabled via separate switch, or should it also be hidden? 
+                              // User complaint specifically cited date/wd info. Skills are separate toggle usually.
+                              // Let's assume options.useSkills controls skillsInfo separately.
     };
 
     // Current conversation context (will grow with tool calls)
@@ -681,18 +685,26 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     // BUT we also want common tools (Bash) to be available if enabled.
     // Let's load enabled tools from DB.
     let currentTools: Array<any> = [];
-    try {
-      const toolRows = db.prepare(`SELECT name, description, input_schema FROM tools WHERE enabled = 1`).all() as any[];
-      currentTools = toolRows.map(row => ({
-        name: row.name,
-        description: row.description || '',
-        input_schema: JSON.parse(row.input_schema),
-      }));
-    } catch (e) {}
 
-    // Ensure ToolSearch and AttemptCompletion are present
-    if (!currentTools.find(t => t.name === 'ToolSearch')) currentTools.push(TOOL_SEARCH_DEF);
-    if (!currentTools.find(t => t.name === 'AttemptCompletion')) currentTools.push(ATTEMPT_COMPLETION_DEF);
+    // Check Global Tool Switch
+    const globalToolsEnabledVal = dbService.getSetting('toolBoxGlobalEnabled');
+    const globalToolsEnabled = globalToolsEnabledVal !== 'false';
+
+    if (globalToolsEnabled) {
+        try {
+          const toolRows = db.prepare(`SELECT name, description, input_schema FROM tools WHERE enabled = 1`).all() as any[];
+          currentTools = toolRows.map(row => ({
+            name: row.name,
+            description: row.description || '',
+            input_schema: JSON.parse(row.input_schema),
+          }));
+        } catch (e) {}
+
+        // Ensure ToolSearch and AttemptCompletion are present
+        if (!currentTools.find(t => t.name === 'ToolSearch')) currentTools.push(TOOL_SEARCH_DEF);
+        if (!currentTools.find(t => t.name === 'AttemptCompletion')) currentTools.push(ATTEMPT_COMPLETION_DEF);
+    } // If disabled, currentTools remains [] which means no tools header sent to API
+
 
     let finalResponse = '';
     let turnCount = 0;
