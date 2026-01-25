@@ -160,7 +160,23 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
 
   const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
-      await onSave(formData);
+      
+      let finalData = { ...formData };
+      
+      // Localhost check
+      if (finalData.endpoint && finalData.endpoint.includes('localhost')) {
+          const shouldReplace = window.confirm(
+              "Using 'localhost' may cause connection issues with some AI providers (e.g. Ollama).\n\n" +
+              "Do you want to switch to '127.0.0.1' instead? (Recommended)"
+          );
+          
+          if (shouldReplace) {
+              finalData.endpoint = finalData.endpoint.replace('localhost', '127.0.0.1');
+              setFormData(finalData); // Update UI too
+          }
+      }
+
+      await onSave(finalData);
   };
 
   const selectedPreset = OAI_API_PROVIDERS.find(p => p.value === preset) || OAI_API_PROVIDERS[0];

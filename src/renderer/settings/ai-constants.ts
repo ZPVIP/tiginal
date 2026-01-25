@@ -26,10 +26,10 @@ export interface AIProvider {
 export const OAI_API_PROVIDERS = [
   { label: "Custom", value: "custom", baseUrl: "" },
   { label: "Cerebras", value: "cerebras", baseUrl: "https://api.cerebras.ai/v1" },
-  { label: "Ollama", value: "ollama", baseUrl: "http://localhost:11434/v1" },
+  { label: "Ollama", value: "ollama", baseUrl: "http://127.0.0.1:11434/v1" },
   { label: "OpenAI", value: "openai", baseUrl: "https://api.openai.com/v1" },
-  { label: "LLaMa.cpp", value: "llamacpp", baseUrl: "http://localhost:8080/v1" },
-  { label: "LM Studio", value: "lmstudio", baseUrl: "http://localhost:1234/v1" },
+  { label: "LLaMa.cpp", value: "llamacpp", baseUrl: "http://127.0.0.1:8080/v1" },
+  { label: "LM Studio", value: "lmstudio", baseUrl: "http://127.0.0.1:1234/v1" },
   { label: "Llamafile", value: "llamafile", baseUrl: "http://127.0.0.1:8080/v1" },
   { label: "DeepSeek", value: "deepseek", baseUrl: "https://api.deepseek.com" },
   { label: "Groq", value: "groq", baseUrl: "https://api.groq.com/openai/v1" },
