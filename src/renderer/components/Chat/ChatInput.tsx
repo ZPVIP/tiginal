@@ -29,7 +29,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
   const [useSearch, setUseSearch] = useState(false);
   const [useSkills, setUseSkills] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [globalToolsEnabled, setGlobalToolsEnabled] = useState(false);
   const [images, setImages] = useState<string[]>([]);
+
+  useEffect(() => {
+    checkGlobalTools();
+  }, [showTools]); // Re-check when popover toggles (closed)
+
+  const checkGlobalTools = async () => {
+    try {
+      if (window.electron?.invoke) {
+        const enabled = await window.electron.invoke('tools:get-global-enabled');
+        setGlobalToolsEnabled(enabled);
+      }
+    } catch (e) {
+      console.error('Failed to check global tools:', e);
+    }
+  };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -161,7 +177,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
                    onClick={() => setShowTools(!showTools)}
                    className={clsx(
                        "p-2 rounded-lg transition-colors",
-                       showTools ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                       (showTools || globalToolsEnabled) ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
                    )}
                    title="Configure Tools"
                 >

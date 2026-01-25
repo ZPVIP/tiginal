@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 /**
  * Database service for Tiginal
@@ -101,6 +101,10 @@ export class DatabaseService {
 
     if (currentVersion < 9) {
       this.migrateV9();
+    }
+
+    if (currentVersion < 10) {
+      this.migrateV10();
     }
 
     // Update schema version
@@ -351,6 +355,17 @@ export class DatabaseService {
 
       CREATE INDEX IF NOT EXISTS idx_tools_category ON tools(category_id);
       CREATE INDEX IF NOT EXISTS idx_tools_enabled_v9 ON tools(enabled);
+    `);
+  }
+
+  /**
+   * Migration v10: Add enabled status to tool_categories
+   */
+  private migrateV10(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      ALTER TABLE tool_categories ADD COLUMN enabled INTEGER DEFAULT 1;
     `);
   }
 

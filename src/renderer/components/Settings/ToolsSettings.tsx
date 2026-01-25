@@ -42,6 +42,7 @@ interface ToolCategory {
   name: string;
   rank: number;
   isExpanded: boolean;
+  enabled: boolean;
 }
 
 interface TabItem {
@@ -201,6 +202,11 @@ export function ToolsSettings() {
     setEditingCatId(cat.id);
     setCatName(cat.name);
     setCatError('');
+  };
+
+  const handleToggleCategoryEnabled = async (id: string, enabled: boolean) => {
+    await invoke('categories:toggle-enabled', id, enabled);
+    refreshData();
   };
 
   // --- Handlers: Tools List ---
@@ -419,6 +425,7 @@ export function ToolsSettings() {
                   <thead className="bg-background/50 sticky top-0 z-10 backdrop-blur-sm">
                     <tr>
                       <th className="text-left px-4 py-3 text-sm font-medium text-text-sec">Order</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-text-sec text-center w-20">Enabled</th>
                       <th className="text-left px-4 py-3 text-sm font-medium text-text-sec">Name</th>
                       <th className="text-right px-4 py-3 text-sm font-medium text-text-sec w-32">Actions</th>
                     </tr>
@@ -435,8 +442,24 @@ export function ToolsSettings() {
                                <ArrowDown size={14} />
                              </button>
                            </div>
-                         </td>
-                         <td className="px-4 py-3">
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <button
+                               onClick={() => handleToggleCategoryEnabled(cat.id, !cat.enabled)}
+                               className={clsx(
+                                 "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none",
+                                 cat.enabled ? "bg-primary" : "bg-surface-light border border-border"
+                               )}
+                             >
+                               <span
+                                 className={clsx(
+                                   "inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm",
+                                   cat.enabled ? "translate-x-5" : "translate-x-0.5"
+                                 )}
+                               />
+                             </button>
+                          </td>
+                          <td className="px-4 py-3">
                            {editingCatId === cat.id ? (
                              <div className="flex items-center gap-2">
                                <input 

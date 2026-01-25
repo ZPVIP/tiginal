@@ -33,6 +33,7 @@ interface ToolCategory {
   name: string;
   rank: number;
   isExpanded: boolean;
+  enabled: boolean;
 }
 
 /**
@@ -203,9 +204,19 @@ export function setupToolHandlers(): void {
   // Get enabled tools (for AI request)
   ipcMain.handle('tools:get-enabled', async (): Promise<Array<{ name: string; description: string; input_schema: object }>> => {
     const db = getDatabase().getDb();
+    
+    // Check global switch first
+    const globalEnabled = getDatabase().getSetting('toolBoxGlobalEnabled');
+    if (globalEnabled === 'false') {
+      return [];
+    }
+
     const rows = db.prepare(`
-      SELECT name, description, input_schema
-      FROM tools WHERE enabled = 1 ORDER BY name ASC
+      SELECT t.name, t.description, t.input_schema
+      FROM tools t
+      LEFT JOIN tool_categories tc ON t.category_id = tc.id
+      WHERE t.enabled = 1 AND (tc.enabled IS NULL OR tc.enabled = 1)
+      ORDER BY t.name ASC
     `).all() as Array<{
       name: string;
       description: string | null;
@@ -376,14 +387,15 @@ export function setupToolHandlers(): void {
   ipcMain.handle('categories:get-all', async (): Promise<ToolCategory[]> => {
     const db = getDatabase().getDb();
     const rows = db.prepare(`
-      SELECT id, name, rank, is_expanded FROM tool_categories ORDER BY rank ASC
-    `).all() as Array<{ id: string; name: string; rank: number; is_expanded: number }>;
+      SELECT id, name, rank, is_expanded, enabled FROM tool_categories ORDER BY rank ASC
+    `).all() as Array<{ id: string; name: string; rank: number; is_expanded: number; enabled: number }>;
     
     return rows.map(r => ({
       id: r.id,
       name: r.name,
       rank: r.rank,
-      isExpanded: r.is_expanded === 1
+      isExpanded: r.is_expanded === 1,
+      enabled: r.enabled !== 0 // Default to true if null or 1
     }));
   });
 
@@ -399,11 +411,11 @@ export function setupToolHandlers(): void {
 
     try {
       db.prepare(`
-        INSERT INTO tool_categories (id, name, rank, is_expanded, created_at, updated_at)
-        VALUES (?, ?, ?, 1, ?, ?)
+        INSERT INTO tool_categories (id, name, rank, is_expanded, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, 1, 1, ?, ?)
       `).run(id, name, rank, now, now);
 
-      return { id, name, rank, isExpanded: true };
+      return { id, name, rank, isExpanded: true, enabled: true };
     } catch (err: any) {
       if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
         throw new Error('Category already exists');
@@ -472,6 +484,12 @@ export function setupToolHandlers(): void {
   ipcMain.handle('categories:toggle-expanded', async (_event, id: string, expanded: boolean): Promise<void> => {
     const db = getDatabase().getDb();
     db.prepare('UPDATE tool_categories SET is_expanded = ? WHERE id = ?').run(expanded ? 1 : 0, id);
+  });
+
+  // Toggle category enabled
+  ipcMain.handle('categories:toggle-enabled', async (_event, id: string, enabled: boolean): Promise<void> => {
+    const db = getDatabase().getDb();
+    db.prepare('UPDATE tool_categories SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id);
   });
 
   // Workspace handlers

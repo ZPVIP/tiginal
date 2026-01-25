@@ -479,11 +479,37 @@ async function streamAIAPI(
   }
 
 
-  const response = await fetchWithLocalhostFallback(`${endpoint}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(bodyPayload),
-  });
+  let response;
+  try {
+    response = await fetchWithLocalhostFallback(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(bodyPayload),
+    });
+  } catch (error: any) {
+      // Handle Network Errors (like Offline)
+      console.error('Fetch Error:', error);
+      
+      const isConnectionRefused = error.cause?.code === 'ECONNREFUSED' || error.message.includes('ECONNREFUSED') || error.message.includes('fetch failed');
+      
+      if (isConnectionRefused) {
+        const friendlyMessage = 
+          `> **Connection Error: Model Not Reachable**\n` +
+          `>\n` +
+          `> Unable to connect to the AI model at \`${endpoint}\`.\n` +
+          `> \n` +
+          `> **Possible causes:**\n` +
+          `> - The model server (e.g., Ollama, LM Studio) is not running.\n` +
+          `> - The configured endpoint URL is incorrect.\n` +
+          `> - A firewall or network issue is blocking the connection.\n` +
+          `> \n` +
+          `> *Please check your AI Provider settings and ensure the local server is running.*`;
+          
+          if (onChunk) onChunk({ content: friendlyMessage });
+          throw new Error('DISPLAY_ONLY_ERROR');
+      }
+      throw error;
+  }
 
   printRequestEndSeparator();
 
@@ -965,7 +991,13 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                 break;
             }
 
-        } catch (err) {
+        } catch (err: any) {
+            if (err.message === 'DISPLAY_ONLY_ERROR') {
+                 // Friendly error was already streamed to UI.
+                 // We return success here so the UI finishes loading state.
+                 // We do NOT save this to DB (by returning early before chatService.addMessage).
+                 return { response: finalResponse };
+            }
             console.error('Agent loop error', err);
             return { response: finalResponse, error: (err as Error).message };
         }
