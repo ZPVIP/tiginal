@@ -1,9 +1,15 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { getPathCompletions } from './shellHistory';
 import { directoryService } from './DirectoryService';
 import { commandService } from './CommandService';
 
 export function setupShellHandlers() {
+  ipcMain.handle('shell:show-item-in-folder', async (_, path: string) => {
+      if (path) {
+          shell.showItemInFolder(path);
+      }
+  });
+
   ipcMain.handle('shell:get-directory-suggestions', async (_, partial: string, cwd: string) => {
     // 1. Local Completions (Current Directory subdirs)
     // We reuse getPathCompletions but want specifically direct subdirectories for "Local"
@@ -107,6 +113,51 @@ export function setupShellHandlers() {
     return directoryService.cleanupLowFrequency(minScore);
   });
 
+  // Command history handlers
+  ipcMain.handle('shell:record-history', async (_, command: string) => {
+    commandService.recordHistory(command);
+  });
+
+  ipcMain.handle('shell:get-recent-history', async (_, offset: number, limit: number) => {
+    return commandService.getRecentHistory(offset, limit);
+  });
+
+  ipcMain.handle('shell:get-history-count', async () => {
+    return commandService.getHistoryCount();
+  });
+
+  ipcMain.handle('shell:get-all-history', async () => {
+    return commandService.getAllHistory();
+  });
+
+  ipcMain.handle('shell:delete-history', async (_, id: number) => {
+    commandService.deleteHistory(id);
+  });
+
+  ipcMain.handle('shell:clear-all-history', async () => {
+    commandService.clearAllHistory();
+  });
+
+  ipcMain.handle('shell:trim-history', async (_, maxCount: number) => {
+    return commandService.trimHistory(maxCount);
+  });
+
+  // History blacklist handlers
+  ipcMain.handle('shell:get-history-blacklist', async () => {
+    return commandService.getHistoryBlacklist();
+  });
+
+  ipcMain.handle('shell:add-history-blacklist', async (_, pattern: string) => {
+    commandService.addHistoryBlacklist(pattern);
+  });
+
+  ipcMain.handle('shell:update-history-blacklist', async (_, id: number, pattern: string) => {
+    commandService.updateHistoryBlacklist(id, pattern);
+  });
+
+  ipcMain.handle('shell:remove-history-blacklist', async (_, id: number) => {
+    commandService.removeHistoryBlacklist(id);
+  });
   // Normalize command using AI
   ipcMain.handle('command:normalize', async (_, command: string, providerId: string, modelId: string) => {
     const { getDatabase } = await import('../services/database/database');

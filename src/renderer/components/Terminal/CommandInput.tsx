@@ -9,6 +9,7 @@ interface CommandInputProps {
   onSend: (command: string, execute: boolean) => void;
   cwd: string;
   onFocus?: () => void;
+  onClear?: () => void;
 }
 
 export interface CommandInputHandle {
@@ -22,8 +23,10 @@ interface DirectorySuggestions {
 
 type SuggestionMode = 'none' | 'directory' | 'command';
 
-export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({ onSend, cwd, onFocus }, ref) => {
+export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({ onSend, cwd, onFocus, onClear }, ref) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // ... (rest of the component)
 
   useImperativeHandle(ref, () => ({
       focus: () => {
@@ -48,6 +51,17 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
   
   // Favorite modal
   const [showFavoriteModal, setShowFavoriteModal] = useState(false);
+
+  // Command history navigation (arrow keys when input is empty)
+  const [historyList, setHistoryList] = useState<{ id: number; command: string; executed_at: number }[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [historyOffset, setHistoryOffset] = useState(0);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
+  const [savedInput, setSavedInput] = useState(''); // Save current input when entering history mode
+  
+  // Ref to skip suggestion fetching when navigating history
+  const skipSuggestionRef = useRef(false);
 
   const invoke = window.electron?.invoke || (async () => null);
 
@@ -106,9 +120,14 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
         .then((res: unknown) => {
           const suggestions = res as string[];
           setCmdSuggestions(suggestions);
-          setShowSuggestions(suggestions.length > 0);
           
-          if (suggestions.length > 0) {
+          // Fix: If there's only one suggestion and it effectively matches what we typed, don't show the menu
+          // This prevents the "poup again" issue after selecting from history
+          const isExactMatch = suggestions.length === 1 && suggestions[0] === trimmed;
+          
+          setShowSuggestions(suggestions.length > 0 && !isExactMatch);
+          
+          if (suggestions.length > 0 && !isExactMatch) {
             setSelectedIndex(0);
           } else {
             setSelectedIndex(-1);
@@ -120,6 +139,12 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
 
   useEffect(() => {
     const timer = setTimeout(() => {
+      // Skip suggestions if navigating history
+      if (skipSuggestionRef.current) {
+        skipSuggestionRef.current = false;
+        return;
+      }
+      
       if (value) {
         fetchSuggestions(value);
       } else {
@@ -138,6 +163,88 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
   const handleDeleteCmd = async (command: string) => {
     await invoke('shell:remove-command', command);
     fetchSuggestions(value);
+  };
+
+  // History navigation functions
+  const loadMoreHistory = async (): Promise<{ id: number; command: string; executed_at: number }[]> => {
+    if (!hasMoreHistory) return [];
+    const BATCH_SIZE = 15;
+    const newItems = await invoke('shell:get-recent-history', historyOffset, BATCH_SIZE) as { id: number; command: string; executed_at: number }[];
+    if (newItems && newItems.length > 0) {
+      setHistoryList(prev => [...prev, ...newItems]); // Append older items to the end
+      setHistoryOffset(prev => prev + newItems.length);
+      setHasMoreHistory(newItems.length === BATCH_SIZE);
+      return newItems;
+    } else {
+      setHasMoreHistory(false);
+      return [];
+    }
+  };
+
+  const handleHistoryUp = async () => {
+    if (!showHistory) {
+      // First time opening history
+      setSavedInput(value);
+      setHistoryList([]);
+      setHistoryOffset(0);
+      setHasMoreHistory(true);
+      setShowHistory(true);
+      
+      const BATCH_SIZE = 15;
+      const items = await invoke('shell:get-recent-history', 0, BATCH_SIZE) as { id: number; command: string; executed_at: number }[];
+      if (items && items.length > 0) {
+        setHistoryList(items);
+        setHistoryOffset(items.length);
+        setHasMoreHistory(items.length === BATCH_SIZE);
+        setHistoryIndex(0); // Select newest (first item in DESC order)
+        skipSuggestionRef.current = true;
+        setValue(items[0].command);
+      }
+      return;
+    }
+
+    // Navigate up (to older commands)
+    const nextIndex = historyIndex + 1;
+    if (nextIndex < historyList.length) {
+      setHistoryIndex(nextIndex);
+      skipSuggestionRef.current = true;
+      setValue(historyList[nextIndex].command);
+    } else if (hasMoreHistory) {
+      // Load more history and select the next item
+      const newItems = await loadMoreHistory();
+      if (newItems.length > 0) {
+        // After state update, calculate new index
+        const newList = [...historyList, ...newItems];
+        if (nextIndex < newList.length) {
+          setHistoryIndex(nextIndex);
+          skipSuggestionRef.current = true;
+          setValue(newList[nextIndex].command);
+        }
+      }
+    }
+  };
+
+  const handleHistoryDown = () => {
+    if (!showHistory) return;
+    
+    if (historyIndex > 0) {
+      const nextIndex = historyIndex - 1;
+      setHistoryIndex(nextIndex);
+      skipSuggestionRef.current = true;
+      setValue(historyList[nextIndex].command);
+    } else {
+      // Return to original input
+      closeHistory();
+    }
+  };
+
+  const closeHistory = () => {
+    setShowHistory(false);
+    setHistoryIndex(-1);
+    setHistoryList([]);
+    setHistoryOffset(0);
+    setValue(savedInput);
+    setSavedInput('');
   };
 
   // Get current flat suggestions based on mode
@@ -190,9 +297,18 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
     textareaRef.current?.focus();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Tab') e.preventDefault();
 
+    // 1. History navigation priority (when explicitly in history mode)
+    if (showHistory && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      if (e.key === 'ArrowUp') handleHistoryUp();
+      else handleHistoryDown();
+      return;
+    }
+
+    // 2. Suggestions navigation
     if (showSuggestions && currentSuggestions.length > 0) {
       if (e.key === 'ArrowUp') {
         e.preventDefault();
@@ -259,15 +375,56 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
       e.preventDefault();
       handleSend(true);
     }
+
+    // Cmd+K to clear terminal
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+       e.preventDefault();
+       onClear?.();
+       return;
+    }
+
+    // History navigation: when input is empty OR already in history mode
+    if ((!value.trim() && !showSuggestions) || showHistory) {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        handleHistoryUp();
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        handleHistoryDown();
+        return;
+      }
+    }
+
+    // Close history on Escape
+    if (showHistory && e.key === 'Escape') {
+      closeHistory();
+      return;
+    }
   };
 
   const handleSend = (execute: boolean) => {
     if (!value) return;
     
+    // Close history mode if open
+    if (showHistory) {
+      setShowHistory(false);
+      setHistoryIndex(-1);
+      setHistoryList([]);
+      setHistoryOffset(0);
+      setSavedInput('');
+    }
+    
     // Record command to history (if executing and passes filters)
     if (execute) {
       const trimmed = value.trim();
       
+      // Record to command history (chronological, for arrow key navigation)
+      // History has its own blacklist checked on the backend
+      invoke('shell:record-history', trimmed);
+      
+      // Record to commands table (for suggestions) - with filters
       // Don't record:
       // - cd commands (use directory history)
       // - multi-line commands (contains \n)
@@ -321,6 +478,28 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
           onSelect={applyCmdSuggestion}
           onDelete={handleDeleteCmd}
           visible={showSuggestions}
+        />
+      )}
+
+      {/* History List Popup */}
+      {showHistory && (
+        <CommandSuggestionList
+          suggestions={historyList.map(h => h.command).reverse()}
+          selectedIndex={historyList.length - 1 - historyIndex}
+          onSelect={(cmd) => {
+             setValue(cmd);
+             textareaRef.current?.focus();
+          }}
+          onDelete={async (cmd) => {
+             // Caution: this might delete the wrong instance if duplicates approach each other
+             // But for now it's the best we can do without modifying CommandSuggestionList props
+             const item = historyList.find(h => h.command === cmd);
+             if (item) {
+                await invoke('shell:delete-history', item.id);
+                setHistoryList(prev => prev.filter(h => h.id !== item.id));
+             }
+          }}
+          visible={true}
         />
       )}
 

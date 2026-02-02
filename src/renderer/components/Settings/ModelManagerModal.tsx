@@ -42,6 +42,7 @@ export function ModelManagerModal({ isOpen, onClose, provider, onSave }: ModelMa
             let res;
             try {
                 res = await invoke('ai:test-connection', {
+                    id: provider.id,
                     type: provider.type,
                     endpoint: provider.endpoint || '',
                     apiKey: provider.apiKey || '', 

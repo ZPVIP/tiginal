@@ -1,12 +1,16 @@
 import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
-import { 
+import {
   SendHorizontal, 
   Paperclip, 
   Globe, 
   Image as ImageIcon,
-  X
+  X,
+  Wand2,
+  MessageSquareText,
+  Wrench
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { ToolsPopover } from './ToolsPopover';
 
 export interface ChatInputHandle {
     setText: (text: string) => void;
@@ -14,14 +18,34 @@ export interface ChatInputHandle {
 }
 
 interface ChatInputProps {
-  onSend: (text: string, images: string[], useSearch: boolean) => void;
+  onSend: (text: string, images: string[], useSearch: boolean, useSkills: boolean) => void;
   disabled?: boolean;
+  useSystemPrompt?: boolean;
+  onSystemPromptToggle?: () => void;
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, disabled }, ref) => {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, disabled, useSystemPrompt = true, onSystemPromptToggle }, ref) => {
   const [text, setText] = useState('');
   const [useSearch, setUseSearch] = useState(false);
+  const [useSkills, setUseSkills] = useState(false);
+  const [showTools, setShowTools] = useState(false);
+  const [globalToolsEnabled, setGlobalToolsEnabled] = useState(false);
   const [images, setImages] = useState<string[]>([]);
+
+  useEffect(() => {
+    checkGlobalTools();
+  }, [showTools]); // Re-check when popover toggles (closed)
+
+  const checkGlobalTools = async () => {
+    try {
+      if (window.electron?.invoke) {
+        const enabled = await window.electron.invoke('tools:get-global-enabled');
+        setGlobalToolsEnabled(enabled);
+      }
+    } catch (e) {
+      console.error('Failed to check global tools:', e);
+    }
+  };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -57,7 +81,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
 
   const handleSend = () => {
     if ((!text.trim() && images.length === 0) || disabled) return;
-    onSend(text, images, useSearch);
+    onSend(text, images, useSearch, useSkills);
     setText('');
     setImages([]);
     // Reset height
@@ -80,9 +104,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
   };
 
   return (
-    <div className="p-2 bg-background border-t border-border">
-      <div className="max-w-3xl mx-auto bg-surface border border-border rounded-xl shadow-sm transition-all">
+    <div className="p-2 bg-background border-t border-border relative">
+
+
+      <div className="max-w-3xl mx-auto bg-surface border border-border rounded-xl shadow-sm transition-all relative z-50">
         
+        {/* Tools Popover */}
+        {showTools && (
+            <>
+                <ToolsPopover onClose={() => setShowTools(false)} />
+                <div 
+                  className="fixed inset-0 z-40 bg-transparent" 
+                  onClick={() => setShowTools(false)}
+                />
+            </>
+        )}
+
         {/* Image Previews */}
         {images.length > 0 && (
             <div className="flex gap-2 p-3 border-b border-border overflow-x-auto">
@@ -116,6 +153,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
         <div className="flex items-center justify-between px-2 pb-2">
             <div className="flex items-center gap-1">
                 <button 
+                   onClick={onSystemPromptToggle}
+                   className={clsx(
+                       "p-2 rounded-lg transition-colors",
+                       useSystemPrompt ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                   )}
+                   title={useSystemPrompt ? "System Prompt Enabled" : "System Prompt Disabled"}
+                >
+                    <MessageSquareText size={18} />
+                </button>
+                <button 
                    onClick={() => setUseSearch(!useSearch)}
                    className={clsx(
                        "p-2 rounded-lg transition-colors",
@@ -127,6 +174,27 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
                 </button>
                 <div className="h-4 w-[1px] bg-border mx-1" />
                 <button 
+                   onClick={() => setShowTools(!showTools)}
+                   className={clsx(
+                       "p-2 rounded-lg transition-colors",
+                       (showTools || globalToolsEnabled) ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                   )}
+                   title="Configure Tools"
+                >
+                    <Wrench size={18} />
+                </button>
+                <button 
+                   onClick={() => setUseSkills(!useSkills)}
+                   className={clsx(
+                       "p-2 rounded-lg transition-colors",
+                       useSkills ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                   )}
+                   title="Use Skills"
+                >
+                    <Wand2 size={18} />
+                </button>
+                <div className="h-4 w-[1px] bg-border mx-1" />
+                <button 
                    onClick={() => fileInputRef.current?.click()}
                    className="p-2 text-text-muted hover:text-text-main hover:bg-surface-light rounded-lg transition-colors"
                    title="Attach Image"
@@ -134,12 +202,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
                     <ImageIcon size={18} />
                 </button>
                 <input 
-                   type="file" 
-                   ref={fileInputRef} 
-                   onChange={handleFileSelect} 
-                   accept="image/*" 
-                   multiple 
-                   className="hidden" 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleFileSelect} 
+                    accept="image/*" 
+                    multiple 
+                    className="hidden" 
                 />
             </div>
 

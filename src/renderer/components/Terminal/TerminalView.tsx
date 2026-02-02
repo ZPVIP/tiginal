@@ -616,6 +616,32 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
       return display;
   };
   
+  const handleClear = (paneId?: string) => {
+      const targetId = paneId || activeTab?.activePaneId;
+      if (!targetId) return;
+      
+      const term = termRefs.current.get(targetId);
+      term?.clear();
+  };
+
+  const handleCopy = (paneId: string) => {
+      const term = termRefs.current.get(paneId);
+      // Simplified copy using document command (usually picks up selection)
+      document.execCommand('copy');
+      setContextMenu(null);
+  };
+
+  const handlePaste = async (paneId: string) => {
+      try {
+          const text = await navigator.clipboard.readText();
+          const term = termRefs.current.get(paneId);
+          term?.send(text);
+      } catch (e) {
+          console.error('Failed to paste', e);
+      }
+      setContextMenu(null);
+  };
+
   const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
   // Initial tab
@@ -735,6 +761,7 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                           else termRefs.current.delete(id);
                       }}
                       onContextMenu={(e, paneId) => {
+                          e.preventDefault();
                           setContextMenu({ x: e.clientX, y: e.clientY, paneId, type: 'pane' });
                       }}
                   />
@@ -752,135 +779,148 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
           <div className="shrink-0 z-10">
               <CommandInput 
                   ref={commandInputRef}
-                  onSend={handleSendCommand} 
+                  onSend={handleSendCommand}
+                  onClear={() => handleClear()}
                   cwd={activeTab?.cwd || ''}
               />
           </div>
       </div>
 
       {/* Context Menu */}
-      {contextMenu && (
-          <div 
-             className="fixed z-50 bg-surface border border-border shadow-xl text-primary text-xs py-1 rounded w-40"
-             style={{ top: contextMenu.y, left: contextMenu.x }}
-             onClick={(e) => e.stopPropagation()}
-          >
-              {contextMenu.type === 'tab' ? (
-                  <>
-                      <button 
-                         onClick={() => { closeTab(contextMenu.tabId); setContextMenu(null); }}
-                         className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
-                      >
-                          Close Tab
-                      </button>
-                      <button 
-                         onClick={() => { closeOthers(contextMenu.tabId); setContextMenu(null); }}
-                         className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
-                      >
-                          Close Others
-                      </button>
-                      <button 
-                         onClick={() => { closeToRight(contextMenu.tabId); setContextMenu(null); }}
-                         className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
-                      >
-                          Close to Right
-                      </button>
-                  </>
-              ) : (() => {
-                  // Calculate disabled states
-                  const canSplitRight = (activeTab?.columns.length || 0) < 4;
-                  const targetPaneId = 'paneId' in contextMenu ? contextMenu.paneId : undefined;
-                  const targetCol = activeTab?.columns.find(c => c.panes.some(p => p.id === targetPaneId));
-                  const canSplitVertical = targetCol ? targetCol.panes.length < 2 : false;
-                  const isMaximized = !!activeTab?.maximizedPaneId;
-                  
-                  return (
-                  <>
-                      <button 
-                         onClick={() => { if(canSplitRight) { splitRight(); setContextMenu(null); } }}
-                         className={clsx(
-                             "w-full text-left px-3 py-1.5 flex justify-between items-center",
-                             canSplitRight ? "hover:bg-primary hover:text-white" : "text-text-muted cursor-not-allowed"
-                         )}
-                      >
-                          <span>Split Right</span>
-                          <span className="text-text-muted text-[10px]">⌘D</span>
-                      </button>
-                      <button 
-                         onClick={() => { if(canSplitVertical) { splitVertical('up', targetPaneId); setContextMenu(null); } }}
-                         className={clsx(
-                             "w-full text-left px-3 py-1.5 flex justify-between items-center",
-                             canSplitVertical ? "hover:bg-primary hover:text-white" : "text-text-muted cursor-not-allowed"
-                         )}
-                      >
-                          <span>Split Up</span>
-                      </button>
-                      <button 
-                         onClick={() => { if(canSplitVertical) { splitVertical('down', targetPaneId); setContextMenu(null); } }}
-                         className={clsx(
-                             "w-full text-left px-3 py-1.5 flex justify-between items-center",
-                             canSplitVertical ? "hover:bg-primary hover:text-white" : "text-text-muted cursor-not-allowed"
-                         )}
-                      >
-                          <span>Split Down</span>
-                          <span className="text-text-muted text-[10px]">⌘⇧D</span>
-                      </button>
-                      <div className="h-[1px] bg-[#404040] my-1" />
-                      <button 
-                         onClick={() => { toggleMaximize(); setContextMenu(null); }}
-                         className="w-full text-left px-3 py-1.5 flex justify-between items-center hover:bg-primary hover:text-white"
-                      >
-                          <span>{isMaximized ? 'Restore' : 'Maximize'}</span>
-                          <span className="text-text-muted text-[10px]">⌘⇧↩</span>
-                      </button>
-                      <div className="h-[1px] bg-[#404040] my-1" />
-                      <button 
-                         onClick={() => { 
-                             if ('paneId' in contextMenu) changeFontSize(contextMenu.paneId, 2);
-                             setContextMenu(null); 
-                         }}
-                         className="w-full text-left px-3 py-1.5 flex justify-between items-center hover:bg-primary hover:text-white"
-                      >
-                          <span>Zoom In</span>
-                          <span className="text-text-muted text-[10px]">⌘+</span>
-                      </button>
-                      <button 
-                         onClick={() => { 
-                             if ('paneId' in contextMenu) changeFontSize(contextMenu.paneId, -2);
-                             setContextMenu(null); 
-                         }}
-                         className="w-full text-left px-3 py-1.5 flex justify-between items-center hover:bg-primary hover:text-white"
-                      >
-                          <span>Zoom Out</span>
-                          <span className="text-text-muted text-[10px]">⌘-</span>
-                      </button>
-                      <button 
-                         onClick={() => { 
-                             if ('paneId' in contextMenu) resetFontSize(contextMenu.paneId);
-                             setContextMenu(null); 
-                         }}
-                         className="w-full text-left px-3 py-1.5 flex justify-between items-center hover:bg-primary hover:text-white"
-                      >
-                          <span>Reset Zoom</span>
-                          <span className="text-text-muted text-[10px]">⌘0</span>
-                      </button>
-                      <div className="h-[1px] bg-[#404040] my-1" />
-                      <button 
-                         onClick={() => { 
-                             if ('paneId' in contextMenu) closePane(contextMenu.paneId); 
-                             setContextMenu(null); 
-                         }}
-                         className="w-full text-left px-3 py-1.5 flex justify-between items-center hover:bg-primary hover:text-white"
-                      >
-                          <span>Close Pane</span>
-                          <span className="text-text-muted text-[10px]">⌘W</span>
-                      </button>
-                  </>
-                  );
-              })()}
-          </div>
-      )}
+      {contextMenu && (() => {
+           // Position logic: if near bottom, open upwards
+           const MENU_HEIGHT = 280; // Estimated height with all items
+           const windowHeight = window.innerHeight;
+           
+           let top = contextMenu.y;
+           const isNearBottom = contextMenu.y + MENU_HEIGHT > windowHeight;
+           
+           // If near bottom, place bottom of menu at click position (or slightly above)
+           if (isNearBottom) {
+               top = Math.max(0, contextMenu.y - MENU_HEIGHT);
+           }
+
+           return (
+              <div 
+                 className="fixed z-50 bg-surface border border-border shadow-xl text-primary text-xs py-1 rounded w-40 select-none"
+                 style={{ top, left: contextMenu.x }}
+                 onClick={(e) => e.stopPropagation()}
+              >
+                  {contextMenu.type === 'tab' ? (
+                      <>
+                          <button 
+                             onClick={() => { closeTab(contextMenu.tabId); setContextMenu(null); }}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
+                          >
+                              Close Tab
+                          </button>
+                          <button 
+                             onClick={() => { closeOthers(contextMenu.tabId); setContextMenu(null); }}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
+                          >
+                              Close Others
+                          </button>
+                          <button 
+                             onClick={() => { closeToRight(contextMenu.tabId); setContextMenu(null); }}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
+                          >
+                              Close to Right
+                          </button>
+                      </>
+                  ) : (() => {
+                      // Pane Context Menu
+                      const canSplitRight = (activeTab?.columns.length || 0) < 4;
+                      const globalTargetId = 'paneId' in contextMenu ? contextMenu.paneId : '';
+                      const targetCol = activeTab?.columns.find(c => c.panes.some(p => p.id === globalTargetId));
+                      const canSplitVertical = targetCol ? targetCol.panes.length < 2 : false;
+                      const isMaximized = !!activeTab?.maximizedPaneId;
+                      
+                      return (
+                      <>
+                          {/* Copy / Paste */}
+                          <button 
+                             onClick={() => handleCopy(globalTargetId)}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                          >
+                              <span>Copy</span>
+                              <span className="opacity-50">⌘C</span>
+                          </button>
+                          <button 
+                             onClick={() => handlePaste(globalTargetId)}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                          >
+                              <span>Paste</span>
+                              <span className="opacity-50">⌘V</span>
+                          </button>
+                          
+                          <div className="h-px bg-border my-1" />
+
+                          <button 
+                             onClick={() => { if(canSplitRight) { splitRight(); setContextMenu(null); } }}
+                             disabled={!canSplitRight}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-current flex justify-between"
+                          >
+                              <span>Split Right</span>
+                              <span className="opacity-50">⌘D</span>
+                          </button>
+                          <button 
+                             onClick={() => { if(canSplitVertical) { splitVertical('down', globalTargetId); setContextMenu(null); } }}
+                             disabled={!canSplitVertical}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-current flex justify-between"
+                          >
+                              <span>Split Down</span>
+                              <span className="opacity-50">⇧⌘D</span>
+                          </button>
+                          
+                          <div className="h-px bg-border my-1" />
+                          
+                          <button 
+                             onClick={() => { toggleMaximize(); setContextMenu(null); }}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                          >
+                              <span>{isMaximized ? 'Restore' : 'Maximize'}</span>
+                              <span className="opacity-50">⇧⌘↵</span>
+                          </button>
+
+                          <div className="h-px bg-border my-1" />
+
+                          <button 
+                             onClick={() => { changeFontSize(globalTargetId, 2); setContextMenu(null); }}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                          >
+                              <span>Zoom In</span>
+                              <span className="opacity-50">⌘+</span>
+                          </button>
+                          <button 
+                             onClick={() => { changeFontSize(globalTargetId, -2); setContextMenu(null); }}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                          >
+                              <span>Zoom Out</span>
+                              <span className="opacity-50">⌘-</span>
+                          </button>
+                          <button 
+                             onClick={() => { resetFontSize(globalTargetId); setContextMenu(null); }}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                          >
+                              <span>Reset Zoom</span>
+                              <span className="opacity-50">⌘0</span>
+                          </button>
+
+                          <div className="h-px bg-border my-1" />
+
+                          <button 
+                             onClick={() => { if(globalTargetId) { closePane(globalTargetId); setContextMenu(null); } }}
+                             className="w-full text-left px-3 py-1.5 hover:bg-red-500/20 hover:text-red-400 text-red-500/80 flex justify-between"
+                          >
+                              <span>Close Pane</span>
+                              <span className="opacity-50">⌘W</span>
+                          </button>
+                      </>
+                      );
+                  })()}
+              </div>
+           );
+      })()}
     </div>
   );
 }
-

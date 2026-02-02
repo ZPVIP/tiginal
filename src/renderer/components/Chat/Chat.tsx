@@ -4,10 +4,11 @@ import { MessageList } from './MessageList';
 import { ChatInput, ChatInputHandle } from './ChatInput';
 import { EmptyState } from './EmptyState';
 import { HistoryPanel } from './HistoryPanel';
+
 import { AIProvider, ModelConfig } from '../../settings/ai-constants';
 import { EyeOff, Trash2 } from 'lucide-react';
 
-const invoke = window.electron?.invoke || (async () => {});
+const invoke = (window as any).electron?.invoke || (async () => {});
 
 export function Chat() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -20,6 +21,11 @@ export function Chat() {
   const [isIncognito, setIsIncognito] = useState(false);
   const [incognitoMessages, setIncognitoMessages] = useState<any[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [useSystemPrompt, setUseSystemPrompt] = useState(true);
+
+  // Tool call state
+  // Tool call state
+  const [allowAllTools, setAllowAllTools] = useState(false);
 
   useEffect(() => {
     loadProviders();
@@ -64,22 +70,78 @@ export function Chat() {
         }
     };
 
-    const removeListener = window.electron?.on('chat:chunk', onChunk);
+    const removeListener = (window as any).electron?.on('chat:chunk', onChunk);
+
+    // Tool call listener
+    const onToolCall = async (data: { conversationId: string; id: string; name: string; input: any }) => {
+      console.log('Tool call received:', data);
+      
+      const analysis = (data as any).analysis;
+      const needsPermission = analysis?.needsPermission;
+      const shouldAutoRun = needsPermission === false || allowAllToolsRef.current;
+      
+      // Add persistent request message
+      const requestMsg = {
+          id: `req_${data.id}`,
+          role: 'tool-request',
+          content: '',
+          approvalData: {
+              id: data.id,
+              name: data.name,
+              command: data.name === 'Bash' ? data.input.command : JSON.stringify(data.input, null, 2),
+              description: analysis?.description || data.input?.description || `Execute ${data.name}`,
+              riskLevel: analysis?.riskLevel || (data.name === 'Bash' ? 'medium' : 'low'),
+              status: shouldAutoRun ? 'auto-approved' : 'pending',
+              skillPath: (data as any).skillPath
+          }
+      };
+      
+      setMessages(prev => [...prev, requestMsg]);
+
+      // If auto-run, approve immediately
+      if (shouldAutoRun) {
+        try {
+           await invoke('chat:submit-tool-approval', { 
+               toolCallId: data.id, 
+               approved: true, 
+               approvedAll: allowAllToolsRef.current 
+           });
+        } catch (err) {
+           console.error('Auto-approval failed', err);
+        }
+      }
+    };
+    
+    // Tool Result listener
+    const onToolResult = (data: { conversationId: string; toolName: string; result: string }) => {
+        setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'tool',
+            content: data.result
+        }]);
+    };
+
+    const removeToolListener = (window as any).electron?.on('chat:tool-call', onToolCall);
+    const removeResultListener = (window as any).electron?.on('chat:tool-result', onToolResult);
 
     return () => {
         window.removeEventListener('ai-providers-updated', handleUpdate);
         if (removeListener) removeListener();
+        if (removeToolListener) removeToolListener();
+        if (removeResultListener) removeResultListener();
     };
   }, []);
 
   // Refs for event listeners to access current state
   const currentConversationIdRef = React.useRef(currentConversationId);
   const isIncognitoRef = React.useRef(isIncognito);
+  const allowAllToolsRef = React.useRef(allowAllTools);
 
   useEffect(() => {
       currentConversationIdRef.current = currentConversationId;
       isIncognitoRef.current = isIncognito;
-  }, [currentConversationId, isIncognito]);
+      allowAllToolsRef.current = allowAllTools;
+  }, [currentConversationId, isIncognito, allowAllTools]);
 
   const loadProviders = async () => {
     try {
@@ -120,13 +182,18 @@ export function Chat() {
     }
   };
 
-  const handleSend = async (text: string, images: string[], useSearch: boolean) => {
+  const handleSend = async (text: string, images: string[], useSearch: boolean, useSkills: boolean) => {
       if (!selectedProviderId) {
           alert("Please select a provider/model first.");
           return;
       }
 
       setIsLoading(true);
+      
+      // Prepare message content 
+      let messageContent = text;
+      // Note: Skills injection is now handled by backend via useSkills option
+
 
       // Add User Message
       const userMsg = { id: Date.now().toString(), role: 'user', content: text, images };
@@ -162,9 +229,13 @@ export function Chat() {
               // Since we don't store transient ID in state, we can't match it easily unless we store it.
               // Let's store "activeStreamingId" ref?
               
+
               activeStreamingId.current = conv.id;
 
-              await invoke('chat:send-message', conv.id, selectedProviderId, text, selectedModel);
+              await invoke('chat:send-message', conv.id, selectedProviderId, messageContent, selectedModel, { 
+                  useSystemPrompt,
+                  useSkills 
+              });
               
               await invoke('chat:delete-conversation', conv.id);
           } catch (err) {
@@ -201,7 +272,10 @@ export function Chat() {
       activeStreamingId.current = convId!;
 
       try {
-          await invoke('chat:send-message', convId, selectedProviderId, text, selectedModel);
+          await invoke('chat:send-message', convId, selectedProviderId, messageContent, selectedModel, { 
+              useSystemPrompt,
+              useSkills 
+          });
       } catch (err) {
           setMessages(prev => {
               const newMsgs = [...prev];
@@ -377,6 +451,46 @@ export function Chat() {
       }
   };
 
+        const handleApproval = async (id: string, decision: 'approved' | 'denied' | 'always') => {
+      // 1. Update UI state immediately
+      setMessages(prev => prev.map(msg => {
+          // Check if this is the message corresponding to the tool call
+          // Actually, `id` passed from logic is usually the toolCallId.
+          // But our message ID is `req_${toolCallId}`. 
+          // The ToolApprovalRequest onAllow calls `onApproval(msg.id, ...)`.
+          // So `id` here IS the message ID.
+          if (msg.id === id && msg.role === 'tool-request' && msg.approvalData) {
+               return {
+                   ...msg,
+                   approvalData: {
+                       ...msg.approvalData,
+                       status: decision === 'always' ? 'approved' : decision
+                   }
+               };
+          }
+          return msg;
+      }));
+
+      // 2. Extract toolCallId from message ID (strip 'req_')
+      const toolCallId = id.replace('req_', '');
+      
+      // 3. Handle Allow All
+      if (decision === 'always') {
+          setAllowAllTools(true);
+      }
+
+      // 4. Call Backend
+      try {
+          await invoke('chat:submit-tool-approval', { 
+              toolCallId, 
+              approved: decision === 'approved' || decision === 'always', 
+              approvedAll: decision === 'always' 
+          });
+      } catch (err) {
+          console.error('Tool approval submission failed', err);
+      }
+  };
+
   return (
     <div className="flex h-full w-full flex-col bg-background relative">
       <Header 
@@ -418,6 +532,7 @@ export function Chat() {
             messages={displayMessages} 
             isStreaming={isLoading} 
             onEdit={handleEditMessage}
+            onApproval={handleApproval}
           />
       )}
 
@@ -425,6 +540,8 @@ export function Chat() {
         ref={chatInputRef}
         onSend={handleSend} 
         disabled={isLoading} 
+        useSystemPrompt={useSystemPrompt}
+        onSystemPromptToggle={() => setUseSystemPrompt(!useSystemPrompt)}
       />
 
       {/* History Panel */}

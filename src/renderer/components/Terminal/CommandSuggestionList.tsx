@@ -40,7 +40,7 @@ export function CommandSuggestionList({
           const isSelected = idx === selectedIndex;
           return (
             <div
-              key={cmd}
+              key={`${cmd}-${idx}`}
               ref={el => { itemRefs.current[idx] = el; }}
               className={clsx(
                 "group px-3 py-1.5 cursor-pointer flex items-center justify-between gap-2 text-sm font-mono transition-colors whitespace-nowrap",
