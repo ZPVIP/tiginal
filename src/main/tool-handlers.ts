@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import defaults from './defaults.json';
+import { getDynamicPromptTemplates } from './dynamic-prompts';
 
 interface Tool {
   id: string;
@@ -36,6 +37,22 @@ interface ToolCategory {
   enabled: boolean;
 }
 
+interface SystemPrompt {
+  id: number;
+  title: string;
+  content: string;
+  isDefault: boolean;
+  isActive: boolean;
+  rank: number;
+}
+
+interface SystemPromptInput {
+  id?: number;
+  title: string;
+  content: string;
+  isActive?: boolean;
+}
+
 /**
  * Get platform-specific default workspace path
  */
@@ -59,6 +76,78 @@ function getDefaultWorkspacePath(): string {
 function ensureWorkspaceDir(dirPath: string): void {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+/**
+ * Initialize default system prompts from defaults.json (only if table is empty)
+ * Called on startup - only inserts if no default prompts exist
+ */
+function initializeDefaultSystemPrompts(db: any): void {
+  // Check if any default prompts exist (ID < 100)
+  const count = db.prepare('SELECT COUNT(*) as c FROM system_prompts WHERE id < 100').get() as { c: number };
+  if (count.c > 0) {
+    // Default prompts already exist, skip initialization
+    return;
+  }
+
+  const now = Date.now();
+  const defaultPrompts = defaults.defaultSystemPrompt as Array<{
+    id: number;
+    title: string;
+    content: string;
+    is_default: boolean;
+    is_active: boolean;
+  }>;
+
+  for (let i = 0; i < defaultPrompts.length; i++) {
+    const prompt = defaultPrompts[i];
+    db.prepare(`
+      INSERT INTO system_prompts (id, title, content, is_default, is_active, rank, created_at, updated_at)
+      VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+    `).run(prompt.id, prompt.title, prompt.content, prompt.is_active ? 1 : 0, i, now, now);
+  }
+  
+  console.log(`[Init] Inserted ${defaultPrompts.length} default system prompts`);
+}
+
+/**
+ * Reset default system prompts from defaults.json
+ * Called when user clicks Reset button - updates/inserts all default prompts
+ */
+function resetDefaultSystemPrompts(db: any): void {
+  const now = Date.now();
+  const defaultPrompts = defaults.defaultSystemPrompt as Array<{
+    id: number;
+    title: string;
+    content: string;
+    is_default: boolean;
+    is_active: boolean;
+  }>;
+
+  for (let i = 0; i < defaultPrompts.length; i++) {
+    const prompt = defaultPrompts[i];
+    const existing = db.prepare('SELECT id FROM system_prompts WHERE id = ?').get(prompt.id);
+    
+    if (existing) {
+      // Update existing, reset all fields including is_active
+      db.prepare(`
+        UPDATE system_prompts SET
+          title = ?,
+          content = ?,
+          is_default = 1,
+          is_active = ?,
+          rank = ?,
+          updated_at = ?
+        WHERE id = ?
+      `).run(prompt.title, prompt.content, prompt.is_active ? 1 : 0, i, now, prompt.id);
+    } else {
+      // Insert new
+      db.prepare(`
+        INSERT INTO system_prompts (id, title, content, is_default, is_active, rank, created_at, updated_at)
+        VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+      `).run(prompt.id, prompt.title, prompt.content, prompt.is_active ? 1 : 0, i, now, now);
+    }
   }
 }
 
@@ -160,6 +249,7 @@ export function setupToolHandlers(): void {
   try {
     const db = getDatabase().getDb();
     syncSystemDefaults(db);
+    initializeDefaultSystemPrompts(db);
   } catch (err) {
     console.error('Failed to sync system defaults:', err);
   }
@@ -564,16 +654,174 @@ export function setupToolHandlers(): void {
     }
   });
 
-  // Get default system prompt
-  ipcMain.handle('settings:get-default-system-prompt', async (): Promise<string> => {
+  // --- System Prompt Handlers ---
+
+  // Get all system prompts
+  ipcMain.handle('system-prompts:get-all', async (): Promise<SystemPrompt[]> => {
+    const db = getDatabase().getDb();
+    const rows = db.prepare(`
+      SELECT id, title, content, is_default, is_active, rank
+      FROM system_prompts
+      ORDER BY rank ASC
+    `).all() as Array<{
+      id: number;
+      title: string;
+      content: string;
+      is_default: number;
+      is_active: number;
+      rank: number;
+    }>;
+
+    return rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      isDefault: row.is_default === 1,
+      isActive: row.is_active === 1,
+      rank: row.rank,
+    }));
+  });
+
+  // Get enabled system prompts (for building the system message)
+  ipcMain.handle('system-prompts:get-enabled', async (): Promise<SystemPrompt[]> => {
+    const db = getDatabase().getDb();
+    const rows = db.prepare(`
+      SELECT id, title, content, is_default, is_active, rank
+      FROM system_prompts
+      WHERE is_active = 1
+      ORDER BY rank ASC
+    `).all() as Array<{
+      id: number;
+      title: string;
+      content: string;
+      is_default: number;
+      is_active: number;
+      rank: number;
+    }>;
+
+    return rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      isDefault: row.is_default === 1,
+      isActive: row.is_active === 1,
+      rank: row.rank,
+    }));
+  });
+
+  // Add a custom system prompt (ID >= 100)
+  ipcMain.handle('system-prompts:add', async (_event, input: SystemPromptInput): Promise<SystemPrompt> => {
+    const db = getDatabase().getDb();
+    const now = Date.now();
+
+    // Find the next available ID >= 100
+    const maxId = db.prepare('SELECT MAX(id) as m FROM system_prompts WHERE id >= 100').get() as { m: number | null };
+    const newId = Math.max(100, (maxId.m || 99) + 1);
+
+    // Get max rank
+    const maxRank = db.prepare('SELECT MAX(rank) as m FROM system_prompts').get() as { m: number | null };
+    const newRank = (maxRank.m || 0) + 1;
+
+    db.prepare(`
+      INSERT INTO system_prompts (id, title, content, is_default, is_active, rank, created_at, updated_at)
+      VALUES (?, ?, ?, 0, ?, ?, ?, ?)
+    `).run(newId, input.title, input.content, input.isActive !== false ? 1 : 0, newRank, now, now);
+
+    return {
+      id: newId,
+      title: input.title,
+      content: input.content,
+      isDefault: false,
+      isActive: input.isActive !== false,
+      rank: newRank,
+    };
+  });
+
+  // Update a system prompt
+  ipcMain.handle('system-prompts:update', async (_event, input: SystemPromptInput): Promise<void> => {
+    if (input.id === undefined) throw new Error('System prompt ID required');
+
+    const db = getDatabase().getDb();
+    const now = Date.now();
+
+    // Check if it's a default prompt (ID < 100)
+    const isDefault = input.id < 100;
+
+    if (isDefault) {
+      // For default prompts, only allow updating is_active
+      db.prepare(`
+        UPDATE system_prompts SET is_active = ?, updated_at = ? WHERE id = ?
+      `).run(input.isActive ? 1 : 0, now, input.id);
+    } else {
+      // For custom prompts, allow full update
+      db.prepare(`
+        UPDATE system_prompts SET title = ?, content = ?, is_active = ?, updated_at = ? WHERE id = ?
+      `).run(input.title, input.content, input.isActive ? 1 : 0, now, input.id);
+    }
+  });
+
+  // Toggle system prompt active status
+  ipcMain.handle('system-prompts:toggle', async (_event, id: number, isActive: boolean): Promise<void> => {
+    const db = getDatabase().getDb();
+    const now = Date.now();
+    db.prepare('UPDATE system_prompts SET is_active = ?, updated_at = ? WHERE id = ?').run(isActive ? 1 : 0, now, id);
+  });
+
+  // Delete a custom system prompt (only ID >= 100)
+  ipcMain.handle('system-prompts:delete', async (_event, id: number): Promise<void> => {
+    if (id < 100) {
+      throw new Error('Cannot delete default system prompts');
+    }
+    const db = getDatabase().getDb();
+    db.prepare('DELETE FROM system_prompts WHERE id = ?').run(id);
+  });
+
+  // Reorder system prompts
+  ipcMain.handle('system-prompts:reorder', async (_event, orderedIds: number[]): Promise<void> => {
+    const db = getDatabase().getDb();
+    db.transaction(() => {
+      const stmt = db.prepare('UPDATE system_prompts SET rank = ? WHERE id = ?');
+      orderedIds.forEach((id, index) => {
+        stmt.run(index, id);
+      });
+    })();
+  });
+
+  // Reset default system prompts from defaults.json
+  ipcMain.handle('system-prompts:reset-defaults', async (): Promise<void> => {
+    const db = getDatabase().getDb();
+    resetDefaultSystemPrompts(db);
+  });
+
+  // Get dynamic prompt settings
+  ipcMain.handle('system-prompts:get-dynamic-settings', async (): Promise<Record<string, boolean>> => {
+    const dbService = getDatabase();
+    return {
+      dateInfo: dbService.getSetting('dynamicPrompt_dateInfo') !== 'false',
+      wdInfo: dbService.getSetting('dynamicPrompt_wdInfo') !== 'false',
+      systemInfo: dbService.getSetting('dynamicPrompt_systemInfo') !== 'false',
+      appleScriptInfo: dbService.getSetting('dynamicPrompt_appleScriptInfo') !== 'false',
+    };
+  });
+
+  // Set dynamic prompt setting
+  ipcMain.handle('system-prompts:set-dynamic-setting', async (_event, key: string, value: boolean): Promise<void> => {
+    const dbService = getDatabase();
+    dbService.setSetting(`dynamicPrompt_${key}`, String(value));
+  });
+
+  // Get dynamic prompt templates (returns actual content used by AI)
+  ipcMain.handle('system-prompts:get-dynamic-templates', async (): Promise<Record<string, { title: string; content: string; showAlways: boolean }>> => {
+    return getDynamicPromptTemplates();
+  });
+
+  // Legacy handlers for backwards compatibility (deprecated, will be removed)
+  ipcMain.handle('settings:get-default-system-prompt', async (): Promise<any> => {
     return defaults.defaultSystemPrompt;
   });
 
-  // Reset system prompt to default
-  ipcMain.handle('settings:reset-system-prompt', async (): Promise<string> => {
-    const db = getDatabase();
-    const prompt = defaults.defaultSystemPrompt;
-    db.setSetting('systemPrompt', prompt);
-    return prompt;
+  ipcMain.handle('settings:reset-system-prompt', async (): Promise<void> => {
+    const db = getDatabase().getDb();
+    resetDefaultSystemPrompts(db);
   });
 }

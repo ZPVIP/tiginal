@@ -15,6 +15,7 @@ interface AIProvider {
 import { getCopilotToken } from './services/ai/CopilotAuthService';
 import { printRequestEndSeparator, printRequestStartSeparator, printRespondEndSeparator, printRespondStartSeparator, printVisualSeparator } from './utils/DebugUtils';
 import { fetchWithLocalhostFallback } from './utils/NetworkUtils';
+import { buildDynamicPromptsForAI } from './dynamic-prompts';
 
 interface LogAccumulator {
     id?: string;
@@ -653,23 +654,34 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     chatService.addMessage(conversationId, 'user', content);
     const dbMessages = chatService.getMessages(conversationId);
     
-    // Construct System Prompt
+    // Construct System Prompt from system_prompts table
     const useSystemPrompt = options?.useSystemPrompt !== false;
-    const baseSystemPrompt = useSystemPrompt ? (dbService.getSetting('systemPrompt') || '') : '';
+    let baseSystemPrompt = '';
     
-    const dateStr = new Date().toLocaleDateString('en-CA');
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const dateInfo = `\n\nIMPORTANT - Today's date is ${dateStr} (timezone: ${timezone}).`;
-    
-    let workspacePath = dbService.getSetting('workspacePath');
-    if (!workspacePath) {
-        const os = require('os');
-        const path = require('path');
-        workspacePath = process.platform === 'win32' 
-            ? path.join(process.env.APPDATA || os.homedir(), 'Tiginal', 'workspaces')
-            : path.join(os.homedir(), '.config', 'tiginal', 'workspaces');
+    if (useSystemPrompt) {
+        try {
+            // Get enabled system prompts from database
+            const promptRows = db.prepare(`
+                SELECT title, content, is_default FROM system_prompts 
+                WHERE is_active = 1 
+                ORDER BY rank ASC
+            `).all() as { title: string; content: string; is_default: number }[];
+            
+            baseSystemPrompt = promptRows.map(r => {
+                // For custom prompts (is_default = 0), include title as a header
+                if (r.is_default === 0) {
+                    return `[${r.title}]\n${r.content}`;
+                }
+                // For default prompts, just use content (title is already descriptive in content)
+                return r.content;
+            }).join('\n\n');
+        } catch (e) {
+            console.error('Failed to load system prompts', e);
+        }
     }
-    const wdInfo = `\n\nWORKING DIRECTORY - Your current working directory is: ${workspacePath}.`;
+
+    // Dynamic prompts (from shared module)
+    const dynamicPrompts = useSystemPrompt ? buildDynamicPromptsForAI(dbService) : '';
     
     let skillsInfo = '';
     // Load skills info if requested (for prompt context)
@@ -692,10 +704,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     const systemMessage = { 
         role: 'system', 
         content: useSystemPrompt 
-           ? baseSystemPrompt + dateInfo + wdInfo + skillsInfo 
-           : '' + skillsInfo  // Keep skills info if enabled via separate switch, or should it also be hidden? 
-                              // User complaint specifically cited date/wd info. Skills are separate toggle usually.
-                              // Let's assume options.useSkills controls skillsInfo separately.
+           ? baseSystemPrompt + dynamicPrompts + skillsInfo 
+           : '' + skillsInfo
     };
 
     // Current conversation context (will grow with tool calls)
@@ -1042,7 +1052,7 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
         if (!provider) return [];
         
         const crypto = getCrypto();
-        let apiKey = null;
+        let apiKey: string | null = null;
         if (provider.api_key_encrypted && crypto.isUnlocked()) {
              try { apiKey = crypto.decrypt(provider.api_key_encrypted); } catch {}
         }
