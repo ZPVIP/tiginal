@@ -475,7 +475,6 @@ async function streamAIAPI(
       if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
       process.stdout.write('Headers: ' + JSON.stringify(safeHeaders, null, 2) + '\n');
       process.stdout.write('Body: ' + JSON.stringify(bodyPayload, null, 2) + '\n');
-      process.stdout.write('-----------------------------\n\n');
   }
 
 
