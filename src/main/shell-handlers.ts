@@ -1,9 +1,15 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { getPathCompletions } from './shellHistory';
 import { directoryService } from './DirectoryService';
 import { commandService } from './CommandService';
 
 export function setupShellHandlers() {
+  ipcMain.handle('shell:show-item-in-folder', async (_, path: string) => {
+      if (path) {
+          shell.showItemInFolder(path);
+      }
+  });
+
   ipcMain.handle('shell:get-directory-suggestions', async (_, partial: string, cwd: string) => {
     // 1. Local Completions (Current Directory subdirs)
     // We reuse getPathCompletions but want specifically direct subdirectories for "Local"

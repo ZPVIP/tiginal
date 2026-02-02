@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 10;
 
 /**
  * Database service for Tiginal
@@ -89,6 +89,22 @@ export class DatabaseService {
 
     if (currentVersion < 6) {
       this.migrateV6();
+    }
+
+    if (currentVersion < 7) {
+      this.migrateV7();
+    }
+
+    if (currentVersion < 8) {
+      this.migrateV8();
+    }
+
+    if (currentVersion < 9) {
+      this.migrateV9();
+    }
+
+    if (currentVersion < 10) {
+      this.migrateV10();
     }
 
     // Update schema version
@@ -242,6 +258,114 @@ export class DatabaseService {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         pattern TEXT UNIQUE NOT NULL
       );
+    `);
+  }
+
+  /**
+   * Migration v7: Create skill_directories and skills tables
+   */
+  private migrateV7(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS skill_directories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        path TEXT UNIQUE NOT NULL,
+        enabled INTEGER DEFAULT 1
+      );
+
+      CREATE TABLE IF NOT EXISTS skills (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_folder TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        skill_directory_id TEXT NOT NULL,
+        scan_at INTEGER,
+        enabled INTEGER DEFAULT 0,
+        FOREIGN KEY (skill_directory_id) REFERENCES skill_directories(id) ON DELETE CASCADE,
+        UNIQUE(skill_folder, skill_directory_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_skills_directory ON skills(skill_directory_id);
+    `);
+  }
+
+  /**
+   * Migration v8: Create tools table for AI tool definitions
+   */
+  private migrateV8(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS tools (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        input_schema TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tools_enabled ON tools(enabled);
+    `);
+  }
+
+  /**
+   * Migration v9: Revamp tools with categories and system flags
+   * - Create tool_categories table
+   * - Populate default categories
+   * - Recreate tools table with category_id and is_system fields
+   */
+  private migrateV9(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // 1. Create tool_categories table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS tool_categories (
+        id TEXT PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL,
+        rank INTEGER DEFAULT 0,
+        is_expanded INTEGER DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_tool_categories_rank ON tool_categories(rank);
+    `);
+
+    // 2. Drop existing tools table (as per user request to clear old tools)
+    this.db.exec('DROP TABLE IF EXISTS tools');
+
+    // 3. Recreate tools table with new schema
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS tools (
+        id TEXT PRIMARY KEY,
+        category_id TEXT,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT,
+        input_schema TEXT NOT NULL,
+        is_system INTEGER DEFAULT 0,
+        enabled INTEGER DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (category_id) REFERENCES tool_categories(id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tools_category ON tools(category_id);
+      CREATE INDEX IF NOT EXISTS idx_tools_enabled_v9 ON tools(enabled);
+    `);
+  }
+
+  /**
+   * Migration v10: Add enabled status to tool_categories
+   */
+  private migrateV10(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      ALTER TABLE tool_categories ADD COLUMN enabled INTEGER DEFAULT 1;
     `);
   }
 
