@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { 
   FolderOpen, Trash2, Plus, Edit2, Save, X, RefreshCw, 
-  Check, ChevronLeft, ChevronRight, Folder
+  Check, ChevronLeft, ChevronRight, Folder, Zap
 } from 'lucide-react';
 
 interface SkillDirectory {
@@ -25,8 +25,8 @@ interface Skill {
 }
 
 const TABS = [
-  { id: 'directories', label: 'Skill Directories' },
-  { id: 'skills', label: 'Skills' },
+  { id: 'directories', label: 'Skill Directories', icon: <FolderOpen size={18} /> },
+  { id: 'skills', label: 'Skills', icon: <Zap size={18} /> },
 ];
 
 export function SkillsSettings() {
@@ -139,18 +139,19 @@ export function SkillsSettings() {
       <h2 className="text-xl font-semibold text-text-main">Skills Settings</h2>
       
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-border pb-2">
+      <div className="flex space-x-1 bg-surface border border-border p-1 rounded-lg shrink-0">
         {TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={clsx(
-              "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg transition-colors",
+              "flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all",
               activeTab === tab.id
-                ? "bg-primary/20 text-primary border-b-2 border-primary"
-                : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                ? "bg-primary text-white shadow-sm"
+                : "text-text-sec hover:text-text-main hover:bg-surface-light"
             )}
           >
+            {tab.icon}
             {tab.label}
           </button>
         ))}
