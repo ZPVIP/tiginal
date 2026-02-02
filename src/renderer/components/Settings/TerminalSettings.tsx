@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { Settings, Terminal, FolderOpen, Trash2, Star, StarOff, Search, Edit2, Save, X, Bot, ChevronDown, ArrowDown, Plus, Shield, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
+import { InfoIcon } from '../Shared/InfoIcon';
 
 interface CommandRow {
   id: number;
@@ -65,6 +66,7 @@ export function TerminalSettings() {
   const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
   const [fontSize, setFontSize] = useState(14);
   const [aiModel, setAiModel] = useState('');
+  const [aiDropdownOpen, setAiDropdownOpen] = useState(false);
   const [cleanupInterval, setCleanupInterval] = useState(24);
   const [minScore, setMinScore] = useState(2);
   const [historyMaxCount, setHistoryMaxCount] = useState(10000);
@@ -429,11 +431,27 @@ export function TerminalSettings() {
       </div>
 
       {/* General Tab */}
+      {/* General Tab */}
+      {/* General Tab */}
       {activeTab === 'general' && (
         <div className="space-y-4">
-          <div className="relative">
-            <label className="block text-sm font-medium text-text-main mb-2">Font Family</label>
-            <div className="relative">
+          
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-text-main">Font Size</label>
+            <input
+              type="number"
+              min={10}
+              max={24}
+              value={fontSize}
+              onChange={(e) => setFontSize(Number(e.target.value))}
+              onBlur={() => saveSettings()}
+              className="w-32 bg-surface text-text-main text-sm rounded-lg py-2 px-3 border border-border focus:border-primary outline-none text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-text-main">Font Family</label>
+            <div className="relative w-[60%]">
               <input
                 type="text"
                 value={fontFamily}
@@ -450,92 +468,123 @@ export function TerminalSettings() {
                 size={14} 
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" 
               />
+              {fontDropdownOpen && (() => {
+                const isExactMatch = FONT_OPTIONS.some(f => f.value === fontFamily);
+                const filtered = isExactMatch 
+                  ? FONT_OPTIONS 
+                  : FONT_OPTIONS.filter(f => 
+                      f.label.toLowerCase().includes(fontFamily.toLowerCase()) || 
+                      f.value.toLowerCase().includes(fontFamily.toLowerCase())
+                    );
+                return (
+                  <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto bg-surface border border-border rounded-lg shadow-lg">
+                    {filtered.map(font => (
+                      <button
+                        key={font.value}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setFontFamily(font.value);
+                          setFontDropdownOpen(false);
+                          saveSettings({ fontFamily: font.value });
+                        }}
+                        className={clsx(
+                          "w-full text-left px-3 py-2 text-sm hover:bg-primary/20 transition-colors",
+                          fontFamily === font.value ? "bg-primary/10 text-primary" : "text-text-main"
+                        )}
+                      >
+                        <span className="font-medium">{font.label}</span>
+                        {font.label !== font.value && (
+                          <span className="text-text-muted text-xs ml-2 truncate">{font.value}</span>
+                        )}
+                      </button>
+                    ))}
+                    {filtered.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-text-muted">Custom: {fontFamily}</div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
-            {fontDropdownOpen && (() => {
-              const isExactMatch = FONT_OPTIONS.some(f => f.value === fontFamily);
-              const filtered = isExactMatch 
-                ? FONT_OPTIONS 
-                : FONT_OPTIONS.filter(f => 
-                    f.label.toLowerCase().includes(fontFamily.toLowerCase()) || 
-                    f.value.toLowerCase().includes(fontFamily.toLowerCase())
-                  );
-              return (
-                <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto bg-surface border border-border rounded-lg shadow-lg">
-                  {filtered.map(font => (
-                    <button
-                      key={font.value}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setFontFamily(font.value);
-                        setFontDropdownOpen(false);
-                        saveSettings({ fontFamily: font.value });
-                      }}
-                      className={clsx(
-                        "w-full text-left px-3 py-2 text-sm hover:bg-primary/20 transition-colors",
-                        fontFamily === font.value ? "bg-primary/10 text-primary" : "text-text-main"
-                      )}
-                    >
-                      <span className="font-medium">{font.label}</span>
-                      {font.label !== font.value && (
-                        <span className="text-text-muted text-xs ml-2 truncate">{font.value}</span>
-                      )}
-                    </button>
-                  ))}
-                  {filtered.length === 0 && (
-                    <div className="px-3 py-2 text-sm text-text-muted">Custom: {fontFamily}</div>
-                  )}
-                </div>
-              );
-            })()}
           </div>
           
-          <div>
-            <label className="block text-sm font-medium text-text-main mb-2">Font Size</label>
-            <input
-              type="number"
-              min={10}
-              max={24}
-              value={fontSize}
-              onChange={(e) => setFontSize(Number(e.target.value))}
-              onBlur={() => saveSettings()}
-              className="w-32 bg-surface text-text-main text-sm rounded-lg py-2 px-3 border border-border focus:border-primary outline-none"
-            />
-          </div>
-
-          
-          <div>
-            <label className="block text-sm font-medium text-text-main mb-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-text-main">
               Command AI Model
               <span className="text-text-muted text-xs ml-2">(optional)</span>
             </label>
-            <div className="relative max-w-md">
-              <button className="w-full flex items-center gap-2 text-sm font-medium text-text-main bg-surface border border-border rounded-lg py-2 px-3 hover:border-primary transition-colors">
-                <Bot size={16} className="shrink-0 text-text-muted" />
-                <span className={clsx("flex-1 text-left truncate", !aiModel && "text-text-muted")}>
-                  {currentModelLabel}
-                </span>
-                <ChevronDown size={14} className="opacity-50 shrink-0" />
-              </button>
-              <select
-                value={aiModel}
-                onChange={(e) => { setAiModel(e.target.value); saveSettings({ aiModel: e.target.value }); }}
-                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+            <div className="relative w-[60%]">
+              <div
+                tabIndex={0}
+                onClick={() => setAiDropdownOpen(!aiDropdownOpen)}
+                onBlur={() => setTimeout(() => setAiDropdownOpen(false), 150)}
+                className={clsx(
+                  "w-full bg-surface text-text-main text-sm rounded-lg py-2 px-3 pr-8 border border-border focus:border-primary outline-none cursor-pointer flex items-center",
+                  aiDropdownOpen && "border-primary"
+                )}
               >
-                <option value="">None</option>
-                {allModels.map(m => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
+                 <Bot size={16} className="shrink-0 text-text-muted mr-2" />
+                 <span className={clsx("flex-1 truncate", !aiModel && "text-text-muted")}>
+                   {currentModelLabel}
+                 </span>
+                 <ChevronDown 
+                  size={14} 
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" 
+                />
+              </div>
+
+              {aiDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto bg-surface border border-border rounded-lg shadow-lg">
+                   <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setAiModel('');
+                        setAiDropdownOpen(false);
+                        saveSettings({ aiModel: '' });
+                      }}
+                      className={clsx(
+                        "w-full text-left px-3 py-2 text-sm hover:bg-primary/20 transition-colors",
+                        aiModel === '' ? "bg-primary/10 text-primary" : "text-text-main"
+                      )}
+                    >
+                      <span className="font-medium">None</span>
+                    </button>
+                  {allModels.map(m => (
+                    <button
+                      key={m.value}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setAiModel(m.value);
+                        setAiDropdownOpen(false);
+                        saveSettings({ aiModel: m.value });
+                      }}
+                      className={clsx(
+                        "w-full text-left px-3 py-2 text-sm hover:bg-primary/20 transition-colors",
+                        aiModel === m.value ? "bg-primary/10 text-primary" : "text-text-main"
+                      )}
+                    >
+                      <span className="font-medium">{m.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-text-main mb-2">
+          <div className="flex items-center justify-between">
+            <label className="flex items-center text-sm font-medium text-text-main">
               History Max Count
-              <span className="text-text-muted text-xs ml-2">(100 - 50000)</span>
+              <InfoIcon title="History Max Count (100 - 50000)" />
             </label>
             <div className="flex items-center gap-2">
+              <button
+                onClick={handleTrimHistory}
+                className="w-28 px-3 py-2 text-sm bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 rounded-lg transition-colors text-center"
+              >
+                Trim Now
+              </button>
               <input
                 type="number"
                 min={100}
@@ -543,23 +592,24 @@ export function TerminalSettings() {
                 value={historyMaxCount}
                 onChange={(e) => handleHistoryMaxCountChange(Number(e.target.value))}
                 onBlur={() => saveSettings()}
-                className="w-32 bg-surface text-text-main text-sm rounded-lg py-2 px-3 border border-border focus:border-primary outline-none"
+                className="w-32 bg-surface text-text-main text-sm rounded-lg py-2 px-3 border border-border focus:border-primary outline-none text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
-              <button
-                onClick={handleTrimHistory}
-                className="px-3 py-2 text-sm bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 rounded-lg transition-colors"
-              >
-                Trim Now
-              </button>
             </div>
-            <p className="text-xs text-text-muted mt-1">Maximum number of commands to keep in history.</p>
           </div>
 
-          <div className="border-t border-border pt-4 mt-4">
-            <h3 className="text-sm font-medium text-text-main mb-3">Auto Cleanup</h3>
-            <div className="flex items-end gap-4 mb-3">
-              <div>
-                <label className="block text-xs text-text-muted mb-1">Min Score Threshold</label>
+          <div>
+             <div className="flex items-center justify-between">
+               <label className="flex items-center text-sm font-medium text-text-main">
+                  Auto Cleanup
+                  <InfoIcon title="Removes commands and directories with usage count ≤ the threshold value. Favorite commands are preserved regardless of score." />
+               </label>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCleanup}
+                  className="w-28 px-3 py-2 text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-lg transition-colors text-center"
+                >
+                  Cleanup Now
+                </button>
                 <input
                   type="number"
                   min={1}
@@ -567,21 +617,10 @@ export function TerminalSettings() {
                   value={minScore}
                   onChange={(e) => setMinScore(Number(e.target.value))}
                   onBlur={() => saveSettings()}
-                  className="w-20 bg-surface text-text-main text-sm rounded-lg py-2 px-3 border border-border focus:border-primary outline-none"
+                  className="w-32 bg-surface text-text-main text-sm rounded-lg py-2 px-3 border border-border focus:border-primary outline-none text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
-              <button
-                onClick={handleCleanup}
-                className="px-4 py-2 text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-lg transition-colors"
-              >
-                Cleanup Now
-              </button>
             </div>
-            <p className="text-xs text-text-muted leading-relaxed">
-              Removes commands and directories with usage count ≤ the threshold value.<br />
-              Favorite commands are preserved regardless of score.<br />
-              This action cannot be undone.
-            </p>
           </div>
         </div>
       )}

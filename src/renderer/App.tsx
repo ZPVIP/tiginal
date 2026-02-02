@@ -86,7 +86,23 @@ export default function App() {
           let newChatRatio = (availableWidth - mouseX) / availableWidth;
           
           // Constraints: Min 20% each
-          newChatRatio = Math.max(0.2, Math.min(0.8, newChatRatio));
+          let maxRatio = 0.8;
+
+          // Special constraint for Settings tab: Min 896px width (56rem = max-w-4xl)
+          // 896px = 256px Sidebar (w-64) + 640px Content (min-w-[40rem])
+          if (activeTab === 'settings') {
+             const minSettingsWidth = 896;
+             // Calculate max chat ratio that leaves at least 640px for settings
+             // LeftPaneWidth = availableWidth * (1 - ratio)
+             // availableWidth * (1 - ratio) >= 640
+             // 1 - ratio >= 640 / availableWidth
+             // ratio <= 1 - (640 / availableWidth)
+             const constraintMax = 1 - (minSettingsWidth / availableWidth);
+             // Use the tighter of 0.8 or the pixel constraint, but allow at least 0.2 (20%) just in case window is tiny
+             maxRatio = Math.min(0.8, Math.max(0.2, constraintMax));
+          }
+
+          newChatRatio = Math.max(0.2, Math.min(maxRatio, newChatRatio));
           
           setChatRatio(newChatRatio);
       };
