@@ -10,7 +10,7 @@ interface EmptyStateProps {
 export function EmptyState({ models, selectedModel, onModelSelect }: EmptyStateProps) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-500">
-      <p className="text-gray-400 max-w-md mb-8">
+      <p className="text-text-muted max-w-md mb-8">
           What’s on your mind today?
       </p>
     </div>

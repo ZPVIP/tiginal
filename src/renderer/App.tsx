@@ -6,7 +6,7 @@ import { Chat } from './components/Chat/Chat';
 import { TerminalView } from './components/Terminal/TerminalView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-const SSHView = () => <div className="p-4 text-gray-400">SSH Servers (Placeholder)</div>;
+const SSHView = () => <div className="p-4 text-text-muted">SSH Servers (Placeholder)</div>;
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'terminal' | 'ssh' | 'settings'>('terminal');

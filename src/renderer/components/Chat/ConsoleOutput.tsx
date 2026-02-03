@@ -22,7 +22,7 @@ export function ConsoleOutput({ content, className }: ConsoleOutputProps) {
   return (
     <div className={clsx(
       "font-mono text-[10px] leading-tight",
-      "bg-[#1e1e1e] text-gray-300", 
+      "bg-surface text-text-main", 
       "p-2 rounded-md my-2",
       // Adaptive height: max-height roughly 15 lines (15 * 1.25em + padding)
       "max-h-[205px] overflow-y-auto custom-scrollbar",

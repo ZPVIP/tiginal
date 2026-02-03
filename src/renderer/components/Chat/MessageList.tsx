@@ -71,9 +71,9 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
                                     <div className="rounded-lg bg-[#1e1e1e] border border-white/10 overflow-hidden">
                                         {/* Status Header */}
                                         <div className="flex items-center justify-between p-2 pl-3 bg-white/5 border-b border-white/5">
-                                            <div className="flex items-center gap-2 text-xs text-gray-400">
+                                            <div className="flex items-center gap-2 text-xs text-text-muted">
                                                 <span>Tool Execution:</span>
-                                                <span className="font-mono text-gray-200">{msg.approvalData.name}</span>
+                                                <span className="font-mono text-text-main">{msg.approvalData.name}</span>
                                             </div>
                                             <span className={`font-bold uppercase text-[10px] tracking-wider px-2 py-0.5 rounded ${
                                                 msg.approvalData.status.includes('approved') 
@@ -101,7 +101,7 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
                                         )}
 
                                         {/* Command / Input Details */}
-                                        <div className="p-3 font-mono text-xs text-gray-300 whitespace-pre-wrap overflow-x-auto bg-black/20">
+                                        <div className="p-3 font-mono text-xs text-text-sec whitespace-pre-wrap overflow-x-auto bg-black/20">
                                             {msg.approvalData.command}
                                         </div>
                                     </div>

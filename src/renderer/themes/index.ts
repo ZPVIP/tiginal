@@ -6,22 +6,21 @@ export interface Theme {
   type: 'dark' | 'light';
   colors: {
     // UI Colors (mapped to CSS variables)
-    background: string;       // --bg-primary
+    // Note: background and text are derived from terminal.background and terminal.foreground
     surface: string;          // --bg-secondary
     sidebar: string;          // --bg-tertiary
     elevated: string;         // --bg-elevated
     border: string;           // --border-color
-    text: string;             // --text-primary
     textSecondary: string;    // --text-secondary
     textMuted: string;        // --text-muted
     primary: string;          // --accent-primary
-    
+
     // Additional UI specific
     tabActive: string;        // --tab-active
     tabHover: string;         // --tab-hover
     splitBorderActive: string; // --split-border-active
   };
-  terminal: XtermTheme; // Direct xterm theme object
+  terminal: XtermTheme; // Direct xterm theme object - background and foreground are the source of truth
 }
 
 export const themes: Theme[] = [
@@ -30,12 +29,10 @@ export const themes: Theme[] = [
     name: 'Tiginal Dark',
     type: 'dark',
     colors: {
-      background: '#1e1e2e',
       surface: '#181825',
       sidebar: '#11111b',
       elevated: '#313244',
       border: '#313244',
-      text: '#cdd6f4',
       textSecondary: '#a6adc8',
       textMuted: '#6c7086',
       primary: '#89b4fa',
@@ -73,12 +70,10 @@ export const themes: Theme[] = [
     name: 'VS Code Dark',
     type: 'dark',
     colors: {
-      background: '#1e1e1e',
-      surface: '#252526',
+      surface: '#14191f',
       sidebar: '#333333',
       elevated: '#3c3c3c',
-      border: '#454545',
-      text: '#d4d4d4',
+      border: '#222222',
       textSecondary: '#cccccc',
       textMuted: '#858585',
       primary: '#007acc',
@@ -87,8 +82,8 @@ export const themes: Theme[] = [
       splitBorderActive: '#007acc',
     },
     terminal: {
-      background: '#1e1e1e',
-      foreground: '#d4d4d4',
+      background: '#14191f',
+      foreground: '#dcdcdc',
       cursor: '#cccccc',
       selectionBackground: '#264f78',
       black: '#000000',
@@ -114,12 +109,10 @@ export const themes: Theme[] = [
     name: 'Monokai',
     type: 'dark',
     colors: {
-      background: '#272822',
       surface: '#1e1f1c',
       sidebar: '#171714',
       elevated: '#3e3d32',
       border: '#49483e',
-      text: '#f8f8f2',
       textSecondary: '#cfcfc2',
       textMuted: '#75715e',
       primary: '#a6e22e',
@@ -155,12 +148,10 @@ export const themes: Theme[] = [
     name: 'Tokyo Night',
     type: 'dark',
     colors: {
-      background: '#1a1b26',
       surface: '#16161e',
       sidebar: '#16161e',
       elevated: '#292e42',
       border: '#414868',
-      text: '#c0caf5',
       textSecondary: '#a9b1d6',
       textMuted: '#565f89',
       primary: '#7aa2f7',
@@ -191,17 +182,15 @@ export const themes: Theme[] = [
       brightWhite: '#c0caf5',
     },
   },
-   {
+  {
     id: 'tokyo-night-storm',
     name: 'Tokyo Night Storm',
     type: 'dark',
     colors: {
-      background: '#24283b',
       surface: '#1f2335',
       sidebar: '#1f2335',
       elevated: '#292e42',
       border: '#414868',
-      text: '#c0caf5',
       textSecondary: '#a9b1d6',
       textMuted: '#565f89',
       primary: '#7aa2f7',
@@ -237,16 +226,14 @@ export const themes: Theme[] = [
     name: 'Tokyo Night Light',
     type: 'light',
     colors: {
-      background: '#d5d6db',
       surface: '#cbccd1',
       sidebar: '#cfc9c2',
       elevated: '#e1e2e7',
       border: '#9699a3',
-      text: '#343b58',
       textSecondary: '#565a6e',
       textMuted: '#9699a3',
       primary: '#34548a',
-      tabActive: '#cbccd1', 
+      tabActive: '#cbccd1',
       tabHover: '#e9e9ec',
       splitBorderActive: '#34548a',
     },
@@ -278,12 +265,10 @@ export const themes: Theme[] = [
     name: 'VS Code Light',
     type: 'light',
     colors: {
-      background: '#ffffff',
       surface: '#f3f3f3',
       sidebar: '#f3f3f3',
       elevated: '#ffffff',
       border: '#e7e7e7',
-      text: '#2c2c2c',
       textSecondary: '#6e6e6e',
       textMuted: '#808080',
       primary: '#007acc',
@@ -319,12 +304,10 @@ export const themes: Theme[] = [
     name: 'Visual Studio Light',
     type: 'light',
     colors: {
-      background: '#f6f6f6', // Typically slightly off-white in newer VS
-      surface: '#eaeff5',    // Slight bluish tint often seen in VS 2022 Blue theme which users associate with "Light"
+      surface: '#eaeff5',    // Slight bluish tint often seen in VS 2022 Blue theme
       sidebar: '#eaeff5',
       elevated: '#ffffff',
       border: '#d0d0d0',
-      text: '#1e1e1e',
       textSecondary: '#5a5a5a',
       textMuted: '#717171',
       primary: '#5d2b90',    // VS Purple
