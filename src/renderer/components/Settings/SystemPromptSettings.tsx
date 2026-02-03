@@ -69,6 +69,10 @@ export function SystemPromptSettings() {
     loadData();
   }, []);
 
+  const notifySystemPromptsUpdated = () => {
+    window.dispatchEvent(new Event('system-prompts-updated'));
+  };
+
   const loadData = async () => {
     setIsLoading(true);
     try {
@@ -126,6 +130,7 @@ export function SystemPromptSettings() {
     try {
       await invoke('system-prompts:toggle', id, isActive);
       setPrompts(prev => prev.map(p => p.id === id ? { ...p, isActive } : p));
+      notifySystemPromptsUpdated();
     } catch (err) {
       console.error('Failed to toggle prompt', err);
     }
@@ -136,6 +141,7 @@ export function SystemPromptSettings() {
     try {
       await invoke('system-prompts:set-dynamic-setting', key, value);
       setDynamicSettings(prev => ({ ...prev, [key]: value }));
+      notifySystemPromptsUpdated();
     } catch (err) {
       console.error('Failed to toggle dynamic setting', err);
     }
@@ -147,6 +153,7 @@ export function SystemPromptSettings() {
       await invoke('system-prompts:reset-defaults');
       await loadData();
       setShowResetModal(false);
+      notifySystemPromptsUpdated();
     } catch (err) {
       console.error('Failed to reset defaults', err);
     }
@@ -200,6 +207,7 @@ export function SystemPromptSettings() {
       }
       await loadData();
       setShowEditModal(false);
+      notifySystemPromptsUpdated();
     } catch (err: any) {
       setFormError(err.message || 'Failed to save prompt');
     }
@@ -211,6 +219,7 @@ export function SystemPromptSettings() {
     try {
       await invoke('system-prompts:delete', id);
       setPrompts(prev => prev.filter(p => p.id !== id));
+      notifySystemPromptsUpdated();
     } catch (err: any) {
       alert(err.message || 'Failed to delete prompt');
     }

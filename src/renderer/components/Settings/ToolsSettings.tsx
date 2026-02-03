@@ -84,6 +84,10 @@ export function ToolsSettings() {
     loadData();
   }, []);
 
+  const notifyToolsUpdated = () => {
+    window.dispatchEvent(new Event('tools-updated'));
+  };
+
   // Update expanded categories set when categories changes (initial load)
   useEffect(() => {
     const expanded = new Set<string>();
@@ -121,6 +125,7 @@ export function ToolsSettings() {
     ]);
     setTools(toolList || []);
     setCategories(catList || []);
+    notifyToolsUpdated();
   };
 
   // --- Helpers ---
@@ -147,6 +152,7 @@ export function ToolsSettings() {
   const handleModelChange = async (value: string) => {
     setSelectedToolModel(value);
     await invoke('tools:set-model', value);
+    notifyToolsUpdated();
   };
 
   // --- Handlers: Categories ---
@@ -234,6 +240,7 @@ export function ToolsSettings() {
   const handleToolToggle = async (id: string, enabled: boolean) => {
     await invoke('tools:toggle', id, enabled);
     setTools(prev => prev.map(t => t.id === id ? { ...t, enabled } : t));
+    notifyToolsUpdated();
   };
 
   const handleDeleteTool = async (id: string) => {
@@ -242,6 +249,7 @@ export function ToolsSettings() {
       await invoke('tools:delete', id);
       setTools(prev => prev.filter(t => t.id !== id));
       if (showToolDetailModal?.id === id) setShowToolDetailModal(null);
+      notifyToolsUpdated();
     } catch (err: any) {
       alert(err.message);
     }
@@ -300,6 +308,7 @@ export function ToolsSettings() {
         });
         setTools(prev => [...prev, tool]);
         setShowAddToolModal(false);
+        notifyToolsUpdated();
       } else if (showToolDetailModal) {
         // Edit Mode (Existing tool)
         // Check system constraints
@@ -325,6 +334,7 @@ export function ToolsSettings() {
         });
         refreshData();
         setShowToolDetailModal(null);
+        notifyToolsUpdated();
       }
     } catch (err: any) {
       setToolError(err.message);

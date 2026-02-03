@@ -60,6 +60,16 @@ export function HistoryPanel({ isOpen, onClose, onSelectConversation }: HistoryP
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleSettingsUpdate = () => {
+      loadSettings();
+      loadConversations();
+    };
+    window.addEventListener('settings-general-updated', handleSettingsUpdate);
+    return () => window.removeEventListener('settings-general-updated', handleSettingsUpdate);
+  }, [isOpen]);
+
   const loadSettings = async () => {
     try {
       const savedDateFormat = await invoke('settings:get', 'dateFormat');

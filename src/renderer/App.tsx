@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare, Check, Copy } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Settings } from './components/Settings/Settings';
+import { SettingsModal } from './components/Settings/SettingsModal';
 import { Chat } from './components/Chat/Chat';
 import { TerminalView } from './components/Terminal/TerminalView';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -9,7 +9,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 const SSHView = () => <div className="p-4 text-text-muted">SSH Servers (Placeholder)</div>;
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'terminal' | 'ssh' | 'settings'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'ssh'>('terminal');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // Layout State
   const [showTerminal, setShowTerminal] = useState(true);
@@ -88,20 +89,6 @@ export default function App() {
           // Constraints: Min 20% each
           let maxRatio = 0.8;
 
-          // Special constraint for Settings tab: Min 896px width (56rem = max-w-4xl)
-          // 896px = 256px Sidebar (w-64) + 640px Content (min-w-[40rem])
-          if (activeTab === 'settings') {
-             const minSettingsWidth = 896;
-             // Calculate max chat ratio that leaves at least 640px for settings
-             // LeftPaneWidth = availableWidth * (1 - ratio)
-             // availableWidth * (1 - ratio) >= 640
-             // 1 - ratio >= 640 / availableWidth
-             // ratio <= 1 - (640 / availableWidth)
-             const constraintMax = 1 - (minSettingsWidth / availableWidth);
-             // Use the tighter of 0.8 or the pixel constraint, but allow at least 0.2 (20%) just in case window is tiny
-             maxRatio = Math.min(0.8, Math.max(0.2, constraintMax));
-          }
-
           newChatRatio = Math.max(0.2, Math.min(maxRatio, newChatRatio));
           
           setChatRatio(newChatRatio);
@@ -153,7 +140,7 @@ export default function App() {
      }
   };
   
-  const handleNavClick = (id: 'terminal' | 'ssh' | 'settings') => {
+  const handleNavClick = (id: 'terminal' | 'ssh') => {
       setActiveTab(id);
       // Ensure terminal panel is visible if we click a nav item intended for it
       if (!showTerminal) {
@@ -256,10 +243,9 @@ export default function App() {
                 id="settings" 
                 icon={SettingsIcon} 
                 title="Settings" 
-                isActive={showTerminal && activeTab === 'settings'}
+                isActive={isSettingsOpen}
                 onClick={() => {
-                    handleNavClick('settings');
-                    if (activeTab === 'settings') toggleTerminal(); 
+                    setIsSettingsOpen(true);
                 }}
                 />
             </div>
@@ -284,7 +270,6 @@ export default function App() {
                     <TerminalView onActivePathChange={setActiveTerminalPath} />
                 </div>
                 {activeTab === 'ssh' && <SSHView />}
-                {activeTab === 'settings' && <Settings />}
              </div>
 
              {/* Resizer */}
@@ -326,6 +311,11 @@ export default function App() {
           {isResizing && (
               <div className="absolute inset-0 z-50 cursor-col-resize" />
           )}
+
+          <SettingsModal 
+            isOpen={isSettingsOpen} 
+            onClose={() => setIsSettingsOpen(false)} 
+          />
         </div>
     </ErrorBoundary>
   );

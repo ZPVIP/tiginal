@@ -40,6 +40,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
     checkGlobalSettings();
   }, [showTools, showSystemPrompts]); // Re-check when popovers toggle (closed)
 
+  useEffect(() => {
+    const handleSettingsUpdate = () => checkGlobalSettings();
+    window.addEventListener('tools-updated', handleSettingsUpdate);
+    window.addEventListener('system-prompts-updated', handleSettingsUpdate);
+    return () => {
+      window.removeEventListener('tools-updated', handleSettingsUpdate);
+      window.removeEventListener('system-prompts-updated', handleSettingsUpdate);
+    };
+  }, []);
+
   const checkGlobalSettings = async () => {
     try {
       if (window.electron?.invoke) {

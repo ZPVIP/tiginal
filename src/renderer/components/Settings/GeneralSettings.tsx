@@ -95,16 +95,19 @@ export function GeneralSettings() {
   const handleSearchChange = async (val: string) => {
     setSearchProvider(val);
     await invoke('settings:set', 'searchProvider', val);
+    window.dispatchEvent(new CustomEvent('settings-general-updated', { detail: { key: 'searchProvider', value: val } }));
   };
 
   const handleDateFormatChange = async (val: string) => {
     setDateFormat(val);
     await invoke('settings:set', 'dateFormat', val);
+    window.dispatchEvent(new CustomEvent('settings-general-updated', { detail: { key: 'dateFormat', value: val } }));
   };
 
   const handleHistorySortChange = async (val: string) => {
     setHistorySort(val);
     await invoke('settings:set', 'historySort', val);
+    window.dispatchEvent(new CustomEvent('settings-general-updated', { detail: { key: 'historySort', value: val } }));
   };
 
   const handleSelectWorkspace = async () => {
