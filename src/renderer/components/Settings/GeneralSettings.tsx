@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Lock, Unlock, Globe, KeyRound, Calendar, ArrowUpDown, MessageSquare, FolderOpen, RotateCcw } from 'lucide-react';
+import { Lock, Unlock, Globe, KeyRound, Calendar, ArrowUpDown, FolderOpen } from 'lucide-react';
 import { clsx } from 'clsx';
 
 // Interface for IPC calls
@@ -35,15 +35,9 @@ export function GeneralSettings() {
   const [dateFormat, setDateFormat] = useState('iso');
   const [historySort, setHistorySort] = useState('updatedAt');
   
-  // System Prompt State
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [promptSaveStatus, setPromptSaveStatus] = useState<'saved' | 'saving' | 'idle'>('idle');
-  
   // Workspace State
   const [workspacePath, setWorkspacePath] = useState('');
-  
-  // Reset prompt confirmation modal
-  const [showResetModal, setShowResetModal] = useState(false);
+
   
   useEffect(() => {
     loadStatus();
@@ -59,7 +53,6 @@ export function GeneralSettings() {
       const savedDateFormat = await invoke('settings:get', 'dateFormat');
       const savedHistorySort = await invoke('settings:get', 'historySort');
       const savedSearchProvider = await invoke('settings:get', 'searchProvider');
-      const savedSystemPrompt = await invoke('settings:get', 'systemPrompt');
       const savedWorkspace = await invoke('workspace:get-path');
 
       setIsUnlocked(unlocked);
@@ -69,7 +62,6 @@ export function GeneralSettings() {
       if (savedDateFormat) setDateFormat(savedDateFormat);
       if (savedHistorySort) setHistorySort(savedHistorySort);
       if (savedSearchProvider) setSearchProvider(savedSearchProvider);
-      if (savedSystemPrompt) setSystemPrompt(savedSystemPrompt);
       if (savedWorkspace) setWorkspacePath(savedWorkspace);
     } catch (err) {
       console.error("Failed to load settings status", err);
@@ -115,39 +107,11 @@ export function GeneralSettings() {
     await invoke('settings:set', 'historySort', val);
   };
 
-  // Debounced save for system prompt
-  const savePromptTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-  
-  const handleSystemPromptChange = (val: string) => {
-    setSystemPrompt(val);
-    setPromptSaveStatus('saving');
-    
-    if (savePromptTimeoutRef.current) {
-      clearTimeout(savePromptTimeoutRef.current);
-    }
-    
-    savePromptTimeoutRef.current = setTimeout(async () => {
-      await invoke('settings:set', 'systemPrompt', val);
-      setPromptSaveStatus('saved');
-      setTimeout(() => setPromptSaveStatus('idle'), 1500);
-    }, 500);
-  };
-
   const handleSelectWorkspace = async () => {
     const selected = await invoke('workspace:open-dialog');
     if (selected) {
       await invoke('workspace:set-path', selected);
       setWorkspacePath(selected);
-    }
-  };
-
-  const handleResetPrompt = async () => {
-    try {
-      const newPrompt = await invoke('settings:reset-system-prompt') as string;
-      setSystemPrompt(newPrompt);
-      setShowResetModal(false);
-    } catch (err) {
-      console.error('Failed to reset system prompt', err);
     }
   };
 
@@ -319,52 +283,6 @@ export function GeneralSettings() {
         </div>
       </section>
 
-      {/* System Prompt Settings */}
-      <section className="space-y-4">
-        <h3 className="text-xl font-semibold flex items-center gap-2 text-text-main">
-          <MessageSquare className="w-5 h-5 text-cyan-400" />
-          System Prompt
-        </h3>
-        <p className="text-sm text-text-muted">
-          Customize the system prompt for AI. This text is prepended to every conversation.
-        </p>
-
-        <div className="bg-surface border border-border rounded-lg p-6">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-text-sec">System Message</label>
-              <div className="flex items-center gap-2">
-                <span className={clsx(
-                  "text-xs transition-opacity",
-                  promptSaveStatus === 'saving' && "text-yellow-400",
-                  promptSaveStatus === 'saved' && "text-green-400",
-                  promptSaveStatus === 'idle' && "opacity-0"
-                )}>
-                  {promptSaveStatus === 'saving' ? 'Saving...' : promptSaveStatus === 'saved' ? 'Saved' : ''}
-                </span>
-                <button
-                  onClick={() => setShowResetModal(true)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-surface hover:bg-surface-light border border-border rounded transition-colors text-text-muted hover:text-text-main"
-                >
-                  <RotateCcw size={12} />
-                  Reset
-                </button>
-              </div>
-            </div>
-            <textarea
-              value={systemPrompt}
-              onChange={(e) => handleSystemPromptChange(e.target.value)}
-              placeholder="You are a helpful AI assistant..."
-              rows={6}
-              className="w-full bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary p-3 resize-y min-h-[100px]"
-            />
-            <p className="text-xs text-text-muted">
-              Supports Markdown format. Leave empty to use model default.
-            </p>
-          </div>
-        </div>
-      </section>
-
       {/* Workspace Directory Settings */}
       <section className="space-y-4">
         <h3 className="text-xl font-semibold flex items-center gap-2 text-text-main">
@@ -396,36 +314,6 @@ export function GeneralSettings() {
           </p>
         </div>
       </section>
-
-      {/* Reset System Prompt Confirmation Modal */}
-      {showResetModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-surface border border-border rounded-xl w-full max-w-md mx-4 shadow-xl">
-            <div className="px-6 py-4 border-b border-border">
-              <h3 className="text-lg font-semibold text-text-main">Reset System Prompt</h3>
-            </div>
-            <div className="p-6">
-              <p className="text-text-muted">
-                This will overwrite your current system prompt with the default. This action cannot be undone.
-              </p>
-            </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-border">
-              <button
-                onClick={() => setShowResetModal(false)}
-                className="px-4 py-2 text-sm bg-background hover:bg-surface-light border border-border rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleResetPrompt}
-                className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors"
-              >
-                Reset to Default
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

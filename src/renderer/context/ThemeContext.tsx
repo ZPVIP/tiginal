@@ -63,12 +63,13 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     const root = document.documentElement;
     
     // Apply CSS variables
-    root.style.setProperty('--bg-primary', theme.colors.background);
+    // background and text are sourced from terminal config for consistency
+    root.style.setProperty('--bg-primary', theme.terminal.background as string);
     root.style.setProperty('--bg-secondary', theme.colors.surface);
     root.style.setProperty('--bg-tertiary', theme.colors.sidebar);
     root.style.setProperty('--bg-elevated', theme.colors.elevated);
     root.style.setProperty('--border-color', theme.colors.border);
-    root.style.setProperty('--text-primary', theme.colors.text);
+    root.style.setProperty('--text-primary', theme.terminal.foreground as string);
     root.style.setProperty('--text-secondary', theme.colors.textSecondary);
     root.style.setProperty('--text-muted', theme.colors.textMuted);
     root.style.setProperty('--accent-primary', theme.colors.primary);

@@ -15,6 +15,7 @@ interface AIProvider {
 import { getCopilotToken } from './services/ai/CopilotAuthService';
 import { printRequestEndSeparator, printRequestStartSeparator, printRespondEndSeparator, printRespondStartSeparator, printVisualSeparator } from './utils/DebugUtils';
 import { fetchWithLocalhostFallback } from './utils/NetworkUtils';
+import { buildDynamicPromptsForAI } from './dynamic-prompts';
 
 interface LogAccumulator {
     id?: string;
@@ -29,6 +30,9 @@ interface LogAccumulator {
 
 // Module-level state for tool approvals
 const pendingToolApprovals = new Map<string, (result: { approved: boolean; approvedAll: boolean }) => void>();
+
+// Module-level state for stream abort controllers
+const activeStreamControllers = new Map<string, AbortController>();
 
 // Tool Definitions
 const TOOL_SEARCH_DEF = {
@@ -165,6 +169,15 @@ export function setupChatHandlers(): void {
       if (resolver) {
           resolver({ approved, approvedAll });
           pendingToolApprovals.delete(toolCallId);
+      }
+  });
+
+  // Stop stream (User clicked Stop button)
+  ipcMain.handle('chat:stop-stream', async (_event, conversationId: string): Promise<void> => {
+      const controller = activeStreamControllers.get(conversationId);
+      if (controller) {
+          controller.abort();
+          activeStreamControllers.delete(conversationId);
       }
   });
 
@@ -410,7 +423,8 @@ async function streamAIAPI(
   autoCORSFix: boolean = true,
   tools: Array<{ name: string; description: string; input_schema: object }> = [],
   onChunk: (data: { content?: string; reasoning?: string }) => void,
-  onToolCall?: (data: { id: string; name: string; input: any }) => void | Promise<void>
+  onToolCall?: (data: { id: string; name: string; input: any }) => void | Promise<void>,
+  abortSignal?: AbortSignal
 ): Promise<void> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -484,8 +498,14 @@ async function streamAIAPI(
         method: 'POST',
         headers,
         body: JSON.stringify(bodyPayload),
+        signal: abortSignal,
     });
   } catch (error: any) {
+      // Handle abort
+      if (error.name === 'AbortError') {
+          onChunk({ content: '\n\n*[Generation stopped]*' });
+          return;
+      }
       // Handle Network Errors (like Offline)
       console.error('Fetch Error:', error);
       
@@ -582,6 +602,13 @@ async function streamAIAPI(
 
   try {
     while (true) {
+        // Check if aborted
+        if (abortSignal?.aborted) {
+            reader.cancel();
+            onChunk({ content: '\n\n*[Generation stopped]*' });
+            break;
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -596,15 +623,18 @@ async function streamAIAPI(
         }
     }
     
-    // Process remaining buffer
-    if (buffer.trim()) {
+    // Process remaining buffer (only if not aborted)
+    if (buffer.trim() && !abortSignal?.aborted) {
         processLine(buffer, onChunk, toolCallAccumulator, logAccumulator);
     }
 
-    // Finalize any pending tool calls after stream ends
-    if (onToolCall) {
+    // Finalize any pending tool calls after stream ends (only if not aborted)
+    if (onToolCall && !abortSignal?.aborted) {
         const toolsToCall = Object.values(toolCallAccumulator);
         for (const tool of toolsToCall) {
+            // Check abort before each tool call
+            if (abortSignal?.aborted) break;
+            
             try {
                 if (tool.name && tool.arguments) {
                      const input = JSON.parse(tool.arguments);
@@ -653,23 +683,52 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     chatService.addMessage(conversationId, 'user', content);
     const dbMessages = chatService.getMessages(conversationId);
     
-    // Construct System Prompt
-    const useSystemPrompt = options?.useSystemPrompt !== false;
-    const baseSystemPrompt = useSystemPrompt ? (dbService.getSetting('systemPrompt') || '') : '';
+    // Construct System Prompt from system_prompts table
+    // Check global system prompts switch from database
+    const globalSystemPromptsVal = dbService.getSetting('systemPromptsGlobalEnabled');
+    const useSystemPrompt = globalSystemPromptsVal !== 'false'; // Default to true
     
-    const dateStr = new Date().toLocaleDateString('en-CA');
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const dateInfo = `\n\nIMPORTANT - Today's date is ${dateStr} (timezone: ${timezone}).`;
+    // Check category switches
+    const defaultCategoryVal = dbService.getSetting('systemPromptsDefaultEnabled');
+    const customCategoryVal = dbService.getSetting('systemPromptsCustomEnabled');
+    const defaultCategoryEnabled = defaultCategoryVal !== 'false'; // Default to true
+    const customCategoryEnabled = customCategoryVal !== 'false'; // Default to true
     
-    let workspacePath = dbService.getSetting('workspacePath');
-    if (!workspacePath) {
-        const os = require('os');
-        const path = require('path');
-        workspacePath = process.platform === 'win32' 
-            ? path.join(process.env.APPDATA || os.homedir(), 'Tiginal', 'workspaces')
-            : path.join(os.homedir(), '.config', 'tiginal', 'workspaces');
+    let baseSystemPrompt = '';
+    
+    if (useSystemPrompt) {
+        try {
+            // Get enabled system prompts from database
+            const promptRows = db.prepare(`
+                SELECT title, content, is_default FROM system_prompts 
+                WHERE is_active = 1 
+                ORDER BY rank ASC
+            `).all() as { title: string; content: string; is_default: number }[];
+            
+            // Filter by category switches
+            const filteredRows = promptRows.filter(r => {
+                if (r.is_default === 1) {
+                    return defaultCategoryEnabled;
+                } else {
+                    return customCategoryEnabled;
+                }
+            });
+            
+            baseSystemPrompt = filteredRows.map(r => {
+                // For custom prompts (is_default = 0), include title as a header
+                if (r.is_default === 0) {
+                    return `[${r.title}]\n${r.content}`;
+                }
+                // For default prompts, just use content (title is already descriptive in content)
+                return r.content;
+            }).join('\n\n');
+        } catch (e) {
+            console.error('Failed to load system prompts', e);
+        }
     }
-    const wdInfo = `\n\nWORKING DIRECTORY - Your current working directory is: ${workspacePath}.`;
+
+    // Dynamic prompts (from shared module)
+    const dynamicPrompts = useSystemPrompt ? buildDynamicPromptsForAI(dbService) : '';
     
     let skillsInfo = '';
     // Load skills info if requested (for prompt context)
@@ -692,10 +751,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     const systemMessage = { 
         role: 'system', 
         content: useSystemPrompt 
-           ? baseSystemPrompt + dateInfo + wdInfo + skillsInfo 
-           : '' + skillsInfo  // Keep skills info if enabled via separate switch, or should it also be hidden? 
-                              // User complaint specifically cited date/wd info. Skills are separate toggle usually.
-                              // Let's assume options.useSkills controls skillsInfo separately.
+           ? baseSystemPrompt + dynamicPrompts + skillsInfo 
+           : '' + skillsInfo
     };
 
     // Current conversation context (will grow with tool calls)
@@ -735,6 +792,10 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     let turnCount = 0;
     let allowAllOverride = false; // Session-based allow all
 
+    // Create AbortController for this conversation
+    const abortController = new AbortController();
+    activeStreamControllers.set(conversationId, abortController);
+
     // AGENT LOOP
     while (turnCount < MAX_TURNS) {
         turnCount++;
@@ -745,6 +806,11 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
             if (process.env.NODE_ENV !== 'production') {
                 printRequestStartSeparator();
             }
+            // Check if already aborted
+            if (abortController.signal.aborted) {
+                break;
+            }
+
             await streamAIAPI(
                 provider.type as 'openai-compatible' | 'copilot',
                 provider.endpoint || 'https://api.openai.com/v1',
@@ -976,7 +1042,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                     // if (toolCall.name !== 'ToolSearch' && toolCall.name !== 'AttemptCompletion') {
                     //      _event.sender.send('chat:chunk', { conversationId, content: `\n\n\`\`\`\n${resultStr.slice(0, 500)}${resultStr.length > 500 ? '...' : ''}\n\`\`\`\n` });
                     // }
-                }
+                },
+                abortController.signal
             );
 
             if (!toolCallOccurred) {
@@ -995,12 +1062,25 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                  // Friendly error was already streamed to UI.
                  // We return success here so the UI finishes loading state.
                  // We do NOT save this to DB (by returning early before chatService.addMessage).
+                 activeStreamControllers.delete(conversationId);
+                 return { response: finalResponse };
+            }
+            if (err.name === 'AbortError' || abortController.signal.aborted) {
+                 // Stream was stopped by user
+                 activeStreamControllers.delete(conversationId);
+                 if (finalResponse) {
+                     chatService.addMessage(conversationId, 'assistant', finalResponse);
+                 }
                  return { response: finalResponse };
             }
             console.error('Agent loop error', err);
+            activeStreamControllers.delete(conversationId);
             return { response: finalResponse, error: (err as Error).message };
         }
     }
+
+    // Clean up AbortController
+    activeStreamControllers.delete(conversationId);
 
     // Save final response (accumulated) to DB
     // Note: The intermediate chunks were already sent to UI. 
@@ -1042,7 +1122,7 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
         if (!provider) return [];
         
         const crypto = getCrypto();
-        let apiKey = null;
+        let apiKey: string | null = null;
         if (provider.api_key_encrypted && crypto.isUnlocked()) {
              try { apiKey = crypto.decrypt(provider.api_key_encrypted); } catch {}
         }

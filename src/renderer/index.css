@@ -15,7 +15,7 @@
 
 @layer base {
   body {
-    @apply bg-background text-gray-100 h-screen w-screen overflow-hidden font-sans;
+    @apply bg-background text-text-main h-screen w-screen overflow-hidden font-sans;
   }
   
   /* Globally disable focus rings/borders that might look yellow */
@@ -25,6 +25,32 @@
     /* Ensure border color doesn't shift to accent if not desired, 
        though specific classes might override this. */
   }
+  
+}
+
+/* Override prose typography colors to use theme variables */
+.prose,
+.prose-invert {
+  color: var(--text-primary) !important;
+}
+
+.prose p,
+.prose li,
+.prose blockquote,
+.prose-invert p,
+.prose-invert li,
+.prose-invert blockquote {
+  color: var(--text-primary);
+}
+
+.prose strong,
+.prose-invert strong {
+  color: var(--text-primary);
+}
+
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6,
+.prose-invert h1, .prose-invert h2, .prose-invert h3, .prose-invert h4, .prose-invert h5, .prose-invert h6 {
+  color: var(--text-primary);
 }
 
 /* Custom scrollbar to match terminal aesthetic */

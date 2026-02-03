@@ -104,8 +104,8 @@ export function HistoryPanel({ isOpen, onClose, onSelectConversation }: HistoryP
     <div className="absolute inset-0 bg-background/95 backdrop-blur-sm z-40 flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border">
-        <h2 className="text-lg font-semibold text-white">Chat History</h2>
-        <button onClick={onClose} className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg">
+        <h2 className="text-lg font-semibold text-text-main">Chat History</h2>
+        <button onClick={onClose} className="p-2 text-text-muted hover:text-text-main hover:bg-white/10 rounded-lg">
           <X size={20} />
         </button>
       </div>
@@ -120,7 +120,7 @@ export function HistoryPanel({ isOpen, onClose, onSelectConversation }: HistoryP
           >
             <ChevronLeft size={16} />
           </button>
-          <span className="text-gray-300">
+          <span className="text-text-sec">
             Page {page + 1} of {totalPages}
           </span>
           <button 
@@ -147,13 +147,13 @@ export function HistoryPanel({ isOpen, onClose, onSelectConversation }: HistoryP
                 onClick={() => onSelectConversation(conv.id)}
                 className="flex items-start gap-3 p-3 rounded-lg hover:bg-white/5 cursor-pointer group"
               >
-                <MessageSquare size={16} className="text-gray-500 shrink-0 mt-1" />
+                <MessageSquare size={16} className="text-text-muted shrink-0 mt-1" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-gray-200 truncate mb-1.5">
+                  <div className="text-sm text-text-main truncate mb-1.5">
                     {conv.title || 'Untitled Conversation'}
                   </div>
                   {/* Two dates with icons - monospace */}
-                  <div className="flex flex-col gap-0.5 text-xs font-mono text-gray-500">
+                  <div className="flex flex-col gap-0.5 text-xs font-mono text-text-muted">
                     <div className="flex items-center gap-1.5">
                       <Calendar size={10} className="shrink-0" />
                       <span>Created: {formatDate(conv.createdAt, dateFormat)}</span>
@@ -166,7 +166,7 @@ export function HistoryPanel({ isOpen, onClose, onSelectConversation }: HistoryP
                 </div>
                 <button
                   onClick={(e) => handleDelete(conv.id, e)}
-                  className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="p-1.5 text-text-muted hover:text-red-400 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <Trash2 size={14} />
                 </button>

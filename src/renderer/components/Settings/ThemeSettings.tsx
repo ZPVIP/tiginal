@@ -44,7 +44,7 @@ function ThemeCard({ theme, isActive, onClick }: { theme: Theme, isActive: boole
       )}
     >
       {/* Mini Preview */}
-      <div className="h-24 w-full flex" style={{ backgroundColor: theme.colors.background }}>
+      <div className="h-24 w-full flex" style={{ backgroundColor: theme.terminal.background }}>
          {/* Sidebar Preview */}
          <div className="w-8 h-full flex flex-col gap-2 items-center pt-2 border-r" style={{ backgroundColor: theme.colors.sidebar, borderColor: theme.colors.border }}>
             <div className="w-4 h-4 rounded bg-[color:var(--text-muted)] opacity-20" />

@@ -1,5 +1,6 @@
 :root {
-  --bg-primary: #1e1e2e;
+  /* These defaults match tiginal-dark theme's terminal colors */
+  --bg-primary: #181825;
   --bg-secondary: #181825;
   --bg-tertiary: #11111b;
   --bg-elevated: #313244;

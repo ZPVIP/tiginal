@@ -164,7 +164,7 @@ export function MessageBubble({ role, content, reasoning, images, onEdit }: Mess
 
        {/* Content */}
        <div className={clsx("flex-1 min-w-0 space-y-2", isUser && "flex flex-col items-end")}>
-           <div className={clsx("font-medium text-sm text-gray-400 flex items-center gap-2", isUser && "flex-row-reverse text-right")}>
+           <div className={clsx("font-medium text-sm text-text-sec flex items-center gap-2", isUser && "flex-row-reverse text-right")}>
                <span>{isUser ? 'You' : 'Tigi'}</span>
            </div>
 
@@ -178,7 +178,7 @@ export function MessageBubble({ role, content, reasoning, images, onEdit }: Mess
            )}
 
            <div ref={contentRef} className={clsx(
-               "prose prose-invert max-w-none text-sm leading-relaxed break-words",
+               "prose prose-invert max-w-none text-sm leading-relaxed break-words text-text-main",
                 isUser 
                   ? "bg-surface/50 px-4 py-3 rounded-2xl rounded-tr-sm border border-border" 
                   : "bg-transparent pl-0"

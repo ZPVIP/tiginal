@@ -45,19 +45,9 @@ if (process.platform !== 'win32') {
   app.setPath('userData', customUserDataPath);
 }
 
-/**
- * Initialize default system prompt and tools on first run
- */
 function initializeDefaults(): void {
   const db = getDatabase();
   const dbConn = db.getDb();
-  
-  // Set default system prompt if not exists
-  const existingPrompt = db.getSetting('systemPrompt');
-  if (!existingPrompt) {
-    db.setSetting('systemPrompt', defaults.defaultSystemPrompt);
-    console.log('[Init] Set default system prompt');
-  }
   
   // Insert default tools if tools table is empty
   const toolCount = dbConn.prepare('SELECT COUNT(*) as count FROM tools').get() as { count: number };

@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 /**
  * Database service for Tiginal
@@ -105,6 +105,10 @@ export class DatabaseService {
 
     if (currentVersion < 10) {
       this.migrateV10();
+    }
+
+    if (currentVersion < 11) {
+      this.migrateV11();
     }
 
     // Update schema version
@@ -367,6 +371,33 @@ export class DatabaseService {
     this.db.exec(`
       ALTER TABLE tool_categories ADD COLUMN enabled INTEGER DEFAULT 1;
     `);
+  }
+
+  /**
+   * Migration v11: Create system_prompts table and migrate from app_settings
+   */
+  private migrateV11(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // Create system_prompts table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS system_prompts (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        is_default INTEGER DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        rank INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_system_prompts_rank ON system_prompts(rank);
+      CREATE INDEX IF NOT EXISTS idx_system_prompts_active ON system_prompts(is_active);
+    `);
+
+    // Delete old systemPrompt key from app_settings
+    this.db.exec(`DELETE FROM app_settings WHERE key = 'systemPrompt'`);
   }
 
   /**

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Tabs } from '../ui/Tabs';
-import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench, FileText } from 'lucide-react';
 import { GeneralSettings } from './GeneralSettings';
 import { AIProviders } from './AIProviders';
 import { ThemeSettings } from './ThemeSettings';
@@ -8,6 +8,7 @@ import { ShortcutSettings } from './ShortcutSettings';
 import { TerminalSettings } from './TerminalSettings';
 import { SkillsSettings } from './SkillsSettings';
 import { ToolsSettings } from './ToolsSettings';
+import { SystemPromptSettings } from './SystemPromptSettings';
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState('general');
@@ -15,6 +16,7 @@ export function Settings() {
   const tabs = [
     { id: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
     { id: 'providers', label: 'AI Providers', icon: <Database size={16} /> },
+    { id: 'system-prompt', label: 'System Prompt', icon: <FileText size={16} /> },
     { id: 'tools', label: 'Tools', icon: <Wrench size={16} /> },
     { id: 'terminal', label: 'Terminal', icon: <Terminal size={16} /> },
     { id: 'ssh', label: 'SSH (Coming Soon)', icon: <Shield size={16} /> },
@@ -43,6 +45,7 @@ export function Settings() {
         <div className="max-w-3xl mx-auto">
           {activeTab === 'general' && <GeneralSettings />}
           {activeTab === 'providers' && <AIProviders />}
+          {activeTab === 'system-prompt' && <SystemPromptSettings />}
           {activeTab === 'tools' && <ToolsSettings />}
           {activeTab === 'terminal' && <TerminalSettings />}
           {activeTab === 'ssh' && (
