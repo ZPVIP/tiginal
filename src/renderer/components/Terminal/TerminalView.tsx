@@ -682,7 +682,9 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
   return (
     <div className="flex flex-col h-full bg-background font-mono text-sm">
       {/* Tab Bar */}
-      <div className="flex bg-surface/50 border-b border-border select-none shrink-0" style={{ height: '40px' }}>
+      <div className="relative flex bg-tab-inactive select-none shrink-0" style={{ height: '40px' }}>
+        {/* Bottom border that active tab will cover */}
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-border" />
         <div 
            ref={tabsContainerRef}
            className="flex-1 flex h-full overflow-x-auto no-scrollbar scroll-smooth"
@@ -697,8 +699,10 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                   }}
                   title={tab.cwd || 'Terminal'}
                   className={clsx(
-                      "flex items-center px-2 h-full cursor-pointer transition-colors border-r border-border min-w-[220px] max-w-[220px]",
-                      activeTabId === tab.id ? "bg-background text-text-main font-bold" : "text-text-sec bg-surface hover:bg-surface/80 hover:text-text-main",
+                      "flex items-center px-2 cursor-pointer transition-colors border-r border-border min-w-[220px] max-w-[220px]",
+                      activeTabId === tab.id 
+                        ? "relative z-10 bg-tab-active text-text-main font-bold h-[calc(100%+1px)] border-t-2 border-t-primary" 
+                        : "text-text-sec bg-tab-inactive hover:bg-elevated hover:text-text-main h-full",
                       "whitespace-nowrap"
                   )}
                 >
@@ -726,17 +730,17 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
             
             <button 
                 onClick={createTab}
-                className="px-3 h-full flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/5 border-r border-border"
+                className="px-3 h-full flex items-center justify-center text-text-muted hover:text-text-main hover:bg-elevated border-r border-border"
             >
                 <Plus size={14} />
             </button>
         </div>
 
-        <div className="flex items-center bg-surface border-l border-border h-full">
-            <button onClick={() => scrollTabs('left')} className="p-2 h-full hover:bg-white/5 hover:text-white text-gray-500">
+        <div className="flex items-center bg-tab-inactive border-l border-border h-full">
+            <button onClick={() => scrollTabs('left')} className="p-2 h-full hover:bg-elevated hover:text-text-main text-text-muted">
                 <ChevronLeft size={14} />
             </button>
-            <button onClick={() => scrollTabs('right')} className="p-2 h-full hover:bg-white/5 hover:text-white text-gray-500">
+            <button onClick={() => scrollTabs('right')} className="p-2 h-full hover:bg-elevated hover:text-text-main text-text-muted">
                 <ChevronRight size={14} />
             </button>
         </div>

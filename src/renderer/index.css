@@ -7,6 +7,8 @@
   --color-elevated: var(--bg-elevated);
   --color-border: var(--border-color);
   --color-primary: var(--accent-primary);
+  --color-tab-active: var(--tab-active);
+  --color-tab-inactive: var(--bg-tertiary);
   
   --color-text-main: var(--text-primary);
   --color-text-sec: var(--text-secondary);
