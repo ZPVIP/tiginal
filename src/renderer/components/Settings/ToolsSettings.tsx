@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { AIProvider } from '../../settings/ai-constants';
+import { FancySelect } from '../ui/FancySelect';
 
 const invoke = window.electron?.invoke || (async () => {});
 
@@ -399,16 +400,14 @@ export function ToolsSettings() {
             </p>
             <div className="bg-surface border border-border rounded-lg p-6 max-w-xl">
               <label className="text-sm font-medium text-text-sec block mb-2">Selected Model</label>
-              <select
+              <FancySelect
                 value={selectedToolModel}
-                onChange={(e) => handleModelChange(e.target.value)}
-                className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
-              >
-                <option value="">-- Select Model --</option>
-                {modelOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+                onChange={handleModelChange}
+                options={[
+                  { value: '', label: '-- Select Model --' },
+                  ...modelOptions.map(opt => ({ value: opt.value, label: opt.label }))
+                ]}
+              />
             </div>
           </div>
         )}
@@ -678,13 +677,12 @@ export function ToolsSettings() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-text-sec mb-1.5">Category</label>
-                    <select
-                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-text-main"
+                    <FancySelect
                       value={toolCategory}
-                      onChange={e => setToolCategory(e.target.value)}
-                    >
-                      {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                      onChange={setToolCategory}
+                      options={categories.map(c => ({ value: c.id, label: c.name }))}
+                      buttonClassName="bg-background"
+                    />
                   </div>
                </div>
 

@@ -1684,7 +1684,7 @@ button:focus, input:focus, textarea:focus, select:focus {
 }
 
 .settings-modal .text-xs,
-.settings-modal .text-[10px] {
+.settings-modal .text-\[10px\] {
   font-size: var(--settings-muted-size) !important;
 }
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Lock, Unlock, Globe, KeyRound, Calendar, ArrowUpDown, FolderOpen } from 'lucide-react';
 import { clsx } from 'clsx';
+import { FancySelect } from '../ui/FancySelect';
 
 // Interface for IPC calls
 // Interface for IPC calls
@@ -218,15 +219,15 @@ export function GeneralSettings() {
         <div className="bg-surface border border-border rounded-lg p-6">
            <div className="flex flex-col gap-2 max-w-sm">
              <label className="text-sm font-medium text-text-sec">Search Engine</label>
-             <select 
+             <FancySelect
                value={searchProvider}
-               onChange={(e) => handleSearchChange(e.target.value)}
-               className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
-             >
-               <option value="duckduckgo">DuckDuckGo (Privacy Focused)</option>
-               <option value="google">Google</option>
-               <option value="bing">Bing</option>
-             </select>
+               onChange={handleSearchChange}
+               options={[
+                 { value: 'duckduckgo', label: 'DuckDuckGo (Privacy Focused)' },
+                 { value: 'google', label: 'Google' },
+                 { value: 'bing', label: 'Bing' },
+               ]}
+             />
            </div>
         </div>
       </section>
@@ -244,15 +245,11 @@ export function GeneralSettings() {
         <div className="bg-surface border border-border rounded-lg p-6">
            <div className="flex flex-col gap-2 max-w-md">
              <label className="text-sm font-medium text-text-sec">Display Format</label>
-             <select 
+             <FancySelect
                value={dateFormat}
-               onChange={(e) => handleDateFormatChange(e.target.value)}
-               className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
-             >
-               {DATE_FORMATS.map(fmt => (
-                   <option key={fmt.value} value={fmt.value}>{fmt.label}</option>
-               ))}
-             </select>
+               onChange={handleDateFormatChange}
+               options={DATE_FORMATS.map(fmt => ({ value: fmt.value, label: fmt.label }))}
+             />
              <p className="text-xs text-text-muted mt-1">
                 Example: {DATE_FORMATS.find(f => f.value === dateFormat)?.example}
              </p>
@@ -273,15 +270,11 @@ export function GeneralSettings() {
         <div className="bg-surface border border-border rounded-lg p-6">
            <div className="flex flex-col gap-2 max-w-sm">
              <label className="text-sm font-medium text-text-sec">Sort By</label>
-             <select 
+             <FancySelect
                value={historySort}
-               onChange={(e) => handleHistorySortChange(e.target.value)}
-               className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
-             >
-               {SORT_OPTIONS.map(opt => (
-                   <option key={opt.value} value={opt.value}>{opt.label}</option>
-               ))}
-             </select>
+               onChange={handleHistorySortChange}
+               options={SORT_OPTIONS.map(opt => ({ value: opt.value, label: opt.label }))}
+             />
            </div>
         </div>
       </section>
