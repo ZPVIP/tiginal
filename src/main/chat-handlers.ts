@@ -31,6 +31,9 @@ interface LogAccumulator {
 // Module-level state for tool approvals
 const pendingToolApprovals = new Map<string, (result: { approved: boolean; approvedAll: boolean }) => void>();
 
+// Module-level state for stream abort controllers
+const activeStreamControllers = new Map<string, AbortController>();
+
 // Tool Definitions
 const TOOL_SEARCH_DEF = {
   name: "ToolSearch",
@@ -166,6 +169,15 @@ export function setupChatHandlers(): void {
       if (resolver) {
           resolver({ approved, approvedAll });
           pendingToolApprovals.delete(toolCallId);
+      }
+  });
+
+  // Stop stream (User clicked Stop button)
+  ipcMain.handle('chat:stop-stream', async (_event, conversationId: string): Promise<void> => {
+      const controller = activeStreamControllers.get(conversationId);
+      if (controller) {
+          controller.abort();
+          activeStreamControllers.delete(conversationId);
       }
   });
 
@@ -411,7 +423,8 @@ async function streamAIAPI(
   autoCORSFix: boolean = true,
   tools: Array<{ name: string; description: string; input_schema: object }> = [],
   onChunk: (data: { content?: string; reasoning?: string }) => void,
-  onToolCall?: (data: { id: string; name: string; input: any }) => void | Promise<void>
+  onToolCall?: (data: { id: string; name: string; input: any }) => void | Promise<void>,
+  abortSignal?: AbortSignal
 ): Promise<void> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -485,8 +498,14 @@ async function streamAIAPI(
         method: 'POST',
         headers,
         body: JSON.stringify(bodyPayload),
+        signal: abortSignal,
     });
   } catch (error: any) {
+      // Handle abort
+      if (error.name === 'AbortError') {
+          onChunk({ content: '\n\n*[Generation stopped]*' });
+          return;
+      }
       // Handle Network Errors (like Offline)
       console.error('Fetch Error:', error);
       
@@ -583,6 +602,13 @@ async function streamAIAPI(
 
   try {
     while (true) {
+        // Check if aborted
+        if (abortSignal?.aborted) {
+            reader.cancel();
+            onChunk({ content: '\n\n*[Generation stopped]*' });
+            break;
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -597,15 +623,18 @@ async function streamAIAPI(
         }
     }
     
-    // Process remaining buffer
-    if (buffer.trim()) {
+    // Process remaining buffer (only if not aborted)
+    if (buffer.trim() && !abortSignal?.aborted) {
         processLine(buffer, onChunk, toolCallAccumulator, logAccumulator);
     }
 
-    // Finalize any pending tool calls after stream ends
-    if (onToolCall) {
+    // Finalize any pending tool calls after stream ends (only if not aborted)
+    if (onToolCall && !abortSignal?.aborted) {
         const toolsToCall = Object.values(toolCallAccumulator);
         for (const tool of toolsToCall) {
+            // Check abort before each tool call
+            if (abortSignal?.aborted) break;
+            
             try {
                 if (tool.name && tool.arguments) {
                      const input = JSON.parse(tool.arguments);
@@ -763,6 +792,10 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     let turnCount = 0;
     let allowAllOverride = false; // Session-based allow all
 
+    // Create AbortController for this conversation
+    const abortController = new AbortController();
+    activeStreamControllers.set(conversationId, abortController);
+
     // AGENT LOOP
     while (turnCount < MAX_TURNS) {
         turnCount++;
@@ -773,6 +806,11 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
             if (process.env.NODE_ENV !== 'production') {
                 printRequestStartSeparator();
             }
+            // Check if already aborted
+            if (abortController.signal.aborted) {
+                break;
+            }
+
             await streamAIAPI(
                 provider.type as 'openai-compatible' | 'copilot',
                 provider.endpoint || 'https://api.openai.com/v1',
@@ -1004,7 +1042,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                     // if (toolCall.name !== 'ToolSearch' && toolCall.name !== 'AttemptCompletion') {
                     //      _event.sender.send('chat:chunk', { conversationId, content: `\n\n\`\`\`\n${resultStr.slice(0, 500)}${resultStr.length > 500 ? '...' : ''}\n\`\`\`\n` });
                     // }
-                }
+                },
+                abortController.signal
             );
 
             if (!toolCallOccurred) {
@@ -1023,12 +1062,25 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                  // Friendly error was already streamed to UI.
                  // We return success here so the UI finishes loading state.
                  // We do NOT save this to DB (by returning early before chatService.addMessage).
+                 activeStreamControllers.delete(conversationId);
+                 return { response: finalResponse };
+            }
+            if (err.name === 'AbortError' || abortController.signal.aborted) {
+                 // Stream was stopped by user
+                 activeStreamControllers.delete(conversationId);
+                 if (finalResponse) {
+                     chatService.addMessage(conversationId, 'assistant', finalResponse);
+                 }
                  return { response: finalResponse };
             }
             console.error('Agent loop error', err);
+            activeStreamControllers.delete(conversationId);
             return { response: finalResponse, error: (err as Error).message };
         }
     }
+
+    // Clean up AbortController
+    activeStreamControllers.delete(conversationId);
 
     // Save final response (accumulated) to DB
     // Note: The intermediate chunks were already sent to UI. 

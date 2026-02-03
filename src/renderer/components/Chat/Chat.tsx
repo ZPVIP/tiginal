@@ -290,6 +290,18 @@ export function Chat() {
   
   const activeStreamingId = React.useRef<string | null>(null);
 
+  // Stop streaming handler
+  const handleStopStream = async () => {
+    if (activeStreamingId.current) {
+      try {
+        await invoke('chat:stop-stream', activeStreamingId.current);
+      } catch (err) {
+        console.error('Failed to stop stream:', err);
+      }
+    }
+    setIsLoading(false);
+  };
+
 
 
   const handleNewChat = () => {
@@ -536,7 +548,9 @@ export function Chat() {
       <ChatInput 
         ref={chatInputRef}
         onSend={handleSend} 
-        disabled={isLoading} 
+        onStop={handleStopStream}
+        disabled={isLoading}
+        isStreaming={isLoading}
       />
 
       {/* History Panel */}

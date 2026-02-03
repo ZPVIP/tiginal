@@ -7,7 +7,8 @@ import {
   X,
   Wand2,
   MessageSquareText,
-  Wrench
+  Wrench,
+  Square
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { ToolsPopover } from './ToolsPopover';
@@ -20,10 +21,12 @@ export interface ChatInputHandle {
 
 interface ChatInputProps {
   onSend: (text: string, images: string[], useSearch: boolean, useSkills: boolean) => void;
+  onStop?: () => void;
   disabled?: boolean;
+  isStreaming?: boolean;
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, disabled }, ref) => {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, onStop, disabled, isStreaming }, ref) => {
   const [text, setText] = useState('');
   const [useSearch, setUseSearch] = useState(false);
   const [useSkills, setUseSkills] = useState(false);
@@ -227,18 +230,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
                 />
             </div>
 
-            <button
-               onClick={handleSend}
-               disabled={(!text.trim() && images.length === 0) || disabled}
-               className={clsx(
-                   "p-2 rounded-lg transition-colors flex items-center gap-2",
-                   (!text.trim() && images.length === 0) || disabled
-                      ? "bg-surface/50 text-text-muted cursor-not-allowed"
-                      : "bg-primary text-white hover:opacity-90"
-               )}
-            >
+            {isStreaming ? (
+              <button
+                onClick={onStop}
+                className="p-2 rounded-lg transition-colors flex items-center gap-2 bg-red-800/70 text-white hover:bg-red-700"
+                title="Stop generating"
+              >
+                <Square size={14} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={(!text.trim() && images.length === 0) || disabled}
+                className={clsx(
+                    "p-2 rounded-lg transition-colors flex items-center gap-2",
+                    (!text.trim() && images.length === 0) || disabled
+                       ? "bg-surface/50 text-text-muted cursor-not-allowed"
+                       : "bg-primary text-white hover:opacity-90"
+                )}
+              >
                 <SendHorizontal size={18} />
-            </button>
+              </button>
+            )}
         </div>
       </div>
     </div>
