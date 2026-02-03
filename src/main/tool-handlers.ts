@@ -793,6 +793,34 @@ export function setupToolHandlers(): void {
     resetDefaultSystemPrompts(db);
   });
 
+  // Get global system prompts enabled status
+  ipcMain.handle('system-prompts:get-global-enabled', async (): Promise<boolean> => {
+    const dbService = getDatabase();
+    const value = dbService.getSetting('systemPromptsGlobalEnabled');
+    return value !== 'false'; // Default to true if not set
+  });
+
+  // Set global system prompts enabled status
+  ipcMain.handle('system-prompts:set-global-enabled', async (_event, enabled: boolean): Promise<void> => {
+    const dbService = getDatabase();
+    dbService.setSetting('systemPromptsGlobalEnabled', String(enabled));
+  });
+
+  // Get category enabled status (default or custom)
+  ipcMain.handle('system-prompts:get-category-enabled', async (_event, category: 'default' | 'custom'): Promise<boolean> => {
+    const dbService = getDatabase();
+    const key = category === 'default' ? 'systemPromptsDefaultEnabled' : 'systemPromptsCustomEnabled';
+    const value = dbService.getSetting(key);
+    return value !== 'false'; // Default to true if not set
+  });
+
+  // Set category enabled status (default or custom)
+  ipcMain.handle('system-prompts:set-category-enabled', async (_event, category: 'default' | 'custom', enabled: boolean): Promise<void> => {
+    const dbService = getDatabase();
+    const key = category === 'default' ? 'systemPromptsDefaultEnabled' : 'systemPromptsCustomEnabled';
+    dbService.setSetting(key, String(enabled));
+  });
+
   // Get dynamic prompt settings
   ipcMain.handle('system-prompts:get-dynamic-settings', async (): Promise<Record<string, boolean>> => {
     const dbService = getDatabase();

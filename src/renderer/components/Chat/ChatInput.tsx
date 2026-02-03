@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { ToolsPopover } from './ToolsPopover';
+import { SystemPromptsPopover } from './SystemPromptsPopover';
 
 export interface ChatInputHandle {
     setText: (text: string) => void;
@@ -20,30 +21,34 @@ export interface ChatInputHandle {
 interface ChatInputProps {
   onSend: (text: string, images: string[], useSearch: boolean, useSkills: boolean) => void;
   disabled?: boolean;
-  useSystemPrompt?: boolean;
-  onSystemPromptToggle?: () => void;
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, disabled, useSystemPrompt = true, onSystemPromptToggle }, ref) => {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, disabled }, ref) => {
   const [text, setText] = useState('');
   const [useSearch, setUseSearch] = useState(false);
   const [useSkills, setUseSkills] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [showSystemPrompts, setShowSystemPrompts] = useState(false);
   const [globalToolsEnabled, setGlobalToolsEnabled] = useState(false);
+  const [globalSystemPromptsEnabled, setGlobalSystemPromptsEnabled] = useState(true);
   const [images, setImages] = useState<string[]>([]);
 
   useEffect(() => {
-    checkGlobalTools();
-  }, [showTools]); // Re-check when popover toggles (closed)
+    checkGlobalSettings();
+  }, [showTools, showSystemPrompts]); // Re-check when popovers toggle (closed)
 
-  const checkGlobalTools = async () => {
+  const checkGlobalSettings = async () => {
     try {
       if (window.electron?.invoke) {
-        const enabled = await window.electron.invoke('tools:get-global-enabled');
-        setGlobalToolsEnabled(enabled);
+        const [toolsEnabled, promptsEnabled] = await Promise.all([
+          window.electron.invoke('tools:get-global-enabled'),
+          window.electron.invoke('system-prompts:get-global-enabled')
+        ]);
+        setGlobalToolsEnabled(toolsEnabled);
+        setGlobalSystemPromptsEnabled(promptsEnabled);
       }
     } catch (e) {
-      console.error('Failed to check global tools:', e);
+      console.error('Failed to check global settings:', e);
     }
   };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -120,6 +125,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
             </>
         )}
 
+        {/* System Prompts Popover */}
+        {showSystemPrompts && (
+            <>
+                <SystemPromptsPopover onClose={() => setShowSystemPrompts(false)} />
+                <div 
+                  className="fixed inset-0 z-40 bg-transparent" 
+                  onClick={() => setShowSystemPrompts(false)}
+                />
+            </>
+        )}
+
         {/* Image Previews */}
         {images.length > 0 && (
             <div className="flex gap-2 p-3 border-b border-border overflow-x-auto">
@@ -153,12 +169,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
         <div className="flex items-center justify-between px-2 pb-2">
             <div className="flex items-center gap-1">
                 <button 
-                   onClick={onSystemPromptToggle}
+                   onClick={() => setShowSystemPrompts(!showSystemPrompts)}
                    className={clsx(
                        "p-2 rounded-lg transition-colors",
-                       useSystemPrompt ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                       (showSystemPrompts || globalSystemPromptsEnabled) ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
                    )}
-                   title={useSystemPrompt ? "System Prompt Enabled" : "System Prompt Disabled"}
+                   title="Configure System Prompts"
                 >
                     <MessageSquareText size={18} />
                 </button>

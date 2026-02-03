@@ -21,7 +21,6 @@ export function Chat() {
   const [isIncognito, setIsIncognito] = useState(false);
   const [incognitoMessages, setIncognitoMessages] = useState<any[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [useSystemPrompt, setUseSystemPrompt] = useState(true);
 
   // Tool call state
   // Tool call state
@@ -233,7 +232,6 @@ export function Chat() {
               activeStreamingId.current = conv.id;
 
               await invoke('chat:send-message', conv.id, selectedProviderId, messageContent, selectedModel, { 
-                  useSystemPrompt,
                   useSkills 
               });
               
@@ -273,7 +271,6 @@ export function Chat() {
 
       try {
           await invoke('chat:send-message', convId, selectedProviderId, messageContent, selectedModel, { 
-              useSystemPrompt,
               useSkills 
           });
       } catch (err) {
@@ -540,8 +537,6 @@ export function Chat() {
         ref={chatInputRef}
         onSend={handleSend} 
         disabled={isLoading} 
-        useSystemPrompt={useSystemPrompt}
-        onSystemPromptToggle={() => setUseSystemPrompt(!useSystemPrompt)}
       />
 
       {/* History Panel */}

@@ -655,7 +655,16 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     const dbMessages = chatService.getMessages(conversationId);
     
     // Construct System Prompt from system_prompts table
-    const useSystemPrompt = options?.useSystemPrompt !== false;
+    // Check global system prompts switch from database
+    const globalSystemPromptsVal = dbService.getSetting('systemPromptsGlobalEnabled');
+    const useSystemPrompt = globalSystemPromptsVal !== 'false'; // Default to true
+    
+    // Check category switches
+    const defaultCategoryVal = dbService.getSetting('systemPromptsDefaultEnabled');
+    const customCategoryVal = dbService.getSetting('systemPromptsCustomEnabled');
+    const defaultCategoryEnabled = defaultCategoryVal !== 'false'; // Default to true
+    const customCategoryEnabled = customCategoryVal !== 'false'; // Default to true
+    
     let baseSystemPrompt = '';
     
     if (useSystemPrompt) {
@@ -667,7 +676,16 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                 ORDER BY rank ASC
             `).all() as { title: string; content: string; is_default: number }[];
             
-            baseSystemPrompt = promptRows.map(r => {
+            // Filter by category switches
+            const filteredRows = promptRows.filter(r => {
+                if (r.is_default === 1) {
+                    return defaultCategoryEnabled;
+                } else {
+                    return customCategoryEnabled;
+                }
+            });
+            
+            baseSystemPrompt = filteredRows.map(r => {
                 // For custom prompts (is_default = 0), include title as a header
                 if (r.is_default === 0) {
                     return `[${r.title}]\n${r.content}`;
