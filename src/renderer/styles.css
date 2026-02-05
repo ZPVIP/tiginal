@@ -1665,6 +1665,29 @@ button:focus, input:focus, textarea:focus, select:focus {
   overflow: hidden;
 }
 
+/* Settings Modal Typography Overrides */
+.settings-modal {
+  font-size: var(--settings-text-size);
+}
+
+.settings-modal .text-xl,
+.settings-modal .text-lg,
+.settings-modal h1,
+.settings-modal h2,
+.settings-modal h3 {
+  font-size: var(--settings-title-size) !important;
+}
+
+.settings-modal .text-base,
+.settings-modal .text-sm {
+  font-size: var(--settings-text-size) !important;
+}
+
+.settings-modal .text-xs,
+.settings-modal .text-\[10px\] {
+  font-size: var(--settings-muted-size) !important;
+}
+
 .settings-sidebar {
   width: 200px;
   background-color: var(--bg-secondary);

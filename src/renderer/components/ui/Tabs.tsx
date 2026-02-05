@@ -13,9 +13,10 @@ interface TabsProps {
   activeTab: string;
   onChange: (id: string) => void;
   className?: string;
+  disableMotion?: boolean;
 }
 
-export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
+export function Tabs({ tabs, activeTab, onChange, className, disableMotion }: TabsProps) {
   return (
     <div className={clsx("flex flex-col space-y-1", className)}>
       {tabs.map((tab) => (
@@ -30,12 +31,16 @@ export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
           )}
         >
           {activeTab === tab.id && (
-            <motion.div
-              layoutId="activeTab"
-              className="absolute inset-0 bg-primary/20 rounded-md"
-              initial={false}
-              transition={{ type: "spring", stiffness: 500, damping: 30 }}
-            />
+            disableMotion ? (
+              <div className="absolute inset-0 bg-primary/20 rounded-md" />
+            ) : (
+              <motion.div
+                layoutId="activeTab"
+                className="absolute inset-0 bg-primary/20 rounded-md"
+                initial={false}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              />
+            )
           )}
           <span className="relative z-10 flex items-center gap-2">
             {tab.icon}

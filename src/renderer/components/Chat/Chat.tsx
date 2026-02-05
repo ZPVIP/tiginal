@@ -503,9 +503,6 @@ export function Chat() {
   return (
     <div className="flex h-full w-full flex-col bg-background relative">
       <Header 
-         currentValue={selectedProviderId && selectedModel ? `${selectedProviderId}:${selectedModel}` : ''}
-         models={allModels.map(m => ({ value: `${m.providerId}:${m.modelId}`, label: m.label }))}
-         onModelChange={handleModelSelect}
          onNewChat={handleNewChat}
          onHistory={() => setIsHistoryOpen(true)} 
          onIncognitoToggle={handleIncognitoToggle}
@@ -551,6 +548,10 @@ export function Chat() {
         onStop={handleStopStream}
         disabled={isLoading}
         isStreaming={isLoading}
+        models={allModels}
+        selectedProviderId={selectedProviderId}
+        selectedModel={selectedModel}
+        onModelSelect={(pId, mId) => handleModelSelect(`${pId}:${mId}`)}
       />
 
       {/* History Panel */}

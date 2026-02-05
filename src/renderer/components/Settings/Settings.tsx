@@ -26,9 +26,9 @@ export function Settings() {
   ];
 
   return (
-    <div className="flex h-full w-full bg-surface">
+    <div className="flex h-full w-full bg-surface min-h-0">
       {/* Sidebar */}
-      <div className="w-64 border-r border-border p-4 bg-background/50 backdrop-blur-sm">
+      <div className="w-64 border-r border-border p-4 bg-background/50 backdrop-blur-sm shrink-0">
         <h2 className="text-lg font-semibold mb-6 px-2 flex items-center gap-2">
           <SettingsIcon className="w-5 h-5" />
           Settings
@@ -36,13 +36,14 @@ export function Settings() {
         <Tabs 
           tabs={tabs} 
           activeTab={activeTab} 
-          onChange={setActiveTab} 
+          onChange={setActiveTab}
+          disableMotion
         />
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-3xl mx-auto">
+      <div className="flex-1 overflow-y-auto p-8 min-h-0">
+        <div className="max-w-3xl mx-auto w-full">
           {activeTab === 'general' && <GeneralSettings />}
           {activeTab === 'providers' && <AIProviders />}
           {activeTab === 'system-prompt' && <SystemPromptSettings />}

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Lock, Unlock, Globe, KeyRound, Calendar, ArrowUpDown, FolderOpen } from 'lucide-react';
 import { clsx } from 'clsx';
+import { FancySelect } from '../ui/FancySelect';
+import { InfoIcon } from '../Shared/InfoIcon';
 
 // Interface for IPC calls
 // Interface for IPC calls
@@ -27,6 +29,7 @@ export function GeneralSettings() {
   const [hasSavedKey, setHasSavedKey] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [isLoadingCrypto, setIsLoadingCrypto] = useState(false);
+  const [showMasterKeyInput, setShowMasterKeyInput] = useState(false);
 
   // Search State
   const [searchProvider, setSearchProvider] = useState('duckduckgo');
@@ -95,16 +98,19 @@ export function GeneralSettings() {
   const handleSearchChange = async (val: string) => {
     setSearchProvider(val);
     await invoke('settings:set', 'searchProvider', val);
+    window.dispatchEvent(new CustomEvent('settings-general-updated', { detail: { key: 'searchProvider', value: val } }));
   };
 
   const handleDateFormatChange = async (val: string) => {
     setDateFormat(val);
     await invoke('settings:set', 'dateFormat', val);
+    window.dispatchEvent(new CustomEvent('settings-general-updated', { detail: { key: 'dateFormat', value: val } }));
   };
 
   const handleHistorySortChange = async (val: string) => {
     setHistorySort(val);
     await invoke('settings:set', 'historySort', val);
+    window.dispatchEvent(new CustomEvent('settings-general-updated', { detail: { key: 'historySort', value: val } }));
   };
 
   const handleSelectWorkspace = async () => {
@@ -119,202 +125,144 @@ export function GeneralSettings() {
   const isSetupState = !isUnlocked && !hasMasterPassword && !hasSavedKey;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      
-      {/* Security Settings - FIRST */}
-      <section className="space-y-4">
-        <h3 className="text-xl font-semibold flex items-center gap-2 text-text-main">
-          <KeyRound className="w-5 h-5 text-yellow-500" />
+    <div className="space-y-3 animate-in fade-in duration-500">
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium text-text-main flex items-center gap-2">
+          <KeyRound className="w-4 h-4 text-yellow-500" />
           Security (Master Key)
-        </h3>
-        <p className="text-sm text-text-muted">
-          Manage encryption for your API keys and sensitive data.
-        </p>
+          <InfoIcon
+            title={
+              `Encrypt/decrypt sensitive data (API keys).\n` +
+              `Status: ${isUnlocked ? 'Unlocked' : (isSetupState ? 'Not Configured' : 'Locked')}`
+            }
+          />
+        </label>
 
-        <div className="bg-surface border border-border rounded-lg p-6">
-            <div className="flex items-center justify-between mb-6">
-                <span className="text-sm font-medium text-text-sec">Current Status</span>
-                <span className={clsx(
-                    "px-2.5 py-0.5 rounded-full text-xs font-medium",
-                    isUnlocked ? "bg-green-900 text-green-300" : (isSetupState ? "bg-red-900 text-red-300" : "bg-yellow-900 text-yellow-300")
-                )}>
-                    {isUnlocked ? "Unlocked" : (isSetupState ? "Not Configured" : "Locked")}
-                </span>
+        <div className="w-[60%] flex justify-end">
+          {isUnlocked ? (
+            <button
+              onClick={handleLock}
+              className="h-9 px-3 bg-surface text-text-main text-sm rounded-lg border border-border hover:bg-surface-light transition-colors flex items-center gap-2"
+              title="Lock master key"
+            >
+              <Lock size={14} />
+              Lock
+            </button>
+          ) : !showMasterKeyInput ? (
+            <button
+              onClick={() => setShowMasterKeyInput(true)}
+              className="h-9 px-3 bg-primary text-white text-sm rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 disabled:opacity-50"
+              title={isSetupState ? 'Set master password' : 'Unlock master key'}
+              disabled={isLoadingCrypto}
+            >
+              {isSetupState ? <KeyRound size={14} /> : <Unlock size={14} />}
+              {isSetupState ? 'Set' : 'Unlock'}
+            </button>
+          ) : (
+            <div className="w-full flex items-center justify-end gap-2">
+              <button
+                onClick={async () => {
+                  if (isSetupState) await handleSetPassword();
+                  else await handleUnlock();
+                }}
+                disabled={isLoadingCrypto}
+                className="h-9 w-10 bg-primary text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center disabled:opacity-50"
+                title={isSetupState ? 'Set master password' : 'Unlock'}
+              >
+                {isSetupState ? <KeyRound size={16} /> : <Unlock size={16} />}
+              </button>
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  if (isSetupState) handleSetPassword();
+                  else handleUnlock();
+                }}
+                onBlur={() => setTimeout(() => setShowMasterKeyInput(false), 150)}
+                className="flex-1 bg-surface text-text-main text-sm rounded-lg py-2 px-3 border border-border focus:border-primary outline-none"
+                placeholder={isSetupState ? 'Create password…' : 'Enter password…'}
+              />
             </div>
-
-            {isUnlocked && (
-                <div className="flex items-center justify-between">
-                    <p className="text-sm text-text-muted">Your keys are decrypted and accessible.</p>
-                    <button 
-                       onClick={handleLock}
-                       className="flex items-center gap-2 px-4 py-2 bg-background hover:bg-[var(--tab-hover)] border border-border rounded-lg transition-colors text-sm text-text-main"
-                    >
-                        <Lock size={14} /> Lock Now
-                    </button>
-                </div>
-            )}
-
-            {isLockedState && (
-                <div className="flex items-end gap-3">
-                    <div className="flex-1">
-                        <label className="block mb-2 text-sm font-medium text-text-sec">Enter Master Password</label>
-                        <input 
-                           type="password" 
-                           value={passwordInput}
-                           onChange={(e) => setPasswordInput(e.target.value)}
-                           onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
-                           className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
-                           placeholder="••••••••"
-                        />
-                    </div>
-                    <button 
-                       onClick={handleUnlock}
-                       disabled={isLoadingCrypto}
-                       className="px-4 py-2.5 bg-primary hover:bg-blue-600 text-white font-medium rounded-lg text-sm transition-colors flex items-center gap-2 disabled:opacity-50"
-                    >
-                        {isLoadingCrypto ? 'Unlocking...' : <><Unlock size={16} /> Unlock</>}
-                    </button>
-                </div>
-            )}
-
-            {isSetupState && (
-                 <div className="flex items-end gap-3">
-                    <div className="flex-1">
-                        <label className="block mb-2 text-sm font-medium text-text-sec">Create Master Password</label>
-                        <input 
-                           type="password" 
-                           value={passwordInput}
-                           onChange={(e) => setPasswordInput(e.target.value)}
-                           onKeyDown={(e) => e.key === 'Enter' && handleSetPassword()}
-                           className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
-                           placeholder="Minimum 8 characters..."
-                        />
-                    </div>
-                    <button 
-                       onClick={handleSetPassword}
-                       disabled={isLoadingCrypto}
-                       className="px-4 py-2.5 bg-primary hover:bg-blue-600 text-white font-medium rounded-lg text-sm transition-colors flex items-center gap-2 disabled:opacity-50"
-                    >
-                        {isLoadingCrypto ? 'Setting...' : <><KeyRound size={16} /> Set Password</>}
-                    </button>
-                 </div>
-            )}
+          )}
         </div>
-      </section>
+      </div>
 
-      {/* Search Settings - SECOND */}
-      <section className="space-y-4">
-        <h3 className="text-xl font-semibold flex items-center gap-2 text-text-main">
-          <Globe className="w-5 h-5 text-blue-400" />
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium text-text-main flex items-center gap-2">
+          <Globe className="w-4 h-4 text-blue-400" />
           Web Search
-        </h3>
-        <p className="text-sm text-text-muted">
-          Configure the default search engine used by AI for internet access.
-        </p>
-
-        <div className="bg-surface border border-border rounded-lg p-6">
-           <div className="flex flex-col gap-2 max-w-sm">
-             <label className="text-sm font-medium text-text-sec">Search Engine</label>
-             <select 
-               value={searchProvider}
-               onChange={(e) => handleSearchChange(e.target.value)}
-               className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
-             >
-               <option value="duckduckgo">DuckDuckGo (Privacy Focused)</option>
-               <option value="google">Google</option>
-               <option value="bing">Bing</option>
-             </select>
-           </div>
+          <InfoIcon title="Default search engine used when AI performs web search." />
+        </label>
+        <div className="w-[60%]">
+          <FancySelect
+            value={searchProvider}
+            onChange={handleSearchChange}
+            options={[
+              { value: 'duckduckgo', label: 'DuckDuckGo' },
+              { value: 'google', label: 'Google' },
+              { value: 'bing', label: 'Bing' },
+            ]}
+          />
         </div>
-      </section>
+      </div>
 
-      {/* Date Format Settings - THIRD */}
-      <section className="space-y-4">
-        <h3 className="text-xl font-semibold flex items-center gap-2 text-text-main">
-          <Calendar className="w-5 h-5 text-green-400" />
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium text-text-main flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-green-400" />
           Date & Time Format
-        </h3>
-        <p className="text-sm text-text-muted">
-          Choose how dates and times are displayed throughout the application.
-        </p>
-
-        <div className="bg-surface border border-border rounded-lg p-6">
-           <div className="flex flex-col gap-2 max-w-md">
-             <label className="text-sm font-medium text-text-sec">Display Format</label>
-             <select 
-               value={dateFormat}
-               onChange={(e) => handleDateFormatChange(e.target.value)}
-               className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
-             >
-               {DATE_FORMATS.map(fmt => (
-                   <option key={fmt.value} value={fmt.value}>{fmt.label}</option>
-               ))}
-             </select>
-             <p className="text-xs text-text-muted mt-1">
-                Example: {DATE_FORMATS.find(f => f.value === dateFormat)?.example}
-             </p>
-           </div>
+          <InfoIcon title={`Applies across the app (e.g. chat history).\nExample: ${DATE_FORMATS.find(f => f.value === dateFormat)?.example || ''}`} />
+        </label>
+        <div className="w-[60%]">
+          <FancySelect
+            value={dateFormat}
+            onChange={handleDateFormatChange}
+            options={DATE_FORMATS.map(fmt => ({ value: fmt.value, label: fmt.label }))}
+          />
         </div>
-      </section>
+      </div>
 
-      {/* History Sort Settings - FOURTH */}
-      <section className="space-y-4">
-        <h3 className="text-xl font-semibold flex items-center gap-2 text-text-main">
-          <ArrowUpDown className="w-5 h-5 text-purple-400" />
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium text-text-main flex items-center gap-2">
+          <ArrowUpDown className="w-4 h-4 text-purple-400" />
           Chat History Order
-        </h3>
-        <p className="text-sm text-text-muted">
-          Choose how chat history is sorted by default.
-        </p>
-
-        <div className="bg-surface border border-border rounded-lg p-6">
-           <div className="flex flex-col gap-2 max-w-sm">
-             <label className="text-sm font-medium text-text-sec">Sort By</label>
-             <select 
-               value={historySort}
-               onChange={(e) => handleHistorySortChange(e.target.value)}
-               className="bg-background border border-border text-text-main text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5"
-             >
-               {SORT_OPTIONS.map(opt => (
-                   <option key={opt.value} value={opt.value}>{opt.label}</option>
-               ))}
-             </select>
-           </div>
+          <InfoIcon title="Default sort order in chat history panel." />
+        </label>
+        <div className="w-[60%]">
+          <FancySelect
+            value={historySort}
+            onChange={handleHistorySortChange}
+            options={SORT_OPTIONS.map(opt => ({ value: opt.value, label: opt.label }))}
+          />
         </div>
-      </section>
+      </div>
 
-      {/* Workspace Directory Settings */}
-      <section className="space-y-4">
-        <h3 className="text-xl font-semibold flex items-center gap-2 text-text-main">
-          <FolderOpen className="w-5 h-5 text-orange-400" />
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium text-text-main flex items-center gap-2">
+          <FolderOpen className="w-4 h-4 text-orange-400" />
           Workspace Directory
-        </h3>
-        <p className="text-sm text-text-muted">
-          The working directory for AI file operations. Downloaded files, script outputs, etc. are saved here.
-        </p>
-
-        <div className="bg-surface border border-border rounded-lg p-6">
-          <div className="flex items-center gap-3">
+          <InfoIcon title="Working directory for AI file operations. Downloaded files and script outputs are saved here." />
+        </label>
+        <div className="w-[60%] flex justify-end">
+          <div className="flex w-full items-center gap-2">
+            <button
+              onClick={handleSelectWorkspace}
+              className="h-9 w-10 bg-surface text-text-main rounded-lg border border-border hover:bg-surface-light transition-colors flex items-center justify-center"
+              title="Choose workspace directory"
+            >
+              <FolderOpen size={16} />
+            </button>
             <input
               type="text"
               value={workspacePath}
               readOnly
-              className="flex-1 bg-background border border-border text-text-main text-sm rounded-lg p-2.5 font-mono"
+              className="flex-1 bg-surface text-text-main text-sm rounded-lg py-2 px-3 border border-border outline-none font-mono text-right"
+              title={workspacePath}
             />
-            <button
-              onClick={handleSelectWorkspace}
-              className="px-4 py-2.5 bg-primary hover:bg-blue-600 text-white font-medium rounded-lg text-sm transition-colors flex items-center gap-2"
-            >
-              <FolderOpen size={16} />
-              Select Directory
-            </button>
           </div>
-          <p className="text-xs text-text-muted mt-2">
-            Default: ~/.config/tiginal/workspaces
-          </p>
         </div>
-      </section>
-
+      </div>
     </div>
   );
 }

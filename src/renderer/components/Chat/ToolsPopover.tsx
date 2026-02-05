@@ -35,6 +35,9 @@ export const ToolsPopover: React.FC<ToolsPopoverProps> = ({ onClose }) => {
 
   useEffect(() => {
     loadSettings();
+    const handleUpdate = () => loadSettings();
+    window.addEventListener('tools-updated', handleUpdate);
+    return () => window.removeEventListener('tools-updated', handleUpdate);
   }, []);
 
   const loadSettings = async () => {

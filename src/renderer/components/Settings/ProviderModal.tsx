@@ -6,6 +6,7 @@ import { clsx } from 'clsx';
 // Import icons from the correct path
 import { ICONS } from '../../settings/icons';
 import { OAI_API_PROVIDERS, AIProvider, ModelConfig } from '../../settings/ai-constants';
+import { FancySelect } from '../ui/FancySelect';
 
 interface ProviderModalProps {
   isOpen: boolean;
@@ -61,12 +62,14 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
       };
       
       if (isPresetOpen) {
-          document.addEventListener('mousedown', handleClickOutside);
+          // Use capture so parent handlers calling stopPropagation (e.g. draggable modal surfaces)
+          // don't prevent outside-click closing.
+          document.addEventListener('mousedown', handleClickOutside, true);
           // Also update coords on scroll/resize ideally, or just close
           const handleResize = () => setIsPresetOpen(false);
           window.addEventListener('resize', handleResize);
           return () => {
-              document.removeEventListener('mousedown', handleClickOutside);
+              document.removeEventListener('mousedown', handleClickOutside, true);
               window.removeEventListener('resize', handleResize);
           };
       }
@@ -215,7 +218,7 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
                        }}
                        className="fixed z-[9999] bg-surface border border-border rounded-lg shadow-xl overflow-y-auto"
                    >
-                       {OAI_API_PROVIDERS.map(p => (
+                       {OAI_API_PROVIDERS.filter(p => p.value !== 'copilot').map(p => (
                            <button
                                key={p.value}
                                type="button"
@@ -249,17 +252,13 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
                </div>
                <div>
                    <label className="block text-sm font-medium text-gray-300 mb-1">Models</label>
-                    <div className="flex gap-2">
-                         <select 
-                             value={formData.model}
-                             onChange={(e) => handleChange('model', e.target.value)}
-                             className="w-full bg-background border border-border rounded-lg p-2.5 text-sm"
-                         >
-                             {(formData.availableModels || []).map(m => (
-                                 <option key={m.id} value={m.id}>{m.name}</option>
-                             ))}
-                         </select>
-                    </div>
+                    <FancySelect
+                      className="w-full"
+                      value={formData.model || ''}
+                      onChange={(val) => handleChange('model', val)}
+                      options={(formData.availableModels || []).map(m => ({ value: m.id, label: m.name }))}
+                      buttonClassName="bg-background"
+                    />
                </div>
            </div>
 

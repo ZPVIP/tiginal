@@ -28,6 +28,9 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
 
   useEffect(() => {
     loadSettings();
+    const handleUpdate = () => loadSettings();
+    window.addEventListener('system-prompts-updated', handleUpdate);
+    return () => window.removeEventListener('system-prompts-updated', handleUpdate);
   }, []);
 
   const loadSettings = async () => {

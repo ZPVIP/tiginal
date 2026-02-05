@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Edit2, RotateCw, CheckCircle2, AlertCircle, DownloadCloud } from 'lucide-react';
+import { Plus, Trash2, Edit2, RotateCw, CheckCircle2, AlertCircle, DownloadCloud, Bot } from 'lucide-react';
 import { ProviderModal } from './ProviderModal';
 import { ModelManagerModal } from './ModelManagerModal';
 import { AIProvider, OAI_API_PROVIDERS } from '../../settings/ai-constants';
+import { ICONS } from '../../settings/icons';
 
 // Mock ipc invoke
 const invoke = window.electron?.invoke || (async () => {});
@@ -30,7 +31,8 @@ export function AIProviders() {
   const loadProviders = async () => {
     try {
       const list = await invoke('ai:get-providers');
-      setProviders(list || []);
+      const sorted = (list || []).sort((a: AIProvider, b: AIProvider) => a.name.localeCompare(b.name));
+      setProviders(sorted);
     } catch (err) {
       console.error("Failed to load providers", err);
     }
@@ -85,7 +87,7 @@ export function AIProviders() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-4 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
             <h3 className="text-xl font-semibold">AI Providers</h3>
@@ -97,7 +99,7 @@ export function AIProviders() {
                 className="flex items-center gap-2 px-3 py-2 bg-surface hover:bg-surface-light border border-border text-text-main rounded-lg text-sm transition-colors"
                 title="Login with GitHub Copilot"
              >
-                <div className="w-4 h-4 rounded-full bg-white text-black flex items-center justify-center font-bold text-[10px]">G</div> Add Copilot
+                <div className="w-4 h-4 flex items-center justify-center text-text-main" dangerouslySetInnerHTML={{ __html: ICONS.copilot }} /> Add Copilot
              </button>
              <button 
                 onClick={openAdd}
@@ -108,45 +110,57 @@ export function AIProviders() {
         </div>
       </div>
 
-      <div className="grid gap-4">
-        {providers.map(provider => (
-            <div key={provider.id} className="bg-surface border border-border rounded-lg p-4 flex items-center justify-between group">
-                <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-accent">
-                         {/* Icon based on type/name could go here */}
-                         <div className="uppercase font-bold text-xs">{provider.name.substring(0, 2)}</div>
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                             <h4 className="font-medium text-text-main">{provider.name}</h4>
-                             {provider.isDefault && <span className="text-[10px] bg-green-900 text-green-300 px-1.5 rounded uppercase">Default</span>}
+      <div className="grid gap-2">
+        {providers.map(provider => {
+            // Find provider info by name OR matching endpoint
+            const providerInfo = OAI_API_PROVIDERS.find(p => p.label === provider.name) || 
+                                 OAI_API_PROVIDERS.find(p => p.baseUrl && provider.endpoint && p.baseUrl === provider.endpoint);
+            
+            const iconKey = providerInfo?.value;
+            const iconSvg = iconKey && ICONS[iconKey];
+
+            return (
+                <div key={provider.id} className="bg-surface border border-border rounded-lg px-3 py-2 flex items-center justify-between group">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center text-accent shrink-0 overflow-hidden">
+                             {iconSvg ? (
+                                <div className="w-5 h-5" dangerouslySetInnerHTML={{ __html: iconSvg }} />
+                             ) : (
+                                <Bot size={18} />
+                             )}
                         </div>
-                        <p className="text-xs text-text-muted mt-0.5">{provider.endpoint || OAI_API_PROVIDERS.find(p => p.value === 'openai')?.baseUrl}</p>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                 <h4 className="font-medium text-text-main text-sm">{provider.name}</h4>
+                                 {provider.isDefault && <span className="text-[10px] bg-green-900 text-green-300 px-1.5 rounded uppercase">Default</span>}
+                            </div>
+                            <p className="text-[10px] text-text-muted truncate max-w-[250px]">{provider.endpoint || OAI_API_PROVIDERS.find(p => p.value === 'openai')?.baseUrl}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                           onClick={() => openEdit(provider)}
+                           className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                        >
+                            <Edit2 size={14} />
+                        </button>
+                        <button 
+                           onClick={() => setManagingModelsProvider(provider)}
+                           className="p-1.5 text-text-muted hover:text-text-main hover:bg-white/10 rounded-lg transition-colors"
+                           title="Manage Models"
+                        >
+                            <DownloadCloud size={14} />
+                        </button>
+                        <button 
+                           onClick={() => handleDelete(provider.id)}
+                           className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                        >
+                            <Trash2 size={14} />
+                        </button>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button 
-                       onClick={() => openEdit(provider)}
-                       className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                    >
-                        <Edit2 size={16} />
-                    </button>
-                    <button 
-                       onClick={() => setManagingModelsProvider(provider)}
-                       className="p-2 text-text-muted hover:text-text-main hover:bg-white/10 rounded-lg transition-colors"
-                       title="Manage Models"
-                    >
-                        <DownloadCloud size={16} />
-                    </button>
-                    <button 
-                       onClick={() => handleDelete(provider.id)}
-                       className="p-2 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
-                    >
-                        <Trash2 size={16} />
-                    </button>
-                </div>
-            </div>
-        ))}
+            );
+        })}
 
         {providers.length === 0 && (
             <div className="text-center py-12 text-text-muted bg-surface/50 rounded-lg border border-dashed border-border">
