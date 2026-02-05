@@ -31,6 +31,7 @@ export default function App() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const chatRef = useRef<ChatHandle>(null);
+  const contentAreaRef = useRef<HTMLDivElement>(null);
   
   // Load Layout State
   useEffect(() => {
@@ -54,6 +55,25 @@ export default function App() {
     localStorage.setItem('app-layout-config', JSON.stringify(config));
   }, [showTerminal, showChat, chatRatio, isDrawerOpen]);
 
+
+  // Clamp chatRatio when drawer opens/closes or layout changes to ensure chat min-width
+  useEffect(() => {
+    if (!showChat || !showTerminal) return;
+    // Use a rAF to read the actual content area width after layout settles
+    const rafId = requestAnimationFrame(() => {
+      const contentArea = contentAreaRef.current;
+      if (!contentArea) return;
+      const availableWidth = contentArea.clientWidth;
+      if (availableWidth <= 0) return;
+
+      const minChatWidth = 448;
+      const minChatRatio = minChatWidth / availableWidth;
+      if (chatRatio < minChatRatio) {
+        setChatRatio(minChatRatio);
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [isDrawerOpen, showChat, showTerminal]);
 
   const NavItem = ({ id, icon: Icon, title, onClick, isActive }: { id: string, icon: any, title: string, onClick?: () => void, isActive?: boolean }) => (
     <button
@@ -80,28 +100,26 @@ export default function App() {
       if (!isResizing) return;
 
       const handleMouseMove = (e: MouseEvent) => {
-          const windowWidth = window.innerWidth;
-          const availableWidth = windowWidth;
-          
-          // chatRatio = chatWidth / availableWidth
-          // Chat is now on the LEFT, so chatWidth = mouseX
-          const mouseX = e.clientX;
-          
-          // Calculate new Chat Ratio based on Mouse X
-          // Chat Width = mouseX
-          // Terminal Width = availableWidth - mouseX
-          // Chat Ratio = mouseX / availableWidth
-          
-          let newChatRatio = mouseX / availableWidth;
-          
-          // Constraints: Min 450px for Chat
-          const minChatWidth = 450;
-          const minChatRatio = minChatWidth / availableWidth;
-          
-          let maxRatio = 0.8;
+          const contentArea = contentAreaRef.current;
+          if (!contentArea) return;
 
-          newChatRatio = Math.max(minChatRatio, Math.min(maxRatio, newChatRatio));
-          
+          // Use the content area's actual bounding rect to account for the drawer offset
+          const rect = contentArea.getBoundingClientRect();
+          const availableWidth = rect.width;
+          const mouseX = e.clientX - rect.left;
+
+          let newChatRatio = mouseX / availableWidth;
+
+          // Constraint: Min 448px for AI Chat (w-md)
+          const minChatWidth = 448;
+          const minChatRatio = minChatWidth / availableWidth;
+
+          // Terminal can shrink to give space to chat, but keep a small minimum
+          const minTerminalWidth = 120;
+          const maxChatRatio = Math.min(0.9, (availableWidth - minTerminalWidth) / availableWidth);
+
+          newChatRatio = Math.max(minChatRatio, Math.min(maxChatRatio, newChatRatio));
+
           setChatRatio(newChatRatio);
       };
 
@@ -260,18 +278,19 @@ export default function App() {
             )}
 
             {/* Main Content Area */}
-            <div className="flex-1 flex overflow-hidden w-full">
+            <div ref={contentAreaRef} className="flex-1 flex overflow-hidden w-full">
              
              {/* Left Pane: AI Chat (now on left) */}
              <div 
                 className={clsx(
-                    "bg-background shadow-2xl flex flex-col h-full relative min-w-0",
+                    "bg-background shadow-2xl flex flex-col h-full relative",
                     !showChat && "hidden"
                 )}
                 style={{ 
                     flexGrow: showTerminal ? chatRatio : 1, 
                     flexShrink: 0,
-                    flexBasis: showTerminal ? '0%' : '100%'
+                    flexBasis: showTerminal ? '0%' : '100%',
+                    minWidth: showTerminal ? 448 : undefined,
                 }}
              >
                  <ErrorBoundary>
@@ -298,12 +317,12 @@ export default function App() {
              {/* Right Pane: Terminal/SSH (now on right) */}
              <div 
                 className={clsx(
-                    "flex-1 overflow-hidden relative min-w-0",
+                    "overflow-hidden relative min-w-0",
                     !showTerminal && "hidden"
                 )}
                 style={{ 
                     flexGrow: showChat ? (1 - chatRatio) : 1,
-                    flexShrink: 0,
+                    flexShrink: 1,
                     flexBasis: showChat ? '0%' : '100%' 
                 }}
              >

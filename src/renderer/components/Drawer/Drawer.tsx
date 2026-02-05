@@ -112,11 +112,11 @@ export function Drawer({ isOpen, currentConversationId, onSelectConversation, on
       {isOpen && (
         <motion.div
           initial={{ width: 0, opacity: 0 }}
-          animate={{ width: 260, opacity: 1 }}
+          animate={{ width: 256, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="h-full bg-surface border-r border-border flex flex-col overflow-hidden"
-          style={{ minWidth: isOpen ? 260 : 0 }}
+          className="h-full bg-surface border-r border-border flex flex-col overflow-hidden shrink-0"
+          style={{ minWidth: isOpen ? 256 : 0 }}
         >
           <DrawerContext.Provider value={contextValue}>
             <div className="flex-1 overflow-y-auto scrollbar-thin">
