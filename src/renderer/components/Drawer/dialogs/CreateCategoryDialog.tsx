@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Modal } from '../../ui/Modal';
+import { X } from 'lucide-react';
 
 interface CreateCategoryDialogProps {
   isOpen: boolean;
@@ -30,34 +30,37 @@ export function CreateCategoryDialog({ isOpen, onClose, onConfirm }: CreateCateg
     }
   };
 
+  if (!isOpen) return null;
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Create new category">
-      <div className="space-y-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-surface border border-border rounded-xl w-full max-w-sm shadow-xl p-6">
+        <h3 className="text-lg font-semibold text-text-main mb-4">New Category</h3>
         <input
           ref={inputRef}
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Category name"
-          className="w-full px-3 py-2 bg-bg-secondary border border-border-subtle rounded-md text-sm text-text-primary focus:outline-none focus:border-accent-primary"
+          placeholder="Category Name"
+          className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-text-main mb-6 focus:ring-primary focus:border-primary"
         />
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+            className="px-3 py-1.5 text-sm text-text-sec hover:text-text-main"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!name.trim()}
-            className="px-4 py-2 text-sm bg-accent-primary text-white rounded-md hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            OK
+            Add
           </button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }

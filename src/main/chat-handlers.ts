@@ -219,13 +219,13 @@ export function setupChatHandlers(): void {
   });
 
   // Get conversations by category with pagination
-  ipcMain.handle('chat:get-conversations-by-category', async (_event, categoryId: number, page: number, pageSize: number) => {
-    return getChatService().getConversationsByCategory(categoryId, page, pageSize);
+  ipcMain.handle('chat:get-conversations-by-category', async (_event, categoryId: number, page: number, pageSize: number, sortBy?: 'updatedAt' | 'createdAt') => {
+    return getChatService().getConversationsByCategory(categoryId, page, pageSize, sortBy);
   });
 
   // Get favorite conversations with pagination
-  ipcMain.handle('chat:get-favorite-conversations', async (_event, page: number, pageSize: number) => {
-    return getChatService().getFavoriteConversations(page, pageSize);
+  ipcMain.handle('chat:get-favorite-conversations', async (_event, page: number, pageSize: number, sortBy?: 'updatedAt' | 'createdAt') => {
+    return getChatService().getFavoriteConversations(page, pageSize, sortBy);
   });
 
   // Rename conversation (alias for update-title)

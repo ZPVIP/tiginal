@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { CategoryItem } from './CategoryItem';
 import { CreateCategoryDialog } from './dialogs/CreateCategoryDialog';
 import { useDrawerContext } from './Drawer';
@@ -8,6 +8,7 @@ const invoke = window.electron?.invoke || (async () => {});
 
 export function CategoryList() {
   const { categories, refreshCategories } = useDrawerContext();
+  const [isExpanded, setIsExpanded] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   const handleCreateCategory = async (name: string) => {
@@ -22,14 +23,17 @@ export function CategoryList() {
 
   return (
     <div className="flex-1">
-      {/* Header with Add button */}
-      <div className="flex items-center justify-between px-2 py-1.5 border-b border-border-subtle">
-        <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
-          Categories
+      {/* Header - styled like FAVORITES */}
+      <div className="flex items-center px-3 py-2 border-b border-border h-8">
+        <span className="text-xs font-medium text-text-muted uppercase tracking-wider flex-1">
+          CATEGORIES
         </span>
         <button
-          onClick={() => setShowCreateDialog(true)}
-          className="p-0.5 rounded hover:bg-bg-secondary transition-colors text-text-muted hover:text-text-primary"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowCreateDialog(true);
+          }}
+          className="p-0.5 rounded hover:bg-elevated transition-colors text-text-muted hover:text-text-main"
           title="Create new category"
         >
           <Plus size={14} />
@@ -37,13 +41,12 @@ export function CategoryList() {
       </div>
 
       {/* Category List */}
-      <div className="py-1">
+      <div>
         {categories.map((category) => (
           <CategoryItem key={category.id} category={category} />
         ))}
       </div>
 
-      {/* Create Category Dialog */}
       <CreateCategoryDialog
         isOpen={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}

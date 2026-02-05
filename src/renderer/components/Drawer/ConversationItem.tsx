@@ -22,8 +22,7 @@ export function ConversationItem({
   onRefresh,
   showFavoriteOption = true,
 }: ConversationItemProps) {
-  const { onDeleteConversation, refreshCategories } = useDrawerContext();
-  const [isHovered, setIsHovered] = useState(false);
+  const { onDeleteConversation, refreshCategories, refreshFavorites } = useDrawerContext();
   const [showMenu, setShowMenu] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
@@ -54,8 +53,10 @@ export function ConversationItem({
 
   const handleToggleFavorite = async () => {
     try {
+      // Only toggle favorite, not pinned
       await invoke('chat:toggle-conversation-favorite', conversation.id, !conversation.isFavorite);
       await onRefresh();
+      refreshFavorites(); // Immediately refresh favorites list
       setShowMenu(false);
     } catch (e) {
       console.error('Failed to toggle favorite:', e);
@@ -97,16 +98,16 @@ export function ConversationItem({
   return (
     <div
       className={clsx(
-        'flex items-center gap-1 px-4 py-1 cursor-pointer transition-colors relative',
-        isSelected ? 'bg-accent-primary/20 text-accent-primary' : 'hover:bg-bg-secondary/50 text-text-secondary'
+        'flex items-center gap-2 px-4 h-8 cursor-pointer transition-colors relative group',
+        isSelected 
+          ? 'bg-primary/20 text-primary' 
+          : 'text-text-sec hover:bg-elevated'
       )}
       onClick={onSelect}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Pin indicator */}
       {conversation.isPinned && (
-        <Pin size={10} className="text-accent-primary flex-shrink-0" />
+        <Pin size={10} className="text-primary flex-shrink-0" />
       )}
 
       {/* Favorite indicator */}
@@ -119,24 +120,22 @@ export function ConversationItem({
         {conversation.title || 'Untitled'}
       </span>
 
-      {/* Context Menu Trigger */}
-      {isHovered && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowMenu(!showMenu);
-          }}
-          className="p-0.5 rounded hover:bg-bg-secondary transition-colors"
-        >
-          <MoreHorizontal size={12} className="text-text-muted" />
-        </button>
-      )}
+      {/* Context Menu Trigger - always present but invisible unless hovered */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowMenu(!showMenu);
+        }}
+        className="p-0.5 rounded hover:bg-surface transition-colors opacity-0 group-hover:opacity-100"
+      >
+        <MoreHorizontal size={12} className="text-text-muted" />
+      </button>
 
       {/* Context Menu */}
       {showMenu && (
         <div
           ref={menuRef}
-          className="absolute right-2 top-full z-50 bg-bg-primary border border-border-subtle rounded-md shadow-lg py-1 min-w-[130px]"
+          className="absolute right-2 top-full z-50 bg-surface border border-border shadow-xl text-xs py-1 rounded w-32"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -144,20 +143,20 @@ export function ConversationItem({
               setShowRenameDialog(true);
               setShowMenu(false);
             }}
-            className="w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
           >
             <Edit2 size={12} /> Rename
           </button>
           <button
             onClick={handleTogglePinned}
-            className="w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
           >
             <Pin size={12} /> {conversation.isPinned ? 'Unpin' : 'Pin'}
           </button>
           {showFavoriteOption && (
             <button
               onClick={handleToggleFavorite}
-              className="w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+              className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
             >
               <Star size={12} /> {conversation.isFavorite ? 'Unfavorite' : 'Favorite'}
             </button>
@@ -167,13 +166,14 @@ export function ConversationItem({
               setShowMoveDialog(true);
               setShowMenu(false);
             }}
-            className="w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
           >
             <ArrowRightCircle size={12} /> Move to...
           </button>
+          <div className="h-px bg-border my-1" />
           <button
             onClick={handleDelete}
-            className="w-full px-3 py-1.5 text-xs text-red-400 hover:bg-bg-secondary flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-500 hover:text-white flex items-center gap-2"
           >
             <Trash2 size={12} /> Delete
           </button>

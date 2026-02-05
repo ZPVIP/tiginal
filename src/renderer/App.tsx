@@ -62,7 +62,7 @@ export default function App() {
       className={clsx(
         "p-1.5 rounded-md transition-colors",
         isActive 
-          ? "bg-primary/20 text-primary" 
+          ? "text-primary hover:bg-[var(--tab-hover)]" 
           : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
       )}
     >
@@ -171,34 +171,33 @@ export default function App() {
         <div className="flex flex-col h-screen w-screen bg-background overflow-hidden relative">
           {/* Custom Title Bar with Nav Buttons */}
           <div 
-            className="h-8 bg-surface/50 border-b border-border w-full flex items-center justify-between shrink-0"
+            className="h-8 bg-surface/50 border-b border-border w-full flex items-center shrink-0"
             style={{ WebkitAppRegion: 'drag' } as any}
           >
-             {/* Left spacer for macOS traffic lights */}
-             <div className="w-[68px] shrink-0" />
+             {/* Left spacer for macOS traffic lights + extra padding */}
+             <div className={clsx("shrink-0", isMac ? "w-[76px]" : "w-4")} />
              
-             {/* Drawer Toggle Button */}
+             {/* Nav buttons group - next to traffic lights */}
              <div 
-               className="flex items-center h-full"
+               className="flex items-center gap-2 h-full"
                style={{ WebkitAppRegion: 'no-drag' } as any}
              >
+               {/* Drawer Toggle Button */}
                <button
                  onClick={() => setIsDrawerOpen(!isDrawerOpen)}
-                 className="p-1.5 rounded-md transition-colors text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
-                 title={isDrawerOpen ? 'Close drawer' : 'Open drawer'}
+                 disabled={!showChat}
+                 className={clsx(
+                   "p-1.5 rounded-md transition-colors",
+                   !showChat
+                     ? "text-text-muted opacity-50 cursor-not-allowed"
+                     : isDrawerOpen
+                       ? "text-primary hover:bg-[var(--tab-hover)]"
+                       : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
+                 )}
+                 title={!showChat ? 'Chat is hidden' : (isDrawerOpen ? 'Close drawer' : 'Open drawer')}
                >
                  {isDrawerOpen ? <PanelLeftClose size={16} strokeWidth={2} /> : <PanelLeft size={16} strokeWidth={2} />}
                </button>
-             </div>
-             
-             {/* Right side: Nav buttons */}
-             <div 
-               className="flex items-center gap-0.5 px-2 h-full"
-               style={{ 
-                 WebkitAppRegion: 'no-drag',
-                 marginRight: isMac ? 8 : 140 // Leave space for Windows/Linux window controls
-               } as any}
-             >
                <NavItem 
                  id="chat" 
                  icon={MessageSquare} 
@@ -235,22 +234,30 @@ export default function App() {
                  onClick={() => setIsSettingsOpen(true)}
                />
              </div>
+             
+             {/* Empty flex-1 spacer to keep buttons on the left */}
+             <div className="flex-1" />
+             
+             {/* Right spacer for Windows/Linux window controls */}
+             {!isMac && <div className="w-[140px] shrink-0" />}
           </div>
 
           <div className="flex-1 flex overflow-hidden">
 
-            {/* Drawer */}
-            <Drawer
-              isOpen={isDrawerOpen}
-              currentConversationId={currentConversationId}
-              onSelectConversation={(id) => {
-                setCurrentConversationId(id);
-                chatRef.current?.loadConversation(id);
-              }}
-              onDeleteConversation={async (id) => {
-                await chatRef.current?.deleteConversation(id);
-              }}
-            />
+            {/* Drawer - only show when Chat is visible */}
+            {showChat && (
+              <Drawer
+                isOpen={isDrawerOpen}
+                currentConversationId={currentConversationId}
+                onSelectConversation={(id) => {
+                  setCurrentConversationId(id);
+                  chatRef.current?.loadConversation(id);
+                }}
+                onDeleteConversation={async (id) => {
+                  await chatRef.current?.deleteConversation(id);
+                }}
+              />
+            )}
 
             {/* Main Content Area */}
             <div className="flex-1 flex overflow-hidden w-full">

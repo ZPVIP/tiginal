@@ -8,33 +8,32 @@ import { CategoryData, ConversationData, useDrawerContext } from './Drawer';
 
 const invoke = window.electron?.invoke || (async () => {});
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 interface CategoryItemProps {
   category: CategoryData;
 }
 
 export function CategoryItem({ category }: CategoryItemProps) {
-  const { currentConversationId, onSelectConversation, refreshCategories } = useDrawerContext();
+  const { currentConversationId, onSelectConversation, refreshCategories, sortBy } = useDrawerContext();
   const [isExpanded, setIsExpanded] = useState(category.isExpanded);
   const [conversations, setConversations] = useState<ConversationData[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const loadConversations = useCallback(async () => {
     if (!isExpanded) return;
     try {
-      const result = await invoke('chat:get-conversations-by-category', category.id, page, PAGE_SIZE);
+      const result = await invoke('chat:get-conversations-by-category', category.id, page, PAGE_SIZE, sortBy);
       setConversations(result.items || []);
       setTotal(result.total || 0);
     } catch (e) {
       console.error('Failed to load conversations:', e);
     }
-  }, [category.id, page, isExpanded]);
+  }, [category.id, page, isExpanded, sortBy]);
 
   useEffect(() => {
     loadConversations();
@@ -84,7 +83,7 @@ export function CategoryItem({ category }: CategoryItemProps) {
   };
 
   const handleDelete = async () => {
-    if (category.id === 1) return; // Cannot delete default
+    if (category.id === 1) return;
     if (!confirm(`Delete category "${category.name}"? Conversations will be moved to Default.`)) return;
     try {
       await invoke('chat:delete-category', category.id);
@@ -98,13 +97,11 @@ export function CategoryItem({ category }: CategoryItemProps) {
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   return (
-    <div className="border-b border-border-subtle last:border-b-0">
-      {/* Header */}
+    <div>
+      {/* Header - fixed height to prevent height change on hover */}
       <div
-        className="flex items-center gap-1 px-2 py-1.5 cursor-pointer hover:bg-bg-secondary/50 transition-colors relative"
+        className="flex items-center gap-2 px-3 h-8 cursor-pointer hover:bg-elevated transition-colors relative group"
         onClick={handleToggleExpanded}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
       >
         {isExpanded ? (
           <ChevronDown size={14} className="text-text-muted flex-shrink-0" />
@@ -112,32 +109,33 @@ export function CategoryItem({ category }: CategoryItemProps) {
           <ChevronRight size={14} className="text-text-muted flex-shrink-0" />
         )}
         <FolderOpen size={14} className="text-text-muted flex-shrink-0" />
-        <span className="text-xs font-medium text-text-secondary truncate flex-1">
+        <span className="text-xs font-medium text-text-sec truncate">
           {category.name}
+          {category.isPinned && (
+            <Pin size={10} className="text-primary ml-1 inline-block" />
+          )}
+          <span className="text-text-muted ml-1">({total})</span>
         </span>
-        {category.isPinned && (
-          <Pin size={10} className="text-accent-primary flex-shrink-0" />
-        )}
-        <span className="text-xs text-text-muted">{total}</span>
+        
+        {/* Flex spacer */}
+        <div className="flex-1" />
 
-        {/* Context Menu Trigger */}
-        {isHovered && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowMenu(!showMenu);
-            }}
-            className="p-0.5 rounded hover:bg-bg-secondary transition-colors ml-1"
-          >
-            <MoreHorizontal size={14} className="text-text-muted" />
-          </button>
-        )}
+        {/* Context Menu Trigger - always present but invisible unless hovered */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowMenu(!showMenu);
+          }}
+          className="p-0.5 rounded hover:bg-surface transition-colors opacity-0 group-hover:opacity-100"
+        >
+          <MoreHorizontal size={14} className="text-text-muted" />
+        </button>
 
         {/* Context Menu */}
         {showMenu && (
           <div
             ref={menuRef}
-            className="absolute right-2 top-full z-50 bg-bg-primary border border-border-subtle rounded-md shadow-lg py-1 min-w-[120px]"
+            className="absolute right-2 top-full z-50 bg-surface border border-border shadow-xl text-xs py-1 rounded w-32"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -145,23 +143,26 @@ export function CategoryItem({ category }: CategoryItemProps) {
                 setShowRenameDialog(true);
                 setShowMenu(false);
               }}
-              className="w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+              className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
             >
               <Edit2 size={12} /> Rename
             </button>
             <button
               onClick={handleTogglePinned}
-              className="w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-secondary flex items-center gap-2"
+              className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
             >
               <Pin size={12} /> {category.isPinned ? 'Unpin' : 'Pin'}
             </button>
             {category.id !== 1 && (
-              <button
-                onClick={handleDelete}
-                className="w-full px-3 py-1.5 text-xs text-red-400 hover:bg-bg-secondary flex items-center gap-2"
-              >
-                <Trash2 size={12} /> Delete
-              </button>
+              <>
+                <div className="h-px bg-border my-1" />
+                <button
+                  onClick={handleDelete}
+                  className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-500 hover:text-white flex items-center gap-2"
+                >
+                  <Trash2 size={12} /> Delete
+                </button>
+              </>
             )}
           </div>
         )}
@@ -186,7 +187,6 @@ export function CategoryItem({ category }: CategoryItemProps) {
             ))
           )}
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <Pagination
               currentPage={page}
@@ -197,7 +197,6 @@ export function CategoryItem({ category }: CategoryItemProps) {
         </div>
       )}
 
-      {/* Rename Dialog */}
       <RenameCategoryDialog
         isOpen={showRenameDialog}
         onClose={() => setShowRenameDialog(false)}

@@ -426,9 +426,9 @@ export class ChatService {
 
   /**
    * Get conversations by category with pagination
-   * Sorted by: pinned first (alphabetically), then by updated_at desc
+   * Sorted by: pinned first (alphabetically), then by sortBy field desc
    */
-  getConversationsByCategory(categoryId: number, page: number, pageSize: number): { items: Conversation[]; total: number } {
+  getConversationsByCategory(categoryId: number, page: number, pageSize: number, sortBy: 'updatedAt' | 'createdAt' = 'updatedAt'): { items: Conversation[]; total: number } {
     const db = getDatabase().getDb();
     const offset = page * pageSize;
 
@@ -436,11 +436,13 @@ export class ChatService {
       SELECT COUNT(*) as count FROM conversations WHERE category_id = ?
     `).get(categoryId) as { count: number };
 
+    const sortField = sortBy === 'createdAt' ? 'created_at' : 'updated_at';
+
     const rows = db.prepare(`
       SELECT id, title, provider_id, category_id, is_pinned, is_favorite, created_at, updated_at
       FROM conversations
       WHERE category_id = ?
-      ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN title END ASC, updated_at DESC
+      ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN title END ASC, ${sortField} DESC
       LIMIT ? OFFSET ?
     `).all(categoryId, pageSize, offset) as Array<{
       id: string;
@@ -471,9 +473,9 @@ export class ChatService {
 
   /**
    * Get favorite conversations with pagination
-   * Sorted by: pinned first (alphabetically), then by updated_at desc
+   * Sorted by: pinned first (alphabetically), then by sortBy field desc
    */
-  getFavoriteConversations(page: number, pageSize: number): { items: Conversation[]; total: number } {
+  getFavoriteConversations(page: number, pageSize: number, sortBy: 'updatedAt' | 'createdAt' = 'updatedAt'): { items: Conversation[]; total: number } {
     const db = getDatabase().getDb();
     const offset = page * pageSize;
 
@@ -481,11 +483,13 @@ export class ChatService {
       SELECT COUNT(*) as count FROM conversations WHERE is_favorite = 1
     `).get() as { count: number };
 
+    const sortField = sortBy === 'createdAt' ? 'created_at' : 'updated_at';
+
     const rows = db.prepare(`
       SELECT id, title, provider_id, category_id, is_pinned, is_favorite, created_at, updated_at
       FROM conversations
       WHERE is_favorite = 1
-      ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN title END ASC, updated_at DESC
+      ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN title END ASC, ${sortField} DESC
       LIMIT ? OFFSET ?
     `).all(pageSize, offset) as Array<{
       id: string;

@@ -27,9 +27,12 @@ export interface ConversationData {
 interface DrawerContextType {
   categories: CategoryData[];
   refreshCategories: () => Promise<void>;
+  refreshFavorites: () => void;
+  favoritesRefreshKey: number;
   currentConversationId: string | null;
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => Promise<void>;
+  sortBy: 'updatedAt' | 'createdAt';
 }
 
 const DrawerContext = createContext<DrawerContextType | null>(null);
@@ -49,6 +52,8 @@ interface DrawerProps {
 
 export function Drawer({ isOpen, currentConversationId, onSelectConversation, onDeleteConversation }: DrawerProps) {
   const [categories, setCategories] = useState<CategoryData[]>([]);
+  const [favoritesRefreshKey, setFavoritesRefreshKey] = useState(0);
+  const [sortBy, setSortBy] = useState<'updatedAt' | 'createdAt'>('updatedAt');
 
   const refreshCategories = useCallback(async () => {
     try {
@@ -59,16 +64,47 @@ export function Drawer({ isOpen, currentConversationId, onSelectConversation, on
     }
   }, []);
 
+  const refreshFavorites = useCallback(() => {
+    setFavoritesRefreshKey(k => k + 1);
+  }, []);
+
   useEffect(() => {
     refreshCategories();
   }, [refreshCategories]);
 
+  // Load sortBy setting and listen for changes
+  useEffect(() => {
+    const loadSortBy = async () => {
+      try {
+        const val = await invoke('settings:get', 'historySort');
+        if (val) setSortBy(val as any);
+      } catch (e) {
+        console.error('Failed to load historySort:', e);
+      }
+    };
+    loadSortBy();
+
+    const handleSettingsUpdate = (e: CustomEvent) => {
+      if (e.detail?.key === 'historySort') {
+        setSortBy(e.detail.value);
+      }
+    };
+
+    window.addEventListener('settings-general-updated', handleSettingsUpdate as EventListener);
+    return () => {
+      window.removeEventListener('settings-general-updated', handleSettingsUpdate as EventListener);
+    };
+  }, []);
+
   const contextValue: DrawerContextType = {
     categories,
     refreshCategories,
+    refreshFavorites,
+    favoritesRefreshKey,
     currentConversationId,
     onSelectConversation,
     onDeleteConversation,
+    sortBy,
   };
 
   return (
@@ -76,11 +112,11 @@ export function Drawer({ isOpen, currentConversationId, onSelectConversation, on
       {isOpen && (
         <motion.div
           initial={{ width: 0, opacity: 0 }}
-          animate={{ width: 200, opacity: 1 }}
+          animate={{ width: 260, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="h-full bg-bg-tertiary border-r border-border-subtle flex flex-col overflow-hidden"
-          style={{ minWidth: isOpen ? 200 : 0 }}
+          className="h-full bg-surface border-r border-border flex flex-col overflow-hidden"
+          style={{ minWidth: isOpen ? 260 : 0 }}
         >
           <DrawerContext.Provider value={contextValue}>
             <div className="flex-1 overflow-y-auto scrollbar-thin">
