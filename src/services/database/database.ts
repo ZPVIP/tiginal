@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 /**
  * Database service for Tiginal
@@ -109,6 +109,10 @@ export class DatabaseService {
 
     if (currentVersion < 11) {
       this.migrateV11();
+    }
+
+    if (currentVersion < 12) {
+      this.migrateV12();
     }
 
     // Update schema version
@@ -398,6 +402,63 @@ export class DatabaseService {
 
     // Delete old systemPrompt key from app_settings
     this.db.exec(`DELETE FROM app_settings WHERE key = 'systemPrompt'`);
+  }
+
+  /**
+   * Migration v12: Create conversation_categories table and add fields to conversations
+   */
+  private migrateV12(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // Create conversation_categories table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversation_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        is_pinned INTEGER DEFAULT 0,
+        is_expanded INTEGER DEFAULT 1,
+        rank INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_conversation_categories_rank ON conversation_categories(rank);
+    `);
+
+    // Insert default category (id=1)
+    const now = Date.now();
+    const existing = this.db.prepare('SELECT id FROM conversation_categories WHERE id = 1').get();
+    if (!existing) {
+      this.db.prepare(`
+        INSERT INTO conversation_categories (id, name, is_pinned, is_expanded, rank, created_at, updated_at)
+        VALUES (1, 'Default', 0, 1, 0, ?, ?)
+      `).run(now, now);
+    }
+
+    // Add new columns to conversations table
+    // SQLite doesn't support adding FK constraints via ALTER, so we just add the column
+    try {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN category_id INTEGER DEFAULT 1`);
+    } catch (e) {
+      // Column might already exist
+    }
+    try {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN is_pinned INTEGER DEFAULT 0`);
+    } catch (e) {
+      // Column might already exist
+    }
+    try {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN is_favorite INTEGER DEFAULT 0`);
+    } catch (e) {
+      // Column might already exist
+    }
+
+    // Create indexes for new columns
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_conversations_category ON conversations(category_id);
+      CREATE INDEX IF NOT EXISTS idx_conversations_pinned ON conversations(is_pinned);
+      CREATE INDEX IF NOT EXISTS idx_conversations_favorite ON conversations(is_favorite);
+    `);
   }
 
   /**

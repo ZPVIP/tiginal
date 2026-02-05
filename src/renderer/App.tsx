@@ -1,12 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare, Check, Copy } from 'lucide-react';
+import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SettingsModal } from './components/Settings/SettingsModal';
-import { Chat } from './components/Chat/Chat';
+import { Chat, ChatHandle } from './components/Chat/Chat';
 import { TerminalView } from './components/Terminal/TerminalView';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { Drawer } from './components/Drawer/Drawer';
 
 const SSHView = () => <div className="p-4 text-text-muted">SSH Servers (Placeholder)</div>;
+
+// Platform detection
+const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'terminal' | 'ssh'>('terminal');
@@ -20,9 +24,14 @@ export default function App() {
   // Resizing State
   const [isResizing, setIsResizing] = useState(false);
 
-  // Terminal State for Title Bar
+  // Terminal State (path now managed by TerminalView for context menu)
   const [activeTerminalPath, setActiveTerminalPath] = useState('');
-  const [pathCopied, setPathCopied] = useState(false);
+
+  // Drawer State
+  const [isDrawerOpen, setIsDrawerOpen] = useState(true);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const chatRef = useRef<ChatHandle>(null);
+  const contentAreaRef = useRef<HTMLDivElement>(null);
   
   // Load Layout State
   useEffect(() => {
@@ -33,6 +42,7 @@ export default function App() {
         if (typeof config.showTerminal === 'boolean') setShowTerminal(config.showTerminal);
         if (typeof config.showChat === 'boolean') setShowChat(config.showChat);
         if (typeof config.chatRatio === 'number') setChatRatio(config.chatRatio);
+        if (typeof config.isDrawerOpen === 'boolean') setIsDrawerOpen(config.isDrawerOpen);
       }
     } catch (e) {
       console.error('Failed to load layout config:', e);
@@ -41,23 +51,42 @@ export default function App() {
 
   // Save Layout State
   useEffect(() => {
-    const config = { showTerminal, showChat, chatRatio };
+    const config = { showTerminal, showChat, chatRatio, isDrawerOpen };
     localStorage.setItem('app-layout-config', JSON.stringify(config));
-  }, [showTerminal, showChat, chatRatio]);
+  }, [showTerminal, showChat, chatRatio, isDrawerOpen]);
 
+
+  // Clamp chatRatio when drawer opens/closes or layout changes to ensure chat min-width
+  useEffect(() => {
+    if (!showChat || !showTerminal) return;
+    // Use a rAF to read the actual content area width after layout settles
+    const rafId = requestAnimationFrame(() => {
+      const contentArea = contentAreaRef.current;
+      if (!contentArea) return;
+      const availableWidth = contentArea.clientWidth;
+      if (availableWidth <= 0) return;
+
+      const minChatWidth = 448;
+      const minChatRatio = minChatWidth / availableWidth;
+      if (chatRatio < minChatRatio) {
+        setChatRatio(minChatRatio);
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [isDrawerOpen, showChat, showTerminal]);
 
   const NavItem = ({ id, icon: Icon, title, onClick, isActive }: { id: string, icon: any, title: string, onClick?: () => void, isActive?: boolean }) => (
     <button
       onClick={onClick}
       title={title}
       className={clsx(
-        "p-2 rounded-lg mb-2 transition-colors",
+        "p-1.5 rounded-md transition-colors",
         isActive 
-          ? "bg-primary/20 text-primary" 
+          ? "text-primary hover:bg-[var(--tab-hover)]" 
           : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
       )}
     >
-      <Icon size={20} strokeWidth={2} />
+      <Icon size={16} strokeWidth={2} />
     </button>
   );
 
@@ -71,29 +100,26 @@ export default function App() {
       if (!isResizing) return;
 
       const handleMouseMove = (e: MouseEvent) => {
-          const windowWidth = window.innerWidth;
-          const sidebarWidth = 48;
-          const availableWidth = windowWidth - sidebarWidth;
-          
-          // chatRatio = chatWidth / availableWidth
-          // Mouse X relative to available area start (sidebarWidth)
-          const mouseX = e.clientX - sidebarWidth;
-          
-          // Calculate new Terminal Ratio based on Mouse X
-          // Terminal Width = mouseX
-          // Chat Width = availableWidth - mouseX
-          // Chat Ratio = (availableWidth - mouseX) / availableWidth
-          
-          let newChatRatio = (availableWidth - mouseX) / availableWidth;
-          
-          // Constraints: Min 450px for Chat
-          const minChatWidth = 450;
-          const minChatRatio = minChatWidth / availableWidth;
-          
-          let maxRatio = 0.8;
+          const contentArea = contentAreaRef.current;
+          if (!contentArea) return;
 
-          newChatRatio = Math.max(minChatRatio, Math.min(maxRatio, newChatRatio));
-          
+          // Use the content area's actual bounding rect to account for the drawer offset
+          const rect = contentArea.getBoundingClientRect();
+          const availableWidth = rect.width;
+          const mouseX = e.clientX - rect.left;
+
+          let newChatRatio = mouseX / availableWidth;
+
+          // Constraint: Min 448px for AI Chat (w-md)
+          const minChatWidth = 448;
+          const minChatRatio = minChatWidth / availableWidth;
+
+          // Terminal can shrink to give space to chat, but keep a small minimum
+          const minTerminalWidth = 120;
+          const maxChatRatio = Math.min(0.9, (availableWidth - minTerminalWidth) / availableWidth);
+
+          newChatRatio = Math.max(minChatRatio, Math.min(maxChatRatio, newChatRatio));
+
           setChatRatio(newChatRatio);
       };
 
@@ -155,124 +181,121 @@ export default function App() {
       }
   };
 
-  const handleCopyPath = () => {
-    if (!activeTerminalPath) return;
-    navigator.clipboard.writeText(activeTerminalPath);
-    setPathCopied(true);
-    setTimeout(() => setPathCopied(false), 2000);
-  };
 
-  const formatHeaderPath = (path: string) => {
-    if (!path) return '';
-    // Replace /Users/username with ~
-    return path.replace(/^\/Users\/[^/]+/, '~');
-  };
 
 
   return (
     <ErrorBoundary>
         <div className="flex flex-col h-screen w-screen bg-background overflow-hidden relative">
-          {/* Custom Title Bar */}
+          {/* Custom Title Bar with Nav Buttons */}
           <div 
             className="h-8 bg-surface/50 border-b border-border w-full flex items-center shrink-0"
             style={{ WebkitAppRegion: 'drag' } as any}
           >
-             {/* Title Bar Content (Traffic lights sit here natively) */}
+             {/* Left spacer for macOS traffic lights + extra padding */}
+             <div className={clsx("shrink-0", isMac ? "w-[76px]" : "w-4")} />
+             
+             {/* Nav buttons group - next to traffic lights */}
              <div 
-               className="ml-[80px] flex items-center space-x-2 text-xs text-text-sec px-2 h-full select-text"
+               className="flex items-center gap-2 h-full"
                style={{ WebkitAppRegion: 'no-drag' } as any}
-             > 
-               {activeTerminalPath && activeTab === 'terminal' && (
-                  <>
-                     <button 
-                       onClick={handleCopyPath}
-                       className="hover:text-text-main transition-colors p-1 rounded hover:bg-white/5 flex items-center justify-center"
-                       title="Copy full path"
-                     >
-                        {pathCopied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-                     </button>
-                     <span className="font-mono opacity-80 select-none truncate">
-                        {formatHeaderPath(activeTerminalPath)}
-                     </span>
-                  </>
-               )}
+             >
+               {/* Drawer Toggle Button */}
+               <button
+                 onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+                 disabled={!showChat}
+                 className={clsx(
+                   "p-1.5 rounded-md transition-colors",
+                   !showChat
+                     ? "text-text-muted opacity-50 cursor-not-allowed"
+                     : isDrawerOpen
+                       ? "text-primary hover:bg-[var(--tab-hover)]"
+                       : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
+                 )}
+                 title={!showChat ? 'Chat is hidden' : (isDrawerOpen ? 'Close drawer' : 'Open drawer')}
+               >
+                 {isDrawerOpen ? <PanelLeftClose size={16} strokeWidth={2} /> : <PanelLeft size={16} strokeWidth={2} />}
+               </button>
+               <NavItem 
+                 id="chat" 
+                 icon={MessageSquare} 
+                 title="AI Chat" 
+                 isActive={showChat}
+                 onClick={toggleChat}
+               />
+               <NavItem 
+                 id="terminal" 
+                 icon={TerminalSquare} 
+                 title="Terminal" 
+                 isActive={showTerminal && activeTab === 'terminal'}
+                 onClick={() => {
+                   handleNavClick('terminal'); 
+                   if (activeTab === 'terminal') toggleTerminal();
+                   else setActiveTab('terminal');
+                 }}
+               />
+               <NavItem 
+                 id="ssh" 
+                 icon={Server} 
+                 title="SSH Servers" 
+                 isActive={showTerminal && activeTab === 'ssh'}
+                 onClick={() => {
+                   handleNavClick('ssh');
+                   if (activeTab === 'ssh') toggleTerminal();
+                 }}
+               />
+               <NavItem 
+                 id="settings" 
+                 icon={SettingsIcon} 
+                 title="Settings" 
+                 isActive={isSettingsOpen}
+                 onClick={() => setIsSettingsOpen(true)}
+               />
              </div>
+             
+             {/* Empty flex-1 spacer to keep buttons on the left */}
+             <div className="flex-1" />
+             
+             {/* Right spacer for Windows/Linux window controls */}
+             {!isMac && <div className="w-[140px] shrink-0" />}
           </div>
 
           <div className="flex-1 flex overflow-hidden">
-            {/* Sidebar */}
-            <div className="w-12 bg-surface/50 border-r border-border flex flex-col items-center py-4 z-10 shrink-0 select-none">
-                <NavItem 
-                id="terminal" 
-                icon={TerminalSquare} 
-                title="Terminal" 
-                isActive={showTerminal && activeTab === 'terminal'}
-                onClick={() => {
-                    handleNavClick('terminal'); 
-                    // Special toggle logic only if already active tab
-                    if (activeTab === 'terminal') toggleTerminal();
-                    else setActiveTab('terminal');
+
+            {/* Drawer - only show when Chat is visible */}
+            {showChat && (
+              <Drawer
+                isOpen={isDrawerOpen}
+                currentConversationId={currentConversationId}
+                onSelectConversation={(id) => {
+                  setCurrentConversationId(id);
+                  chatRef.current?.loadConversation(id);
                 }}
-                />
-                
-                {/* AI Toggle Button - Moved below Terminal */}
-                <button
-                onClick={toggleChat}
-                title="Toggle AI Chat"
-                className={clsx(
-                    "p-2 rounded-lg mb-2 transition-colors",
-                    showChat
-                    ? "bg-purple-500/20 text-purple-400" 
-                    : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
-                )}
-                >
-                <MessageSquare size={20} strokeWidth={2} />
-                </button>
-                
-                <NavItem 
-                id="ssh" 
-                icon={Server} 
-                title="SSH Servers" 
-                isActive={showTerminal && activeTab === 'ssh'}
-                onClick={() => {
-                    handleNavClick('ssh');
-                    if (activeTab === 'ssh') toggleTerminal();
+                onDeleteConversation={async (id) => {
+                  await chatRef.current?.deleteConversation(id);
                 }}
-                />
-                
-                <div className="flex-1" />
-                
-                <NavItem 
-                id="settings" 
-                icon={SettingsIcon} 
-                title="Settings" 
-                isActive={isSettingsOpen}
-                onClick={() => {
-                    setIsSettingsOpen(true);
-                }}
-                />
-            </div>
+              />
+            )}
 
             {/* Main Content Area */}
-            <div className="flex-1 flex overflow-hidden w-full">
+            <div ref={contentAreaRef} className="flex-1 flex overflow-hidden w-full">
              
-             {/* Left Pane (Terminal/Settings) */}
+             {/* Left Pane: AI Chat (now on left) */}
              <div 
                 className={clsx(
-                    "flex-1 overflow-hidden relative min-w-0",
-                    !showTerminal && "hidden"
+                    "bg-background shadow-2xl flex flex-col h-full relative",
+                    !showChat && "hidden"
                 )}
                 style={{ 
-                    flexGrow: showChat ? (1 - chatRatio) : 1,
+                    flexGrow: showTerminal ? chatRatio : 1, 
                     flexShrink: 0,
-                    flexBasis: showChat ? '0%' : '100%' 
+                    flexBasis: showTerminal ? '0%' : '100%',
+                    minWidth: showTerminal ? 448 : undefined,
                 }}
              >
-                {/* Screens are always mounted to preserve state */}
-                <div className={clsx("h-full w-full", activeTab !== 'terminal' && "hidden")}>
-                    <TerminalView onActivePathChange={setActiveTerminalPath} />
-                </div>
-                {activeTab === 'ssh' && <SSHView />}
+                 <ErrorBoundary>
+                     <Chat ref={chatRef} />
+                 </ErrorBoundary>
              </div>
 
              {/* Resizer */}
@@ -291,21 +314,23 @@ export default function App() {
                  </div>
              )}
              
-             {/* AI Panel */}
+             {/* Right Pane: Terminal/SSH (now on right) */}
              <div 
                 className={clsx(
-                    "bg-background shadow-2xl flex flex-col h-full relative min-w-0",
-                    !showChat && "hidden"
+                    "overflow-hidden relative min-w-0",
+                    !showTerminal && "hidden"
                 )}
                 style={{ 
-                    flexGrow: showTerminal ? chatRatio : 1, 
-                    flexShrink: 0,
-                    flexBasis: showTerminal ? '0%' : '100%'
+                    flexGrow: showChat ? (1 - chatRatio) : 1,
+                    flexShrink: 1,
+                    flexBasis: showChat ? '0%' : '100%' 
                 }}
              >
-                 <ErrorBoundary>
-                     <Chat />
-                 </ErrorBoundary>
+                {/* Screens are always mounted to preserve state */}
+                <div className={clsx("h-full w-full", activeTab !== 'terminal' && "hidden")}>
+                    <TerminalView onActivePathChange={setActiveTerminalPath} />
+                </div>
+                {activeTab === 'ssh' && <SSHView />}
              </div>
           </div>
           </div>

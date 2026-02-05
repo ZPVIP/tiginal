@@ -5,6 +5,9 @@ export interface Conversation {
   id: string;
   title: string | null;
   providerId: string | null;
+  categoryId: number;
+  isPinned: boolean;
+  isFavorite: boolean;
   createdAt: number;
   updatedAt: number;
   isTransient?: boolean;
@@ -16,6 +19,14 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   createdAt: number;
+}
+
+export interface CategoryData {
+  id: number;
+  name: string;
+  isPinned: boolean;
+  isExpanded: boolean;
+  rank: number;
 }
 
 /**
@@ -35,6 +46,9 @@ export class ChatService {
       id,
       title: null,
       providerId: providerId || null,
+      categoryId: 1,
+      isPinned: false,
+      isFavorite: false,
       createdAt: now,
       updatedAt: now,
       isTransient,
@@ -69,12 +83,15 @@ export class ChatService {
 
     const db = getDatabase().getDb();
     const row = db.prepare(`
-      SELECT id, title, provider_id, created_at, updated_at
+      SELECT id, title, provider_id, category_id, is_pinned, is_favorite, created_at, updated_at
       FROM conversations WHERE id = ?
     `).get(id) as {
       id: string;
       title: string | null;
       provider_id: string | null;
+      category_id: number;
+      is_pinned: number;
+      is_favorite: number;
       created_at: number;
       updated_at: number;
     } | undefined;
@@ -85,6 +102,9 @@ export class ChatService {
       id: row.id,
       title: row.title,
       providerId: row.provider_id,
+      categoryId: row.category_id ?? 1,
+      isPinned: row.is_pinned === 1,
+      isFavorite: row.is_favorite === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       isTransient: false,
@@ -97,7 +117,7 @@ export class ChatService {
   getAllConversations(limit = 50): Conversation[] {
     const db = getDatabase().getDb();
     const rows = db.prepare(`
-      SELECT id, title, provider_id, created_at, updated_at
+      SELECT id, title, provider_id, category_id, is_pinned, is_favorite, created_at, updated_at
       FROM conversations
       ORDER BY updated_at DESC
       LIMIT ?
@@ -105,6 +125,9 @@ export class ChatService {
       id: string;
       title: string | null;
       provider_id: string | null;
+      category_id: number;
+      is_pinned: number;
+      is_favorite: number;
       created_at: number;
       updated_at: number;
     }>;
@@ -113,6 +136,9 @@ export class ChatService {
       id: row.id,
       title: row.title,
       providerId: row.provider_id,
+      categoryId: row.category_id ?? 1,
+      isPinned: row.is_pinned === 1,
+      isFavorite: row.is_favorite === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       isTransient: false,
@@ -251,6 +277,245 @@ export class ChatService {
     const fallbackTitle = words.length > 30 ? words.slice(0, 30) + '...' : words;
     this.updateTitle(conversationId, fallbackTitle);
     return fallbackTitle;
+  }
+
+  // ===== Category Methods =====
+
+  /**
+   * Get all categories ordered by pinned status and rank
+   */
+  getAllCategories(): CategoryData[] {
+    const db = getDatabase().getDb();
+    const rows = db.prepare(`
+      SELECT id, name, is_pinned, is_expanded, rank
+      FROM conversation_categories
+      ORDER BY is_pinned DESC, rank ASC
+    `).all() as Array<{
+      id: number;
+      name: string;
+      is_pinned: number;
+      is_expanded: number;
+      rank: number;
+    }>;
+
+    return rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      isPinned: row.is_pinned === 1,
+      isExpanded: row.is_expanded === 1,
+      rank: row.rank,
+    }));
+  }
+
+  /**
+   * Create a new category
+   */
+  createCategory(name: string): CategoryData {
+    const db = getDatabase().getDb();
+    const now = Date.now();
+    
+    // Get max rank
+    const maxRank = (db.prepare('SELECT MAX(rank) as max FROM conversation_categories').get() as any)?.max || 0;
+    
+    const result = db.prepare(`
+      INSERT INTO conversation_categories (name, is_pinned, is_expanded, rank, created_at, updated_at)
+      VALUES (?, 0, 1, ?, ?, ?)
+    `).run(name, maxRank + 1, now, now);
+
+    return {
+      id: result.lastInsertRowid as number,
+      name,
+      isPinned: false,
+      isExpanded: true,
+      rank: maxRank + 1,
+    };
+  }
+
+  /**
+   * Update category name
+   */
+  updateCategory(id: number, name: string): void {
+    const db = getDatabase().getDb();
+    db.prepare(`
+      UPDATE conversation_categories SET name = ?, updated_at = ? WHERE id = ?
+    `).run(name, Date.now(), id);
+  }
+
+  /**
+   * Delete a category (moves conversations to Default)
+   */
+  deleteCategory(id: number): void {
+    if (id === 1) throw new Error('Cannot delete Default category');
+    
+    const db = getDatabase().getDb();
+    
+    // Move all conversations to Default (id=1)
+    db.prepare('UPDATE conversations SET category_id = 1 WHERE category_id = ?').run(id);
+    
+    // Delete the category
+    db.prepare('DELETE FROM conversation_categories WHERE id = ?').run(id);
+  }
+
+  /**
+   * Toggle category pinned status
+   */
+  toggleCategoryPinned(id: number, pinned: boolean): void {
+    const db = getDatabase().getDb();
+    db.prepare(`
+      UPDATE conversation_categories SET is_pinned = ?, updated_at = ? WHERE id = ?
+    `).run(pinned ? 1 : 0, Date.now(), id);
+  }
+
+  /**
+   * Toggle category expanded status
+   */
+  toggleCategoryExpanded(id: number, expanded: boolean): void {
+    const db = getDatabase().getDb();
+    db.prepare(`
+      UPDATE conversation_categories SET is_expanded = ?, updated_at = ? WHERE id = ?
+    `).run(expanded ? 1 : 0, Date.now(), id);
+  }
+
+  /**
+   * Reorder categories by updating ranks
+   */
+  reorderCategories(ids: number[]): void {
+    const db = getDatabase().getDb();
+    const now = Date.now();
+    
+    const update = db.transaction(() => {
+      ids.forEach((id, index) => {
+        db.prepare('UPDATE conversation_categories SET rank = ?, updated_at = ? WHERE id = ?').run(index, now, id);
+      });
+    });
+    
+    update();
+  }
+
+  // ===== Enhanced Conversation Methods =====
+
+  /**
+   * Move conversation to another category
+   */
+  moveConversation(conversationId: string, categoryId: number): void {
+    const db = getDatabase().getDb();
+    db.prepare(`
+      UPDATE conversations SET category_id = ?, updated_at = ? WHERE id = ?
+    `).run(categoryId, Date.now(), conversationId);
+  }
+
+  /**
+   * Toggle conversation pinned status
+   */
+  toggleConversationPinned(id: string, pinned: boolean): void {
+    const db = getDatabase().getDb();
+    db.prepare(`
+      UPDATE conversations SET is_pinned = ?, updated_at = ? WHERE id = ?
+    `).run(pinned ? 1 : 0, Date.now(), id);
+  }
+
+  /**
+   * Toggle conversation favorite status
+   */
+  toggleConversationFavorite(id: string, favorite: boolean): void {
+    const db = getDatabase().getDb();
+    db.prepare(`
+      UPDATE conversations SET is_favorite = ?, updated_at = ? WHERE id = ?
+    `).run(favorite ? 1 : 0, Date.now(), id);
+  }
+
+  /**
+   * Get conversations by category with pagination
+   * Sorted by: pinned first (alphabetically), then by sortBy field desc
+   */
+  getConversationsByCategory(categoryId: number, page: number, pageSize: number, sortBy: 'updatedAt' | 'createdAt' = 'updatedAt'): { items: Conversation[]; total: number } {
+    const db = getDatabase().getDb();
+    const offset = page * pageSize;
+
+    const countRow = db.prepare(`
+      SELECT COUNT(*) as count FROM conversations WHERE category_id = ?
+    `).get(categoryId) as { count: number };
+
+    const sortField = sortBy === 'createdAt' ? 'created_at' : 'updated_at';
+
+    const rows = db.prepare(`
+      SELECT id, title, provider_id, category_id, is_pinned, is_favorite, created_at, updated_at
+      FROM conversations
+      WHERE category_id = ?
+      ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN title END ASC, ${sortField} DESC
+      LIMIT ? OFFSET ?
+    `).all(categoryId, pageSize, offset) as Array<{
+      id: string;
+      title: string | null;
+      provider_id: string | null;
+      category_id: number;
+      is_pinned: number;
+      is_favorite: number;
+      created_at: number;
+      updated_at: number;
+    }>;
+
+    return {
+      items: rows.map(row => ({
+        id: row.id,
+        title: row.title,
+        providerId: row.provider_id,
+        categoryId: row.category_id,
+        isPinned: row.is_pinned === 1,
+        isFavorite: row.is_favorite === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        isTransient: false,
+      })),
+      total: countRow.count,
+    };
+  }
+
+  /**
+   * Get favorite conversations with pagination
+   * Sorted by: pinned first (alphabetically), then by sortBy field desc
+   */
+  getFavoriteConversations(page: number, pageSize: number, sortBy: 'updatedAt' | 'createdAt' = 'updatedAt'): { items: Conversation[]; total: number } {
+    const db = getDatabase().getDb();
+    const offset = page * pageSize;
+
+    const countRow = db.prepare(`
+      SELECT COUNT(*) as count FROM conversations WHERE is_favorite = 1
+    `).get() as { count: number };
+
+    const sortField = sortBy === 'createdAt' ? 'created_at' : 'updated_at';
+
+    const rows = db.prepare(`
+      SELECT id, title, provider_id, category_id, is_pinned, is_favorite, created_at, updated_at
+      FROM conversations
+      WHERE is_favorite = 1
+      ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN title END ASC, ${sortField} DESC
+      LIMIT ? OFFSET ?
+    `).all(pageSize, offset) as Array<{
+      id: string;
+      title: string | null;
+      provider_id: string | null;
+      category_id: number;
+      is_pinned: number;
+      is_favorite: number;
+      created_at: number;
+      updated_at: number;
+    }>;
+
+    return {
+      items: rows.map(row => ({
+        id: row.id,
+        title: row.title,
+        providerId: row.provider_id,
+        categoryId: row.category_id,
+        isPinned: row.is_pinned === 1,
+        isFavorite: row.is_favorite === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        isTransient: false,
+      })),
+      total: countRow.count,
+    };
   }
 }
 

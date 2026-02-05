@@ -1,16 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Header } from './Header';
 import { MessageList } from './MessageList';
 import { ChatInput, ChatInputHandle } from './ChatInput';
 import { EmptyState } from './EmptyState';
-import { HistoryPanel } from './HistoryPanel';
 
 import { AIProvider, ModelConfig } from '../../settings/ai-constants';
 import { EyeOff, Trash2 } from 'lucide-react';
 
 const invoke = (window as any).electron?.invoke || (async () => {});
 
-export function Chat() {
+export interface ChatHandle {
+  loadConversation: (id: string) => Promise<void>;
+  deleteConversation: (id: string) => Promise<void>;
+  getCurrentConversationId: () => string | null;
+}
+
+export const Chat = forwardRef<ChatHandle, {}>(function Chat(_props, ref) {
   const [messages, setMessages] = useState<any[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [providers, setProviders] = useState<AIProvider[]>([]);
@@ -20,7 +25,6 @@ export function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const [isIncognito, setIsIncognito] = useState(false);
   const [incognitoMessages, setIncognitoMessages] = useState<any[]>([]);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // Tool call state
   // Tool call state
@@ -141,6 +145,31 @@ export function Chat() {
       isIncognitoRef.current = isIncognito;
       allowAllToolsRef.current = allowAllTools;
   }, [currentConversationId, isIncognito, allowAllTools]);
+
+  // Expose methods via ref for parent component
+  useImperativeHandle(ref, () => ({
+    loadConversation: async (id: string) => {
+      setCurrentConversationId(id);
+      try {
+        const msgs = await invoke('chat:get-messages', id);
+        setMessages(msgs || []);
+      } catch (err) {
+        console.error('Failed to load messages', err);
+      }
+    },
+    deleteConversation: async (id: string) => {
+      try {
+        await invoke('chat:delete-conversation', id);
+        if (currentConversationId === id) {
+          setMessages([]);
+          setCurrentConversationId(null);
+        }
+      } catch (err) {
+        console.error('Failed to delete conversation', err);
+      }
+    },
+    getCurrentConversationId: () => currentConversationId,
+  }), [currentConversationId]);
 
   const loadProviders = async () => {
     try {
@@ -323,7 +352,6 @@ export function Chat() {
   };
 
   const handleSelectConversation = async (id: string) => {
-      setIsHistoryOpen(false);
       setCurrentConversationId(id);
       
       try {
@@ -504,7 +532,6 @@ export function Chat() {
     <div className="flex h-full w-full flex-col bg-background relative">
       <Header 
          onNewChat={handleNewChat}
-         onHistory={() => setIsHistoryOpen(true)} 
          onIncognitoToggle={handleIncognitoToggle}
          isIncognito={isIncognito}
       />
@@ -553,13 +580,6 @@ export function Chat() {
         selectedModel={selectedModel}
         onModelSelect={(pId, mId) => handleModelSelect(`${pId}:${mId}`)}
       />
-
-      {/* History Panel */}
-      <HistoryPanel 
-         isOpen={isHistoryOpen}
-         onClose={() => setIsHistoryOpen(false)}
-         onSelectConversation={handleSelectConversation}
-      />
     </div>
   );
-}
+});

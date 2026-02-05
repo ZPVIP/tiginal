@@ -163,6 +163,75 @@ export function setupChatHandlers(): void {
       
       update();
   });
+
+  // ===== Category Handlers =====
+
+  // Get all categories
+  ipcMain.handle('chat:get-categories', async () => {
+    return getChatService().getAllCategories();
+  });
+
+  // Create new category
+  ipcMain.handle('chat:create-category', async (_event, name: string) => {
+    return getChatService().createCategory(name);
+  });
+
+  // Update category name
+  ipcMain.handle('chat:update-category', async (_event, id: number, name: string) => {
+    return getChatService().updateCategory(id, name);
+  });
+
+  // Delete category
+  ipcMain.handle('chat:delete-category', async (_event, id: number) => {
+    return getChatService().deleteCategory(id);
+  });
+
+  // Toggle category pinned
+  ipcMain.handle('chat:toggle-category-pinned', async (_event, id: number, pinned: boolean) => {
+    return getChatService().toggleCategoryPinned(id, pinned);
+  });
+
+  // Toggle category expanded
+  ipcMain.handle('chat:toggle-category-expanded', async (_event, id: number, expanded: boolean) => {
+    return getChatService().toggleCategoryExpanded(id, expanded);
+  });
+
+  // Reorder categories
+  ipcMain.handle('chat:reorder-categories', async (_event, ids: number[]) => {
+    return getChatService().reorderCategories(ids);
+  });
+
+  // ===== Enhanced Conversation Handlers =====
+
+  // Move conversation to category
+  ipcMain.handle('chat:move-conversation', async (_event, conversationId: string, categoryId: number) => {
+    return getChatService().moveConversation(conversationId, categoryId);
+  });
+
+  // Toggle conversation pinned
+  ipcMain.handle('chat:toggle-conversation-pinned', async (_event, id: string, pinned: boolean) => {
+    return getChatService().toggleConversationPinned(id, pinned);
+  });
+
+  // Toggle conversation favorite
+  ipcMain.handle('chat:toggle-conversation-favorite', async (_event, id: string, favorite: boolean) => {
+    return getChatService().toggleConversationFavorite(id, favorite);
+  });
+
+  // Get conversations by category with pagination
+  ipcMain.handle('chat:get-conversations-by-category', async (_event, categoryId: number, page: number, pageSize: number, sortBy?: 'updatedAt' | 'createdAt') => {
+    return getChatService().getConversationsByCategory(categoryId, page, pageSize, sortBy);
+  });
+
+  // Get favorite conversations with pagination
+  ipcMain.handle('chat:get-favorite-conversations', async (_event, page: number, pageSize: number, sortBy?: 'updatedAt' | 'createdAt') => {
+    return getChatService().getFavoriteConversations(page, pageSize, sortBy);
+  });
+
+  // Rename conversation (alias for update-title)
+  ipcMain.handle('chat:rename-conversation', async (_event, id: string, title: string) => {
+    return getChatService().updateTitle(id, title);
+  });
   // Submit tool approval (User clicked Allow/Deny)
   ipcMain.handle('chat:submit-tool-approval', async (_event, { toolCallId, approved, approvedAll }: { toolCallId: string; approved: boolean; approvedAll: boolean }): Promise<void> => {
       const resolver = pendingToolApprovals.get(toolCallId);

@@ -682,7 +682,7 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
   return (
     <div className="flex flex-col h-full bg-background font-mono text-sm">
       {/* Tab Bar */}
-      <div className="relative flex bg-tab-inactive select-none shrink-0" style={{ height: '40px' }}>
+      <div className="relative flex bg-tab-inactive select-none shrink-0" style={{ height: '30px' }}>
         {/* Bottom border that active tab will cover */}
         <div className="absolute bottom-0 left-0 right-0 h-px bg-border" />
         <div 
@@ -812,6 +812,19 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
               >
                   {contextMenu.type === 'tab' ? (
                       <>
+                          <button 
+                             onClick={() => { 
+                               const tab = tabs.find(t => t.id === contextMenu.tabId);
+                               if (tab?.cwd) {
+                                 navigator.clipboard.writeText(tab.cwd);
+                               }
+                               setContextMenu(null); 
+                             }}
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
+                          >
+                              Copy Path
+                          </button>
+                          <div className="h-px bg-border my-1" />
                           <button 
                              onClick={() => { closeTab(contextMenu.tabId); setContextMenu(null); }}
                              className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
