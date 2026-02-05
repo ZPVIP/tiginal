@@ -1,21 +1,18 @@
 import React from 'react';
 import {
   EyeOff,
-  MessageSquarePlus,
-  History
+  MessageSquarePlus
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface HeaderProps {
   onNewChat: () => void;
-  onHistory: () => void;
   onIncognitoToggle: () => void;
   isIncognito: boolean;
 }
 
 export function Header({ 
   onNewChat, 
-  onHistory, 
   onIncognitoToggle, 
   isIncognito
 }: HeaderProps) {
@@ -43,15 +40,6 @@ export function Header({
           className="p-1.5 text-text-muted hover:text-text-main hover:bg-surface rounded-md transition-colors"
         >
             <MessageSquarePlus size={14} />
-        </button>
-        
-        {/* History */}
-        <button 
-          onClick={onHistory}
-          title="Chat History"
-          className="p-1.5 text-text-muted hover:text-text-main hover:bg-surface rounded-md transition-colors"
-        >
-            <History size={14} />
         </button>
       </div>
     </div>

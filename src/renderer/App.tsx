@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare } from 'lucide-react';
+import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SettingsModal } from './components/Settings/SettingsModal';
-import { Chat } from './components/Chat/Chat';
+import { Chat, ChatHandle } from './components/Chat/Chat';
 import { TerminalView } from './components/Terminal/TerminalView';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { Drawer } from './components/Drawer/Drawer';
 
 const SSHView = () => <div className="p-4 text-text-muted">SSH Servers (Placeholder)</div>;
 
@@ -25,6 +26,11 @@ export default function App() {
 
   // Terminal State (path now managed by TerminalView for context menu)
   const [activeTerminalPath, setActiveTerminalPath] = useState('');
+
+  // Drawer State
+  const [isDrawerOpen, setIsDrawerOpen] = useState(true);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const chatRef = useRef<ChatHandle>(null);
   
   // Load Layout State
   useEffect(() => {
@@ -35,6 +41,7 @@ export default function App() {
         if (typeof config.showTerminal === 'boolean') setShowTerminal(config.showTerminal);
         if (typeof config.showChat === 'boolean') setShowChat(config.showChat);
         if (typeof config.chatRatio === 'number') setChatRatio(config.chatRatio);
+        if (typeof config.isDrawerOpen === 'boolean') setIsDrawerOpen(config.isDrawerOpen);
       }
     } catch (e) {
       console.error('Failed to load layout config:', e);
@@ -43,9 +50,9 @@ export default function App() {
 
   // Save Layout State
   useEffect(() => {
-    const config = { showTerminal, showChat, chatRatio };
+    const config = { showTerminal, showChat, chatRatio, isDrawerOpen };
     localStorage.setItem('app-layout-config', JSON.stringify(config));
-  }, [showTerminal, showChat, chatRatio]);
+  }, [showTerminal, showChat, chatRatio, isDrawerOpen]);
 
 
   const NavItem = ({ id, icon: Icon, title, onClick, isActive }: { id: string, icon: any, title: string, onClick?: () => void, isActive?: boolean }) => (
@@ -168,7 +175,21 @@ export default function App() {
             style={{ WebkitAppRegion: 'drag' } as any}
           >
              {/* Left spacer for macOS traffic lights */}
-             <div className="w-[80px] shrink-0" />
+             <div className="w-[68px] shrink-0" />
+             
+             {/* Drawer Toggle Button */}
+             <div 
+               className="flex items-center h-full"
+               style={{ WebkitAppRegion: 'no-drag' } as any}
+             >
+               <button
+                 onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+                 className="p-1.5 rounded-md transition-colors text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
+                 title={isDrawerOpen ? 'Close drawer' : 'Open drawer'}
+               >
+                 {isDrawerOpen ? <PanelLeftClose size={16} strokeWidth={2} /> : <PanelLeft size={16} strokeWidth={2} />}
+               </button>
+             </div>
              
              {/* Right side: Nav buttons */}
              <div 
@@ -218,6 +239,19 @@ export default function App() {
 
           <div className="flex-1 flex overflow-hidden">
 
+            {/* Drawer */}
+            <Drawer
+              isOpen={isDrawerOpen}
+              currentConversationId={currentConversationId}
+              onSelectConversation={(id) => {
+                setCurrentConversationId(id);
+                chatRef.current?.loadConversation(id);
+              }}
+              onDeleteConversation={async (id) => {
+                await chatRef.current?.deleteConversation(id);
+              }}
+            />
+
             {/* Main Content Area */}
             <div className="flex-1 flex overflow-hidden w-full">
              
@@ -234,7 +268,7 @@ export default function App() {
                 }}
              >
                  <ErrorBoundary>
-                     <Chat />
+                     <Chat ref={chatRef} />
                  </ErrorBoundary>
              </div>
 
