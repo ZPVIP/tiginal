@@ -218,7 +218,7 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
                        }}
                        className="fixed z-[9999] bg-surface border border-border rounded-lg shadow-xl overflow-y-auto"
                    >
-                       {OAI_API_PROVIDERS.map(p => (
+                       {OAI_API_PROVIDERS.filter(p => p.value !== 'copilot').map(p => (
                            <button
                                key={p.value}
                                type="button"

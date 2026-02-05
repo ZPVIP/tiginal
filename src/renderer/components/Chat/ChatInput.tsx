@@ -13,6 +13,8 @@ import {
 import { clsx } from 'clsx';
 import { ToolsPopover } from './ToolsPopover';
 import { SystemPromptsPopover } from './SystemPromptsPopover';
+import { ModelSelectorPopover } from './ModelSelectorPopover';
+import { Bot, ChevronUp } from 'lucide-react';
 
 export interface ChatInputHandle {
     setText: (text: string) => void;
@@ -24,21 +26,37 @@ interface ChatInputProps {
   onStop?: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
+  
+  // Model Selection Props
+  models?: { providerId: string; modelId: string; label: string }[];
+  selectedProviderId?: string;
+  selectedModel?: string;
+  onModelSelect?: (providerId: string, modelId: string) => void;
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, onStop, disabled, isStreaming }, ref) => {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ 
+    onSend, 
+    onStop, 
+    disabled, 
+    isStreaming,
+    models = [],
+    selectedProviderId = '',
+    selectedModel = '',
+    onModelSelect = () => {}
+}, ref) => {
   const [text, setText] = useState('');
   const [useSearch, setUseSearch] = useState(false);
   const [useSkills, setUseSkills] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const [showSystemPrompts, setShowSystemPrompts] = useState(false);
+  const [showModelSelector, setShowModelSelector] = useState(false);
   const [globalToolsEnabled, setGlobalToolsEnabled] = useState(false);
   const [globalSystemPromptsEnabled, setGlobalSystemPromptsEnabled] = useState(true);
   const [images, setImages] = useState<string[]>([]);
 
   useEffect(() => {
     checkGlobalSettings();
-  }, [showTools, showSystemPrompts]); // Re-check when popovers toggle (closed)
+  }, [showTools, showSystemPrompts, showModelSelector]); // Re-check when popovers toggle (closed)
 
   useEffect(() => {
     const handleSettingsUpdate = () => checkGlobalSettings();
@@ -149,6 +167,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
             </>
         )}
 
+        {/* Model Selector Popover */}
+        {showModelSelector && (
+            <>
+                <ModelSelectorPopover 
+                    onClose={() => setShowModelSelector(false)}
+                    models={models}
+                    selectedProviderId={selectedProviderId}
+                    selectedModel={selectedModel}
+                    onSelect={onModelSelect}
+                />
+                <div 
+                  className="fixed inset-0 z-40 bg-transparent" 
+                  onClick={() => setShowModelSelector(false)}
+                />
+            </>
+        )}
+
         {/* Image Previews */}
         {images.length > 0 && (
             <div className="flex gap-2 p-3 border-b border-border overflow-x-auto">
@@ -187,10 +222,31 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
                        "p-2 rounded-lg transition-colors",
                        (showSystemPrompts || globalSystemPromptsEnabled) ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
                    )}
-                   title="Configure System Prompts"
+                   title="System Prompts"
                 >
                     <MessageSquareText size={18} />
                 </button>
+                <button 
+                   onClick={() => setShowTools(!showTools)}
+                   className={clsx(
+                       "p-2 rounded-lg transition-colors",
+                       (showTools || globalToolsEnabled) ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                   )}
+                   title="Tools"
+                >
+                    <Wrench size={18} />
+                </button>
+                <button 
+                   onClick={() => setUseSkills(!useSkills)}
+                   className={clsx(
+                       "p-2 rounded-lg transition-colors",
+                       useSkills ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                   )}
+                   title="Skills"
+                >
+                    <Wand2 size={18} />
+                </button>
+                <div className="h-4 w-[1px] bg-border mx-1" />
                 <button 
                    onClick={() => setUseSearch(!useSearch)}
                    className={clsx(
@@ -201,32 +257,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
                 >
                     <Globe size={18} />
                 </button>
-                <div className="h-4 w-[1px] bg-border mx-1" />
-                <button 
-                   onClick={() => setShowTools(!showTools)}
-                   className={clsx(
-                       "p-2 rounded-lg transition-colors",
-                       (showTools || globalToolsEnabled) ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
-                   )}
-                   title="Configure Tools"
-                >
-                    <Wrench size={18} />
-                </button>
-                <button 
-                   onClick={() => setUseSkills(!useSkills)}
-                   className={clsx(
-                       "p-2 rounded-lg transition-colors",
-                       useSkills ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
-                   )}
-                   title="Use Skills"
-                >
-                    <Wand2 size={18} />
-                </button>
-                <div className="h-4 w-[1px] bg-border mx-1" />
                 <button 
                    onClick={() => fileInputRef.current?.click()}
                    className="p-2 text-text-muted hover:text-text-main hover:bg-surface-light rounded-lg transition-colors"
-                   title="Attach Image"
+                   title="Images"
                 >
                     <ImageIcon size={18} />
                 </button>
@@ -238,30 +272,53 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ onSend, 
                     multiple 
                     className="hidden" 
                 />
+                <div className="h-4 w-[1px] bg-border mx-1" />
+                {/* Model Selector Button */}
+                <button
+                    onClick={() => setShowModelSelector(!showModelSelector)}
+                    className={clsx(
+                        "flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition-colors text-xs font-medium max-w-[150px]",
+                        showModelSelector ? "bg-primary/10 text-primary" : "bg-surface-light text-text-sec hover:text-text-main hover:bg-surface-hover"
+                    )}
+                    title="Model"
+                >
+                    <Bot size={14} className="shrink-0" />
+                    <span className="truncate">
+                        {models.find(m => m.providerId === selectedProviderId && m.modelId === selectedModel)?.label.split(' / ')[1] || selectedModel || 'Select Model'}
+                    </span>
+                    <ChevronUp size={12} className="opacity-50 shrink-0" />
+                </button>
             </div>
 
-            {isStreaming ? (
-              <button
-                onClick={onStop}
-                className="p-2 rounded-lg transition-colors flex items-center gap-2 bg-red-800/70 text-white hover:bg-red-700"
-                title="Stop generating"
-              >
-                <Square size={14} fill="currentColor" />
-              </button>
-            ) : (
-              <button
-                onClick={handleSend}
-                disabled={(!text.trim() && images.length === 0) || disabled}
-                className={clsx(
-                    "p-2 rounded-lg transition-colors flex items-center gap-2",
-                    (!text.trim() && images.length === 0) || disabled
-                       ? "bg-surface/50 text-text-muted cursor-not-allowed"
-                       : "bg-primary text-white hover:opacity-90"
+
+
+            {/* Right side: Model Selector + Send Button */}
+            <div className="flex items-center gap-2">
+
+
+                {isStreaming ? (
+                <button
+                    onClick={onStop}
+                    className="p-2 rounded-lg transition-colors flex items-center gap-2 bg-red-800/70 text-white hover:bg-red-700"
+                    title="Stop generating"
+                >
+                    <Square size={14} fill="currentColor" />
+                </button>
+                ) : (
+                <button
+                    onClick={handleSend}
+                    disabled={(!text.trim() && images.length === 0) || disabled}
+                    className={clsx(
+                        "p-2 rounded-lg transition-colors flex items-center gap-2",
+                        (!text.trim() && images.length === 0) || disabled
+                        ? "bg-surface/50 text-text-muted cursor-not-allowed"
+                        : "bg-primary text-white hover:opacity-90"
+                    )}
+                >
+                    <SendHorizontal size={18} />
+                </button>
                 )}
-              >
-                <SendHorizontal size={18} />
-              </button>
-            )}
+            </div>
         </div>
       </div>
     </div>

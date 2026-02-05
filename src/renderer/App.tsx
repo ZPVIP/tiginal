@@ -86,10 +86,13 @@ export default function App() {
           
           let newChatRatio = (availableWidth - mouseX) / availableWidth;
           
-          // Constraints: Min 20% each
+          // Constraints: Min 450px for Chat
+          const minChatWidth = 450;
+          const minChatRatio = minChatWidth / availableWidth;
+          
           let maxRatio = 0.8;
 
-          newChatRatio = Math.max(0.2, Math.min(maxRatio, newChatRatio));
+          newChatRatio = Math.max(minChatRatio, Math.min(maxRatio, newChatRatio));
           
           setChatRatio(newChatRatio);
       };
