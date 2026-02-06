@@ -345,7 +345,7 @@ export default function App() {
               }}
             >
               <ErrorBoundary>
-                <Chat ref={chatRef} onIncognitoChange={setIsIncognito} />
+                <Chat ref={chatRef} onIncognitoChange={setIsIncognito} onConversationChange={setCurrentConversationId} />
               </ErrorBoundary>
             </div>
 

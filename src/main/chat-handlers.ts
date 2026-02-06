@@ -796,7 +796,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     const customHeaders = provider.custom_headers ? JSON.parse(provider.custom_headers) : {};
     
     // 2. Build Initial Messages
-    chatService.addMessage(conversationId, 'user', content);
+    const userMsg = chatService.addMessage(conversationId, 'user', content);
     const dbMessages = chatService.getMessages(conversationId);
 
     // Auto-generate title for new conversations (first user message)
@@ -811,7 +811,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
         customHeaders,
         conversationId,
         chatService,
-        _event.sender
+        _event.sender,
+        userMsg.createdAt
       ).catch(err => console.error('Title generation failed:', err));
     }
     
@@ -1421,7 +1422,8 @@ async function generateConversationTitle(
   customHeaders: Record<string, string>,
   conversationId: string,
   chatService: ReturnType<typeof getChatService>,
-  sender: any
+  sender: any,
+  userMessageCreatedAt: number
 ): Promise<void> {
   const TITLE_SYSTEM_PROMPT = 'You are a conversation title generator. Based on the user\'s message, create a brief, descriptive title (2-6 words). Respond with ONLY the title text. No quotes, no explanation, no extra punctuation.';
 
@@ -1481,8 +1483,8 @@ async function generateConversationTitle(
       totalTokens: titleUsage?.total_tokens || 0,
     };
 
-    // Save title message to DB
-    const titleMsg = chatService.addMessage(conversationId, 'assistant', `Title: ${title}`, titleTokenData);
+    // Save title message to DB with timestamp right after user message to ensure correct ordering
+    const titleMsg = chatService.addMessage(conversationId, 'assistant', `Title: ${title}`, titleTokenData, userMessageCreatedAt + 1);
 
     // Update conversation tokens with title generation usage
     chatService.updateConversationTokens(conversationId, provider.id, model, titleTokenData);

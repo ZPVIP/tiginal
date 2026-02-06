@@ -18,6 +18,7 @@ export interface ChatHandle {
 
 interface ChatProps {
   onIncognitoChange?: (isIncognito: boolean) => void;
+  onConversationChange?: (id: string | null) => void;
 }
 
 export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) {
@@ -205,6 +206,11 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
   useEffect(() => {
       props.onIncognitoChange?.(isIncognito);
   }, [isIncognito]);
+
+  // Notify parent when conversation ID changes (for drawer highlighting)
+  useEffect(() => {
+      props.onConversationChange?.(currentConversationId);
+  }, [currentConversationId]);
 
   // Expose methods via ref for parent component
   useImperativeHandle(ref, () => ({

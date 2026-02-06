@@ -202,9 +202,9 @@ export class ChatService {
   /**
    * Add a message to a conversation
    */
-  addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string, tokenData?: TokenData): Message {
+  addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string, tokenData?: TokenData, overrideCreatedAt?: number): Message {
     const id = require('crypto').randomUUID();
-    const now = Date.now();
+    const now = overrideCreatedAt || Date.now();
 
     const message: Message = {
       id,
