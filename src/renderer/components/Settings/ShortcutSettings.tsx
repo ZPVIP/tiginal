@@ -1,33 +1,37 @@
 import React, { useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Command, Option, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, CornerDownLeft, Delete } from 'lucide-react';
 
 interface ShortcutDef {
-  category: string;
+  section: string;   // Big category: "Chat Box", "Terminal"
+  category: string;  // Small category: "New", "Tabs", etc.
   action: string;
-  key: string; // Internal rep, e.g. "CmdOrCtrl+T"
+  key: string;       // Internal rep, e.g. "CmdOrCtrl+T"
 }
 
 const SHORTCUTS: ShortcutDef[] = [
-  // Tabs
-  { category: 'Tabs', action: 'New Tab', key: 'CmdOrCtrl+T' },
-  { category: 'Tabs', action: 'Close Tab / Pane', key: 'CmdOrCtrl+W' },
-  { category: 'Tabs', action: 'Switch to Tab 1-9', key: 'CmdOrCtrl+1-9' },
+  // Chat Box - New
+  { section: 'Chat Box', category: 'New', action: 'New Chat', key: 'CmdOrCtrl+N' },
+  { section: 'Chat Box', category: 'New', action: 'Incognito Chat', key: 'CmdOrCtrl+I' },
 
-  // Panes
-  { category: 'Split Panes', action: 'Split Right', key: 'CmdOrCtrl+D' },
-  { category: 'Split Panes', action: 'Split Down', key: 'CmdOrCtrl+Shift+D' },
-  { category: 'Split Panes', action: 'Maximize Pane', key: 'CmdOrCtrl+Shift+Enter' },
-  { category: 'Split Panes', action: 'Navigate Panes', key: 'CmdOrCtrl+Opt+Arrow' },
+  // Terminal - General (Clear Buffer, Toggle Input Focus)
+  { section: 'Terminal', category: 'General', action: 'Clear Buffer', key: 'CmdOrCtrl+K' },
+  { section: 'Terminal', category: 'General', action: 'Toggle Input Focus', key: 'Ctrl+`' },
 
-  // View
-  { category: 'View', action: 'Zoom In', key: 'CmdOrCtrl+=' },
-  { category: 'View', action: 'Zoom Out', key: 'CmdOrCtrl+-' },
-  { category: 'View', action: 'Reset Zoom', key: 'CmdOrCtrl+0' },
+  // Terminal - Tabs
+  { section: 'Terminal', category: 'Tabs', action: 'New Tab', key: 'CmdOrCtrl+T' },
+  { section: 'Terminal', category: 'Tabs', action: 'Close Tab / Pane', key: 'CmdOrCtrl+W' },
+  { section: 'Terminal', category: 'Tabs', action: 'Switch to Tab 1-9', key: 'CmdOrCtrl+1-9' },
 
-  // Terminal
-  { category: 'Terminal', action: 'Clear Buffer', key: 'CmdOrCtrl+K' },
-  { category: 'Terminal', action: 'Toggle Input Focus', key: 'Ctrl+`' },
+  // Terminal - Split Panes
+  { section: 'Terminal', category: 'Split Panes', action: 'Split Right', key: 'CmdOrCtrl+D' },
+  { section: 'Terminal', category: 'Split Panes', action: 'Split Down', key: 'CmdOrCtrl+Shift+D' },
+  { section: 'Terminal', category: 'Split Panes', action: 'Maximize Pane', key: 'CmdOrCtrl+Shift+Enter' },
+  { section: 'Terminal', category: 'Split Panes', action: 'Navigate Panes', key: 'CmdOrCtrl+Opt+Arrow' },
+
+  // Terminal - View
+  { section: 'Terminal', category: 'View', action: 'Zoom In', key: 'CmdOrCtrl+=' },
+  { section: 'Terminal', category: 'View', action: 'Zoom Out', key: 'CmdOrCtrl+-' },
+  { section: 'Terminal', category: 'View', action: 'Reset Zoom', key: 'CmdOrCtrl+0' },
 ];
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
@@ -76,48 +80,75 @@ const KeyDisplay = ({ shortcut }: { shortcut: string }) => {
   );
 };
 
+interface SectionData {
+  section: string;
+  groups: { category: string; items: ShortcutDef[] }[];
+}
+
 export function ShortcutSettings() {
   
-  // Group by category
-  const grouped = useMemo(() => {
-    const groups: Record<string, ShortcutDef[]> = {};
+  // Group by section, then by category (preserving insertion order)
+  const sections = useMemo(() => {
+    const result: SectionData[] = [];
+    const sectionMap = new Map<string, SectionData>();
+
     SHORTCUTS.forEach(s => {
-      if (!groups[s.category]) groups[s.category] = [];
-      groups[s.category].push(s);
+      let sec = sectionMap.get(s.section);
+      if (!sec) {
+        sec = { section: s.section, groups: [] };
+        sectionMap.set(s.section, sec);
+        result.push(sec);
+      }
+
+      let group = sec.groups.find(g => g.category === s.category);
+      if (!group) {
+        group = { category: s.category, items: [] };
+        sec.groups.push(group);
+      }
+      group.items.push(s);
     });
-    return groups;
+
+    return result;
   }, []);
 
   return (
-    <div className="space-y-8 pb-12">
+    <div className="space-y-10 pb-12">
       <h2 className="text-xl font-semibold text-text-main mb-6">Keyboard Shortcuts</h2>
       
-      {Object.entries(grouped).map(([category, items]) => (
-        <div key={category} className="space-y-3">
-          <h3 className="text-sm font-medium text-text-muted uppercase tracking-wider pl-1">
-            {category}
+      {sections.map((sec) => (
+        <div key={sec.section} className="space-y-6">
+          {/* Section header (big category) */}
+          <h3 className="text-base font-semibold text-text-main border-b border-border pb-2">
+            {sec.section}
           </h3>
-          
-          <div className="w-full max-w-2xl rounded-lg overflow-hidden border border-border/50">
-            {items.map((item, idx) => (
-              <div 
-                key={idx}
-                className={clsx(
-                  "flex items-center justify-between px-4 py-2.5 transition-colors",
-                  // Zebra striping: odd rows get accent
-                  idx % 2 === 0 ? "bg-surface" : "bg-surface-light/30",
-                  // Hover effect
-                  "hover:bg-primary/5"
-                )}
-              >
-                <span className="text-sm text-text-main font-medium">
-                  {item.action}
-                </span>
-                
-                <KeyDisplay shortcut={item.key} />
+
+          {sec.groups.map((group) => (
+            <div key={group.category} className="space-y-3">
+              {/* Subcategory header */}
+              <h4 className="text-sm font-medium text-text-muted uppercase tracking-wider pl-1">
+                {group.category}
+              </h4>
+              
+              <div className="w-full max-w-2xl rounded-lg overflow-hidden border border-border/50">
+                {group.items.map((item, idx) => (
+                  <div 
+                    key={idx}
+                    className={clsx(
+                      "flex items-center justify-between px-4 py-2.5 transition-colors",
+                      idx % 2 === 0 ? "bg-surface" : "bg-surface-light/30",
+                      "hover:bg-primary/5"
+                    )}
+                  >
+                    <span className="text-sm text-text-main font-medium">
+                      {item.action}
+                    </span>
+                    
+                    <KeyDisplay shortcut={item.key} />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       ))}
     </div>
