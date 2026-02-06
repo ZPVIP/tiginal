@@ -8,7 +8,7 @@ import { CategoryData, ConversationData, useDrawerContext } from './Drawer';
 
 const invoke = window.electron?.invoke || (async () => {});
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 15;
 
 interface CategoryItemProps {
   category: CategoryData;

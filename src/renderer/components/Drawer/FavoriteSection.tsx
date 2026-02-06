@@ -7,7 +7,7 @@ import { ConversationData, useDrawerContext } from './Drawer';
 
 const invoke = window.electron?.invoke || (async () => {});
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 5;
 
 export function FavoriteSection() {
   const { currentConversationId, onSelectConversation, favoritesRefreshKey, sortBy } = useDrawerContext();

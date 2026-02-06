@@ -597,6 +597,23 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
       return () => window.removeEventListener('toggle-command-input-focus', handler);
   }, []);
 
+  // Refit terminals when switching tabs (from display:none to visible)
+  useEffect(() => {
+      if (!activeTabId) return;
+      const tab = tabs.find(t => t.id === activeTabId);
+      if (!tab) return;
+      
+      // Allow layout to settle after unhiding, then refit all panes in the active tab
+      requestAnimationFrame(() => {
+          tab.columns.forEach(col => {
+              col.panes.forEach(pane => {
+                  const term = termRefs.current.get(pane.id);
+                  term?.fit();
+              });
+          });
+      });
+  }, [activeTabId]);
+
   // Notify parent about active path and record visit
   useEffect(() => {
       if (!onActivePathChange) return;
@@ -749,26 +766,30 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
       {/* Terminal Grid */}
       <div className="flex-1 relative overflow-hidden bg-background p-1 flex flex-col min-h-0">
           <div className="flex-1 overflow-hidden relative">
-              {activeTab ? (
-                  <SplitLayout
-                      columns={activeTab.columns}
-                      activePaneId={activeTab.activePaneId}
-                      maximizedPaneId={activeTab.maximizedPaneId}
-                      columnRatios={activeTab.columnWidths}
-                      onPaneActivate={handlePaneActivate}
-                      onTitleChange={handleTitleChange}
-                      onExit={closePane}
-                      onResizePane={resizePane}
-                      onResizeColumn={resizeColumn}
-                      registerTerminalRef={(id, ref) => {
-                          if(ref) termRefs.current.set(id, ref);
-                          else termRefs.current.delete(id);
-                      }}
-                      onContextMenu={(e, paneId) => {
-                          e.preventDefault();
-                          setContextMenu({ x: e.clientX, y: e.clientY, paneId, type: 'pane' });
-                      }}
-                  />
+              {tabs.length > 0 ? (
+                  tabs.map(tab => (
+                      <div key={tab.id} className={clsx("absolute inset-0", tab.id !== activeTabId && "hidden")}>
+                          <SplitLayout
+                              columns={tab.columns}
+                              activePaneId={tab.activePaneId}
+                              maximizedPaneId={tab.maximizedPaneId}
+                              columnRatios={tab.columnWidths}
+                              onPaneActivate={handlePaneActivate}
+                              onTitleChange={handleTitleChange}
+                              onExit={closePane}
+                              onResizePane={resizePane}
+                              onResizeColumn={resizeColumn}
+                              registerTerminalRef={(id, ref) => {
+                                  if(ref) termRefs.current.set(id, ref);
+                                  else termRefs.current.delete(id);
+                              }}
+                              onContextMenu={(e, paneId) => {
+                                  e.preventDefault();
+                                  setContextMenu({ x: e.clientX, y: e.clientY, paneId, type: 'pane' });
+                              }}
+                          />
+                      </div>
+                  ))
               ) : (
                  <div className="flex flex-col items-center justify-center h-full text-gray-500">
                      <Monitor size={48} className="mb-4 opacity-20" />
