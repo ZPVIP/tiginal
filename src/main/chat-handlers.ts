@@ -124,6 +124,13 @@ export function setupChatHandlers(): void {
     return getChatService().getMessages(conversationId);
   });
 
+  // Get conversation tokens (live from DB)
+  ipcMain.handle('chat:get-conversation-tokens', async (_event, conversationId: string): Promise<string | null> => {
+    const db = getDatabase().getDb();
+    const row = db.prepare('SELECT tokens FROM conversations WHERE id = ?').get(conversationId) as { tokens: string | null } | undefined;
+    return row?.tokens || null;
+  });
+
   // Create new conversation
   ipcMain.handle('chat:create-conversation', async (_event, providerId?: string, isTransient: boolean = false): Promise<Conversation> => {
     return getChatService().createConversation(providerId, isTransient);
@@ -357,7 +364,7 @@ async function callNonStreamingChatCompletion(
   config: NonStreamingAPIConfig,
   messages: Array<{ role: string; content: string }>,
   options?: { temperature?: number; maxTokens?: number; label?: string }
-): Promise<string | null> {
+): Promise<{ content: string | null; usage?: any }> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(config.customHeaders || {})
@@ -415,7 +422,7 @@ async function callNonStreamingChatCompletion(
   if (!response.ok) {
     const errorText = await response.text();
     console.error(`${label} API failed: ${response.status} - ${errorText}`);
-    return null;
+    return { content: null, usage: undefined };
   }
 
   const data = await response.json() as any;
@@ -428,7 +435,7 @@ async function callNonStreamingChatCompletion(
     printRespondEndSeparator();
   }
 
-  return data.choices?.[0]?.message?.content || null;
+  return { content: data.choices?.[0]?.message?.content || null, usage: data.usage };
 }
 
 /**
@@ -489,15 +496,15 @@ Risk levels:
             { role: 'user', content: `Analyze this bash command: ${command}` }
         ];
 
-        const content = await callNonStreamingChatCompletion(
+        const analyzerResult = await callNonStreamingChatCompletion(
             { type: apiConfig.type, endpoint: apiConfig.endpoint, apiKey: apiConfig.apiKey, model: apiConfig.model },
             messages,
             { temperature: 0.1, maxTokens: 1000, label: 'ANALYZE COMMAND' }
         );
 
-        if (content) {
-            const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/{[\s\S]*}/);
-            const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : content;
+        if (analyzerResult.content) {
+            const jsonMatch = analyzerResult.content.match(/```json\n([\s\S]*?)\n```/) || analyzerResult.content.match(/{[\s\S]*}/);
+            const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : analyzerResult.content;
             try {
                 const result = JSON.parse(jsonStr);
                 return {
@@ -506,7 +513,7 @@ Risk levels:
                     riskLevel: result.riskLevel || 'medium'
                 };
             } catch (e) {
-                console.warn('Failed to parse analyzer response', content);
+                console.warn('Failed to parse analyzer response', analyzerResult.content);
             }
         }
         
@@ -532,7 +539,7 @@ async function streamAIAPI(
   onChunk: (data: { content?: string; reasoning?: string }) => void,
   onToolCall?: (data: { id: string; name: string; input: any }) => void | Promise<void>,
   abortSignal?: AbortSignal
-): Promise<void> {
+): Promise<{ usage?: any }> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...customHeaders
@@ -611,7 +618,7 @@ async function streamAIAPI(
       // Handle abort
       if (error.name === 'AbortError') {
           onChunk({ content: '\n\n*[Generation stopped]*' });
-          return;
+          return { usage: undefined };
       }
       // Handle Network Errors (like Offline)
       console.error('Fetch Error:', error);
@@ -658,7 +665,7 @@ async function streamAIAPI(
                     `Please check your settings: [https://github.com/settings/copilot/features](https://github.com/settings/copilot/features)`;
                  
                  onChunk({ content: friendlyMessage });
-                 return;
+                 return { usage: undefined };
             }
         } catch (e) {
             // ignore JSON parse error
@@ -683,7 +690,7 @@ async function streamAIAPI(
         `> ${errorMessage}`;
 
     onChunk({ content: genericErrorMsg });
-    return;
+    return { usage: undefined };
   }
 
   if (!response.body) {
@@ -766,6 +773,8 @@ async function streamAIAPI(
       console.error('Stream read error:', err);
       throw err;
   }
+
+  return { usage: logAccumulator.usage };
 }
 
 async function runAgentLoop(_event: any, conversationId: string, providerId: string, content: string, specificModel?: string, options: { useSystemPrompt?: boolean, useSkills?: boolean } = {}): Promise<{ response: string; error?: string }> {
@@ -914,6 +923,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     let finalResponse = '';
     let turnCount = 0;
     let allowAllOverride = false; // Session-based allow all
+    let accumulatedUsage = { prompt_tokens: 0, completion_tokens: 0, reasoning_tokens: 0, cached_tokens: 0, total_tokens: 0 };
 
     // Create AbortController for this conversation
     const abortController = new AbortController();
@@ -934,7 +944,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                 break;
             }
 
-            await streamAIAPI(
+            const streamResult = await streamAIAPI(
                 provider.type as 'openai-compatible' | 'copilot',
                 provider.endpoint || 'https://api.openai.com/v1',
                 apiKey,
@@ -1169,6 +1179,15 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                 abortController.signal
             );
 
+            // Accumulate token usage from this turn
+            if (streamResult && streamResult.usage) {
+                accumulatedUsage.prompt_tokens += streamResult.usage.prompt_tokens || 0;
+                accumulatedUsage.completion_tokens += streamResult.usage.completion_tokens || 0;
+                accumulatedUsage.total_tokens += streamResult.usage.total_tokens || 0;
+                accumulatedUsage.reasoning_tokens += (streamResult.usage.completion_tokens_details?.reasoning_tokens || 0);
+                accumulatedUsage.cached_tokens += (streamResult.usage.prompt_tokens_details?.cached_tokens || 0);
+            }
+
             if (!toolCallOccurred) {
                 // LLM finished without calling a tool. 
                 // This means it's done or asking a question.
@@ -1192,7 +1211,18 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                  // Stream was stopped by user
                  activeStreamControllers.delete(conversationId);
                  if (finalResponse) {
-                     chatService.addMessage(conversationId, 'assistant', finalResponse);
+                     const tokenData = {
+                         providerId,
+                         modelId: modelToUse,
+                         promptTokens: accumulatedUsage.prompt_tokens,
+                         completionTokens: accumulatedUsage.completion_tokens,
+                         reasoningTokens: accumulatedUsage.reasoning_tokens,
+                         cachedTokens: accumulatedUsage.cached_tokens,
+                         totalTokens: accumulatedUsage.total_tokens,
+                     };
+                     chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData);
+                     chatService.updateConversationTokens(conversationId, providerId, modelToUse, tokenData);
+                     _event.sender.send('chat:stream-complete', { conversationId, tokenData });
                  }
                  return { response: finalResponse };
             }
@@ -1205,12 +1235,23 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     // Clean up AbortController
     activeStreamControllers.delete(conversationId);
 
-    // Save final response (accumulated) to DB
-    // Note: The intermediate chunks were already sent to UI. 
-    // We just save the text content to DB for history.
-    // If we want to save the *whole* chain, we need to save intermediate messages.
-    // For now, save the final aggregated text.
-    chatService.addMessage(conversationId, 'assistant', finalResponse);
+    // Save final response (accumulated) to DB with token data
+    const tokenData = {
+        providerId,
+        modelId: modelToUse,
+        promptTokens: accumulatedUsage.prompt_tokens,
+        completionTokens: accumulatedUsage.completion_tokens,
+        reasoningTokens: accumulatedUsage.reasoning_tokens,
+        cachedTokens: accumulatedUsage.cached_tokens,
+        totalTokens: accumulatedUsage.total_tokens,
+    };
+    chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData);
+
+    // Update conversation tokens JSON
+    chatService.updateConversationTokens(conversationId, providerId, modelToUse, tokenData);
+
+    // Notify renderer of stream completion with token data
+    _event.sender.send('chat:stream-complete', { conversationId, tokenData });
     
     return { response: finalResponse };
 }
@@ -1255,7 +1296,7 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
             { role: 'user', content: `Search query: "${query}"\n\nFind all tools that match this query and return as JSON.` }
         ];
 
-        const jsonStr = await callNonStreamingChatCompletion(
+        const searchResult = await callNonStreamingChatCompletion(
             {
                 type: provider.type,
                 endpoint: provider.endpoint || 'https://api.openai.com/v1',
@@ -1265,7 +1306,8 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
             },
             messages,
             { temperature: 0, maxTokens: 2000, label: 'TOOL SEARCH' }
-        ) || '';
+        );
+        const jsonStr = searchResult.content || '';
         
         // Parse JSON from text
         const match = jsonStr.match(/```json\n([\s\S]*?)\n```/) || jsonStr.match(/{[\s\S]*}/);
@@ -1397,7 +1439,7 @@ async function generateConversationTitle(
   };
 
   try {
-    let title = await callNonStreamingChatCompletion(
+    const result = await callNonStreamingChatCompletion(
       {
         type: provider.type,
         endpoint: provider.endpoint || 'https://api.openai.com/v1',
@@ -1410,10 +1452,12 @@ async function generateConversationTitle(
       { temperature: 0.3, maxTokens: 30, label: 'TITLE GENERATION' }
     );
 
-    if (!title) {
+    if (!result.content) {
       saveFallback();
       return;
     }
+
+    let title = result.content;
 
     // Clean up: remove surrounding quotes if present
     title = title.replace(/^["']+|["']+$/g, '').trim();
@@ -1424,6 +1468,43 @@ async function generateConversationTitle(
 
     chatService.updateTitle(conversationId, title);
     sender.send('chat:title-updated', { conversationId, title });
+
+    // Extract token data from title generation
+    const titleUsage = result.usage;
+    const titleTokenData = {
+      providerId: provider.id,
+      modelId: model,
+      promptTokens: titleUsage?.prompt_tokens || 0,
+      completionTokens: titleUsage?.completion_tokens || 0,
+      reasoningTokens: titleUsage?.completion_tokens_details?.reasoning_tokens || 0,
+      cachedTokens: titleUsage?.prompt_tokens_details?.cached_tokens || 0,
+      totalTokens: titleUsage?.total_tokens || 0,
+    };
+
+    // Save title message to DB
+    const titleMsg = chatService.addMessage(conversationId, 'assistant', `Title: ${title}`, titleTokenData);
+
+    // Update conversation tokens with title generation usage
+    chatService.updateConversationTokens(conversationId, provider.id, model, titleTokenData);
+
+    // Notify renderer of the title message
+    sender.send('chat:title-message', {
+      conversationId,
+      message: {
+        id: titleMsg.id,
+        conversationId: titleMsg.conversationId,
+        role: titleMsg.role,
+        content: titleMsg.content,
+        createdAt: titleMsg.createdAt,
+        providerId: titleTokenData.providerId,
+        modelId: titleTokenData.modelId,
+        promptTokens: titleTokenData.promptTokens,
+        completionTokens: titleTokenData.completionTokens,
+        reasoningTokens: titleTokenData.reasoningTokens,
+        cachedTokens: titleTokenData.cachedTokens,
+        totalTokens: titleTokenData.totalTokens,
+      }
+    });
 
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[Title Generated] "${title}" for conversation ${conversationId}`);

@@ -26,6 +26,7 @@ export function ConversationItem({
   const [showMenu, setShowMenu] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const [liveTokens, setLiveTokens] = useState<{ prompt: number; completion: number; total: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close menu when clicking outside
@@ -122,9 +123,30 @@ export function ConversationItem({
 
       {/* Context Menu Trigger - always present but invisible unless hovered */}
       <button
-        onClick={(e) => {
+        onClick={async (e) => {
           e.stopPropagation();
-          setShowMenu(!showMenu);
+          const willShow = !showMenu;
+          setShowMenu(willShow);
+          if (willShow) {
+            // Fetch latest tokens from DB every time the menu opens
+            try {
+              const tokensJson = await invoke('chat:get-conversation-tokens', conversation.id);
+              let prompt = 0, completion = 0, total = 0;
+              if (tokensJson) {
+                const tokensObj = JSON.parse(tokensJson);
+                for (const key of Object.keys(tokensObj)) {
+                  const entry = tokensObj[key];
+                  prompt += entry.prompt_tokens || 0;
+                  completion += entry.completion_tokens || 0;
+                  total += entry.total_tokens || 0;
+                }
+              }
+              setLiveTokens(total > 0 ? { prompt, completion, total } : null);
+            } catch (err) {
+              console.error('Failed to fetch tokens:', err);
+              setLiveTokens(null);
+            }
+          }
         }}
         className="p-0.5 rounded hover:bg-surface transition-colors opacity-0 group-hover:opacity-100"
       >
@@ -170,6 +192,28 @@ export function ConversationItem({
           >
             <ArrowRightCircle size={12} /> Move to...
           </button>
+          {/* Token Stats (fetched live from DB) */}
+          {liveTokens && (
+            <>
+              <div className="h-px bg-border my-1" />
+              <div className="px-3 py-1 space-y-0.5">
+                {liveTokens.prompt > 0 && (
+                  <>
+                    <div className="text-[10px] text-text-muted">Prompt:</div>
+                    <div className="text-[11px] text-text-sec font-mono">{liveTokens.prompt.toLocaleString()}</div>
+                  </>
+                )}
+                {liveTokens.completion > 0 && (
+                  <>
+                    <div className="text-[10px] text-text-muted">Completion:</div>
+                    <div className="text-[11px] text-text-sec font-mono">{liveTokens.completion.toLocaleString()}</div>
+                  </>
+                )}
+                <div className="text-[10px] text-text-muted">Total:</div>
+                <div className="text-[11px] text-text-main font-mono font-medium">{liveTokens.total.toLocaleString()}</div>
+              </div>
+            </>
+          )}
           <div className="h-px bg-border my-1" />
           <button
             onClick={handleDelete}

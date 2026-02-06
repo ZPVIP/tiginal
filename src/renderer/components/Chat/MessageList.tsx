@@ -10,6 +10,11 @@ interface Message {
     reasoning?: string;
     images?: string[];
     tool_call_id?: string;
+    promptTokens?: number;
+    completionTokens?: number;
+    reasoningTokens?: number;
+    cachedTokens?: number;
+    totalTokens?: number;
     approvalData?: {
         id: string;
         name: string;
@@ -119,6 +124,11 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
                    reasoning={msg.reasoning}
                    images={msg.images}
                    onEdit={onEdit}
+                   promptTokens={msg.promptTokens}
+                   completionTokens={msg.completionTokens}
+                   reasoningTokens={msg.reasoningTokens}
+                   cachedTokens={msg.cachedTokens}
+                   totalTokens={msg.totalTokens}
                 />
             )})}
             

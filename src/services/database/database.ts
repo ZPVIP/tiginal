@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 /**
  * Database service for Tiginal
@@ -117,6 +117,10 @@ export class DatabaseService {
 
     if (currentVersion < 13) {
       this.migrateV13();
+    }
+
+    if (currentVersion < 14) {
+      this.migrateV14();
     }
 
     // Update schema version
@@ -480,6 +484,45 @@ export class DatabaseService {
 
     // Set Default category (id=1) as current
     this.db.prepare(`UPDATE conversation_categories SET is_current = 1 WHERE id = 1`).run();
+  }
+
+  /**
+   * Migration v14: Add token tracking to messages, conversations, and create statistics table
+   */
+  private migrateV14(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // Add token fields to messages table
+    try { this.db.exec(`ALTER TABLE messages ADD COLUMN provider_id TEXT`); } catch (e) {}
+    try { this.db.exec(`ALTER TABLE messages ADD COLUMN model_id TEXT`); } catch (e) {}
+    try { this.db.exec(`ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER DEFAULT 0`); } catch (e) {}
+    try { this.db.exec(`ALTER TABLE messages ADD COLUMN completion_tokens INTEGER DEFAULT 0`); } catch (e) {}
+    try { this.db.exec(`ALTER TABLE messages ADD COLUMN reasoning_tokens INTEGER DEFAULT 0`); } catch (e) {}
+    try { this.db.exec(`ALTER TABLE messages ADD COLUMN cached_tokens INTEGER DEFAULT 0`); } catch (e) {}
+    try { this.db.exec(`ALTER TABLE messages ADD COLUMN total_tokens INTEGER DEFAULT 0`); } catch (e) {}
+
+    // Add tokens JSON field to conversations table
+    try { this.db.exec(`ALTER TABLE conversations ADD COLUMN tokens TEXT`); } catch (e) {}
+
+    // Create statistics table for daily token aggregates
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS statistics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        done INTEGER DEFAULT 0,
+        provider_id TEXT NOT NULL,
+        model_id TEXT NOT NULL DEFAULT '',
+        prompt_tokens INTEGER DEFAULT 0,
+        cached_tokens INTEGER DEFAULT 0,
+        completion_tokens INTEGER DEFAULT 0,
+        reasoning_tokens INTEGER DEFAULT 0,
+        total_tokens INTEGER DEFAULT 0,
+        UNIQUE(date, provider_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_statistics_date ON statistics(date);
+      CREATE INDEX IF NOT EXISTS idx_statistics_done ON statistics(done);
+    `);
   }
 
   /**

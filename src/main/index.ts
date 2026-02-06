@@ -25,6 +25,7 @@ import { setupSettingsHandlers } from './settings-handlers';
 import { setupShellHandlers } from './shell-handlers';
 import { setupSkillHandlers } from './skill-handlers';
 import { setupToolHandlers } from './tool-handlers';
+import { setupStatisticsHandlers } from './statistics-handlers';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
 import * as crypto from 'crypto';
@@ -251,6 +252,7 @@ app.whenReady().then(() => {
   setupShellHandlers();
   setupSkillHandlers();
   setupToolHandlers();
+  setupStatisticsHandlers();
   
   // Initialize default skills directory
   getDatabase().getDb().prepare(

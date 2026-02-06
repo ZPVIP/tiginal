@@ -11,6 +11,17 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   isTransient?: boolean;
+  tokens?: string | null;
+}
+
+export interface TokenData {
+  providerId?: string;
+  modelId?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  reasoningTokens?: number;
+  cachedTokens?: number;
+  totalTokens?: number;
 }
 
 export interface Message {
@@ -19,6 +30,13 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   createdAt: number;
+  providerId?: string;
+  modelId?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  reasoningTokens?: number;
+  cachedTokens?: number;
+  totalTokens?: number;
 }
 
 export interface CategoryData {
@@ -184,7 +202,7 @@ export class ChatService {
   /**
    * Add a message to a conversation
    */
-  addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string): Message {
+  addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string, tokenData?: TokenData): Message {
     const id = require('crypto').randomUUID();
     const now = Date.now();
 
@@ -194,6 +212,13 @@ export class ChatService {
       role,
       content,
       createdAt: now,
+      providerId: tokenData?.providerId,
+      modelId: tokenData?.modelId,
+      promptTokens: tokenData?.promptTokens || 0,
+      completionTokens: tokenData?.completionTokens || 0,
+      reasoningTokens: tokenData?.reasoningTokens || 0,
+      cachedTokens: tokenData?.cachedTokens || 0,
+      totalTokens: tokenData?.totalTokens || 0,
     };
 
     if (this.transientConversations.has(conversationId)) {
@@ -207,13 +232,18 @@ export class ChatService {
 
     const db = getDatabase().getDb();
     
-    // Check if conversation exists in DB, if not (and not transient), it might be an issue.
-    // For now we assume calling code ensures existence or we let SQL error out.
-    
     db.prepare(`
-      INSERT INTO messages (id, conversation_id, role, content, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, conversationId, role, content, now);
+      INSERT INTO messages (id, conversation_id, role, content, created_at, provider_id, model_id, prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, total_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, conversationId, role, content, now,
+      tokenData?.providerId || null,
+      tokenData?.modelId || null,
+      tokenData?.promptTokens || 0,
+      tokenData?.completionTokens || 0,
+      tokenData?.reasoningTokens || 0,
+      tokenData?.cachedTokens || 0,
+      tokenData?.totalTokens || 0
+    );
 
     // Update conversation timestamp
     db.prepare(`
@@ -221,6 +251,45 @@ export class ChatService {
     `).run(now, conversationId);
 
     return message;
+  }
+
+  /**
+   * Update the accumulated token usage JSON on a conversation
+   * Groups by provider_id, accumulating totals per provider
+   */
+  updateConversationTokens(conversationId: string, providerId: string, modelId: string, tokenData: TokenData): void {
+    if (this.transientConversations.has(conversationId)) return;
+
+    const db = getDatabase().getDb();
+
+    // Read existing tokens JSON
+    const row = db.prepare('SELECT tokens FROM conversations WHERE id = ?').get(conversationId) as { tokens: string | null } | undefined;
+    let tokensObj: Record<string, any> = {};
+    if (row?.tokens) {
+      try { tokensObj = JSON.parse(row.tokens); } catch (e) {}
+    }
+
+    // Accumulate for this provider
+    const existing = tokensObj[providerId] || {
+      model_id: modelId,
+      completion_tokens: 0,
+      reasoning_tokens: 0,
+      prompt_tokens: 0,
+      cached_tokens: 0,
+      total_tokens: 0,
+    };
+
+    tokensObj[providerId] = {
+      model_id: modelId,
+      completion_tokens: (existing.completion_tokens || 0) + (tokenData.completionTokens || 0),
+      reasoning_tokens: (existing.reasoning_tokens || 0) + (tokenData.reasoningTokens || 0),
+      prompt_tokens: (existing.prompt_tokens || 0) + (tokenData.promptTokens || 0),
+      cached_tokens: (existing.cached_tokens || 0) + (tokenData.cachedTokens || 0),
+      total_tokens: (existing.total_tokens || 0) + (tokenData.totalTokens || 0),
+    };
+
+    db.prepare('UPDATE conversations SET tokens = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(tokensObj), Date.now(), conversationId);
   }
 
   /**
@@ -233,7 +302,9 @@ export class ChatService {
 
     const db = getDatabase().getDb();
     const rows = db.prepare(`
-      SELECT id, conversation_id, role, content, created_at
+      SELECT id, conversation_id, role, content, created_at,
+             provider_id, model_id, prompt_tokens, completion_tokens,
+             reasoning_tokens, cached_tokens, total_tokens
       FROM messages
       WHERE conversation_id = ?
       ORDER BY created_at ASC
@@ -243,6 +314,13 @@ export class ChatService {
       role: string;
       content: string;
       created_at: number;
+      provider_id: string | null;
+      model_id: string | null;
+      prompt_tokens: number;
+      completion_tokens: number;
+      reasoning_tokens: number;
+      cached_tokens: number;
+      total_tokens: number;
     }>;
 
     return rows.map(row => ({
@@ -251,6 +329,13 @@ export class ChatService {
       role: row.role as 'user' | 'assistant' | 'system',
       content: row.content,
       createdAt: row.created_at,
+      providerId: row.provider_id || undefined,
+      modelId: row.model_id || undefined,
+      promptTokens: row.prompt_tokens || 0,
+      completionTokens: row.completion_tokens || 0,
+      reasoningTokens: row.reasoning_tokens || 0,
+      cachedTokens: row.cached_tokens || 0,
+      totalTokens: row.total_tokens || 0,
     }));
   }
 
@@ -472,7 +557,7 @@ export class ChatService {
     const sortField = sortBy === 'createdAt' ? 'created_at' : 'updated_at';
 
     const rows = db.prepare(`
-      SELECT id, title, provider_id, category_id, is_pinned, is_favorite, created_at, updated_at
+      SELECT id, title, provider_id, category_id, is_pinned, is_favorite, created_at, updated_at, tokens
       FROM conversations
       WHERE category_id = ?
       ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN title END ASC, ${sortField} DESC
@@ -486,6 +571,7 @@ export class ChatService {
       is_favorite: number;
       created_at: number;
       updated_at: number;
+      tokens: string | null;
     }>;
 
     return {
@@ -499,6 +585,7 @@ export class ChatService {
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         isTransient: false,
+        tokens: row.tokens,
       })),
       total: countRow.count,
     };
@@ -519,7 +606,7 @@ export class ChatService {
     const sortField = sortBy === 'createdAt' ? 'created_at' : 'updated_at';
 
     const rows = db.prepare(`
-      SELECT id, title, provider_id, category_id, is_pinned, is_favorite, created_at, updated_at
+      SELECT id, title, provider_id, category_id, is_pinned, is_favorite, created_at, updated_at, tokens
       FROM conversations
       WHERE is_favorite = 1
       ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN title END ASC, ${sortField} DESC
@@ -533,6 +620,7 @@ export class ChatService {
       is_favorite: number;
       created_at: number;
       updated_at: number;
+      tokens: string | null;
     }>;
 
     return {
@@ -546,6 +634,7 @@ export class ChatService {
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         isTransient: false,
+        tokens: row.tokens,
       })),
       total: countRow.count,
     };

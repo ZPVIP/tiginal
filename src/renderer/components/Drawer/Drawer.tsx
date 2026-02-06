@@ -23,6 +23,7 @@ export interface ConversationData {
   isFavorite: boolean;
   createdAt: number;
   updatedAt: number;
+  tokens?: string | null;
 }
 
 interface DrawerContextType {

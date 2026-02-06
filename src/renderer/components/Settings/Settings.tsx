@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Tabs } from '../ui/Tabs';
-import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench, FileText } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench, FileText, BarChart3 } from 'lucide-react';
 import { GeneralSettings } from './GeneralSettings';
 import { AIProviders } from './AIProviders';
 import { ThemeSettings } from './ThemeSettings';
@@ -9,6 +9,7 @@ import { TerminalSettings } from './TerminalSettings';
 import { SkillsSettings } from './SkillsSettings';
 import { ToolsSettings } from './ToolsSettings';
 import { SystemPromptSettings } from './SystemPromptSettings';
+import { StatisticsSettings } from './StatisticsSettings';
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState('general');
@@ -21,6 +22,7 @@ export function Settings() {
     { id: 'terminal', label: 'Terminal', icon: <Terminal size={16} /> },
     { id: 'ssh', label: 'SSH (Coming Soon)', icon: <Shield size={16} /> },
     { id: 'skills', label: 'Skills', icon: <Wand2 size={16} /> },
+    { id: 'statistics', label: 'Statistics', icon: <BarChart3 size={16} /> },
     { id: 'theme', label: 'Theme', icon: <Palette size={16} /> },
     { id: 'shortcuts', label: 'Shortcuts', icon: <div className="font-bold text-[10px] w-4 text-center border border-current rounded">⌘</div> },
   ];
@@ -56,6 +58,7 @@ export function Settings() {
              </div>
           )}
           {activeTab === 'skills' && <SkillsSettings />}
+          {activeTab === 'statistics' && <StatisticsSettings />}
           {activeTab === 'theme' && <ThemeSettings />}
           {activeTab === 'shortcuts' && <ShortcutSettings />}
         </div>

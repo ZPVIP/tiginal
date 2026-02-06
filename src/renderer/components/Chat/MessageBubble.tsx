@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { clsx } from 'clsx';
-import { User, Copy, Check, ChevronDown, ChevronRight, BrainCircuit, Maximize2, Minimize2, Pencil, FileText, Monitor, Smartphone } from 'lucide-react';
+import { User, Copy, Check, ChevronDown, ChevronRight, BrainCircuit, Maximize2, Minimize2, Pencil, FileText, Monitor, Smartphone, Activity } from 'lucide-react';
 import { TigiCat } from '../icons/TigiCat';
 import { useEffect, useRef } from 'react';
 
@@ -16,6 +16,31 @@ interface MessageProps {
   images?: string[];
   tool_call_id?: string; // Optional: to link back to call
   onEdit?: (content: string) => void;
+  promptTokens?: number;
+  completionTokens?: number;
+  reasoningTokens?: number;
+  cachedTokens?: number;
+  totalTokens?: number;
+}
+
+function formatTokenTooltip(props: { promptTokens?: number; completionTokens?: number; reasoningTokens?: number; cachedTokens?: number; totalTokens?: number }): string {
+  const parts: string[] = [];
+
+  let promptPart = `Prompt: ${props.promptTokens || 0}`;
+  if (props.cachedTokens) {
+    promptPart += ` (Cached: ${props.cachedTokens})`;
+  }
+  parts.push(promptPart);
+
+  let completionPart = `Completion: ${props.completionTokens || 0}`;
+  if (props.reasoningTokens) {
+    completionPart += ` (Reasoning: ${props.reasoningTokens})`;
+  }
+  parts.push(completionPart);
+
+  parts.push(`Total: ${props.totalTokens || 0}`);
+
+  return parts.join(' | ');
 }
 
 
@@ -104,7 +129,7 @@ function ReasoningBlock({ content }: { content: string }) {
 }
 
 
-export function MessageBubble({ role, content, reasoning, images, onEdit }: MessageProps) {
+export function MessageBubble({ role, content, reasoning, images, onEdit, promptTokens, completionTokens, reasoningTokens, cachedTokens, totalTokens }: MessageProps) {
   const [copied, setCopied] = useState(false);
   const [copiedPlain, setCopiedPlain] = useState(false);
   const [copiedRendered, setCopiedRendered] = useState(false);
@@ -283,6 +308,17 @@ export function MessageBubble({ role, content, reasoning, images, onEdit }: Mess
                    {copiedRendered ? <Check size={14} /> : <Monitor size={14} />}
                    <span className="text-[10px]">Rich</span>
                </button>
+
+               {/* Token Stats */}
+               {!isUser && (totalTokens ?? 0) > 0 && (
+                   <div
+                     className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded hover:bg-surface flex items-center gap-1 cursor-default"
+                     title={formatTokenTooltip({ promptTokens, completionTokens, reasoningTokens, cachedTokens, totalTokens })}
+                   >
+                       <Activity size={14} />
+                       <span className="text-[10px]">Token</span>
+                   </div>
+               )}
 
                {/* Edit Button */}
                {isUser && onEdit && (
