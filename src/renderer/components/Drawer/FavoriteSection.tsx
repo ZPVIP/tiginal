@@ -36,7 +36,7 @@ export function FavoriteSection() {
     <div className="border-b border-border">
       {/* Header - style matches CATEGORIES exactly */}
       <div
-        className="flex items-center px-3 py-2 cursor-pointer hover:bg-elevated transition-colors h-8"
+        className="flex items-center px-3 py-2 cursor-pointer hover:bg-elevated transition-colors h-8 border-b border-border"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <span className="text-xs font-medium text-text-muted uppercase tracking-wider flex-1">

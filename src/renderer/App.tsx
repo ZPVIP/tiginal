@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare, PanelLeft, PanelLeftClose } from 'lucide-react';
+import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare, PanelLeft, PanelLeftClose, SquarePen, EyeOff } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SettingsModal } from './components/Settings/SettingsModal';
 import { Chat, ChatHandle } from './components/Chat/Chat';
@@ -30,6 +30,7 @@ export default function App() {
   // Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [isIncognito, setIsIncognito] = useState(false);
   const chatRef = useRef<ChatHandle>(null);
   const contentAreaRef = useRef<HTMLDivElement>(null);
   
@@ -216,6 +217,42 @@ export default function App() {
                >
                  {isDrawerOpen ? <PanelLeftClose size={16} strokeWidth={2} /> : <PanelLeft size={16} strokeWidth={2} />}
                </button>
+
+               {/* New Chat Button */}
+               <button
+                 onClick={() => chatRef.current?.newChat()}
+                 disabled={!showChat}
+                 className={clsx(
+                   "p-1.5 rounded-md transition-colors",
+                   !showChat
+                     ? "text-text-muted opacity-50 cursor-not-allowed"
+                     : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
+                 )}
+                 title="New Chat"
+               >
+                 <SquarePen size={16} strokeWidth={2} />
+               </button>
+
+               {/* Incognito Mode Button */}
+               <button
+                 onClick={() => chatRef.current?.toggleIncognito()}
+                 disabled={!showChat}
+                 className={clsx(
+                   "p-1.5 rounded-md transition-colors",
+                   !showChat
+                     ? "text-text-muted opacity-50 cursor-not-allowed"
+                     : isIncognito
+                       ? "bg-purple-500/20 text-purple-400"
+                       : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
+                 )}
+                 title="Incognito Mode"
+               >
+                 <EyeOff size={16} strokeWidth={2} />
+               </button>
+
+               {/* Separator */}
+               <div className="w-px h-4 bg-border mx-0.5" />
+
                <NavItem 
                  id="chat" 
                  icon={MessageSquare} 
@@ -294,7 +331,7 @@ export default function App() {
                 }}
              >
                  <ErrorBoundary>
-                     <Chat ref={chatRef} />
+                     <Chat ref={chatRef} onIncognitoChange={setIsIncognito} />
                  </ErrorBoundary>
              </div>
 

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { Header } from './Header';
 import { MessageList } from './MessageList';
 import { ChatInput, ChatInputHandle } from './ChatInput';
 import { EmptyState } from './EmptyState';
@@ -13,9 +12,15 @@ export interface ChatHandle {
   loadConversation: (id: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   getCurrentConversationId: () => string | null;
+  newChat: () => void;
+  toggleIncognito: () => void;
 }
 
-export const Chat = forwardRef<ChatHandle, {}>(function Chat(_props, ref) {
+interface ChatProps {
+  onIncognitoChange?: (isIncognito: boolean) => void;
+}
+
+export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) {
   const [messages, setMessages] = useState<any[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [providers, setProviders] = useState<AIProvider[]>([]);
@@ -146,6 +151,11 @@ export const Chat = forwardRef<ChatHandle, {}>(function Chat(_props, ref) {
       allowAllToolsRef.current = allowAllTools;
   }, [currentConversationId, isIncognito, allowAllTools]);
 
+  // Notify parent when incognito state changes
+  useEffect(() => {
+      props.onIncognitoChange?.(isIncognito);
+  }, [isIncognito]);
+
   // Expose methods via ref for parent component
   useImperativeHandle(ref, () => ({
     loadConversation: async (id: string) => {
@@ -169,7 +179,18 @@ export const Chat = forwardRef<ChatHandle, {}>(function Chat(_props, ref) {
       }
     },
     getCurrentConversationId: () => currentConversationId,
-  }), [currentConversationId]);
+    newChat: () => {
+      if (isIncognito) {
+        setIncognitoMessages([]);
+      } else {
+        setMessages([]);
+        setCurrentConversationId(null);
+      }
+    },
+    toggleIncognito: () => {
+      setIsIncognito(!isIncognito);
+    },
+  }), [currentConversationId, isIncognito]);
 
   const loadProviders = async () => {
     try {
@@ -532,12 +553,6 @@ export const Chat = forwardRef<ChatHandle, {}>(function Chat(_props, ref) {
 
   return (
     <div className="flex h-full w-full flex-col bg-background relative">
-      <Header 
-         onNewChat={handleNewChat}
-         onIncognitoToggle={handleIncognitoToggle}
-         isIncognito={isIncognito}
-      />
-      
       {/* Incognito Warning Bar */}
       {isIncognito && (
           <div className="flex items-center justify-between px-4 py-2 bg-purple-900/30 border-b border-purple-700/50 text-sm">
