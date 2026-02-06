@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 /**
  * Database service for Tiginal
@@ -113,6 +113,10 @@ export class DatabaseService {
 
     if (currentVersion < 12) {
       this.migrateV12();
+    }
+
+    if (currentVersion < 13) {
+      this.migrateV13();
     }
 
     // Update schema version
@@ -459,6 +463,23 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_conversations_pinned ON conversations(is_pinned);
       CREATE INDEX IF NOT EXISTS idx_conversations_favorite ON conversations(is_favorite);
     `);
+  }
+
+  /**
+   * Migration v13: Add is_current field to conversation_categories
+   * Only one category can be current at a time; new conversations go into the current category.
+   */
+  private migrateV13(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE conversation_categories ADD COLUMN is_current INTEGER DEFAULT 0`);
+    } catch (e) {
+      // Column might already exist
+    }
+
+    // Set Default category (id=1) as current
+    this.db.prepare(`UPDATE conversation_categories SET is_current = 1 WHERE id = 1`).run();
   }
 
   /**

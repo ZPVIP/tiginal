@@ -232,6 +232,16 @@ export function setupChatHandlers(): void {
   ipcMain.handle('chat:rename-conversation', async (_event, id: string, title: string) => {
     return getChatService().updateTitle(id, title);
   });
+
+  // Set current category
+  ipcMain.handle('chat:set-current-category', async (_event, id: number) => {
+    return getChatService().setCurrentCategory(id);
+  });
+
+  // Get current category ID
+  ipcMain.handle('chat:get-current-category', async () => {
+    return getChatService().getCurrentCategoryId();
+  });
   // Submit tool approval (User clicked Allow/Deny)
   ipcMain.handle('chat:submit-tool-approval', async (_event, { toolCallId, approved, approvedAll }: { toolCallId: string; approved: boolean; approvedAll: boolean }): Promise<void> => {
       const resolver = pendingToolApprovals.get(toolCallId);
@@ -330,6 +340,98 @@ export function setupChatHandlers(): void {
 }
 
 /**
+ * Shared helper: Make a non-streaming chat completion API call.
+ * Used by analyzeCommand, callToolsModel, and generateConversationTitle.
+ * Returns the response content string, or null on failure.
+ */
+interface NonStreamingAPIConfig {
+  type: 'openai-compatible' | 'copilot';
+  endpoint: string;
+  apiKey: string | null;
+  model: string;
+  autoCORSFix?: boolean;
+  customHeaders?: Record<string, string>;
+}
+
+async function callNonStreamingChatCompletion(
+  config: NonStreamingAPIConfig,
+  messages: Array<{ role: string; content: string }>,
+  options?: { temperature?: number; maxTokens?: number; label?: string }
+): Promise<string | null> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(config.customHeaders || {})
+  };
+
+  let endpoint = config.endpoint || 'https://api.openai.com/v1';
+
+  if (config.type === 'copilot' && config.apiKey) {
+    if (!endpoint || endpoint.includes('api.openai.com')) {
+      endpoint = 'https://api.githubcopilot.com';
+    }
+    const copilotToken = await getCopilotToken(config.apiKey);
+    headers['Authorization'] = `Bearer ${copilotToken}`;
+    headers['Copilot-Integration-Id'] = 'vscode-chat';
+    headers['Editor-Version'] = 'vscode/1.107.0';
+    headers['Editor-Plugin-Version'] = 'copilot-chat/0.35.0';
+    headers['User-Agent'] = 'GitHubCopilotChat/0.35.0';
+    headers['Openai-Intent'] = 'conversation-edits';
+  } else if (config.apiKey) {
+    headers['Authorization'] = `Bearer ${config.apiKey}`;
+  }
+
+  if (config.autoCORSFix !== false) {
+    try { const url = new URL(endpoint); headers['Origin'] = url.origin; } catch (e) {}
+  }
+
+  const body = JSON.stringify({
+    model: config.model,
+    messages,
+    temperature: options?.temperature ?? 0.3,
+    max_tokens: options?.maxTokens ?? 1000,
+    stream: false
+  });
+
+  const label = options?.label || 'NON_STREAMING';
+
+  printRequestStartSeparator();
+  if (process.env.NODE_ENV !== 'production') {
+    process.stdout.write(`\n--- ${label} REQUEST ---\n`);
+    process.stdout.write('URL: ' + `${endpoint}/chat/completions` + '\n');
+    const safeHeaders = { ...headers };
+    if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
+    process.stdout.write('Headers: ' + JSON.stringify(safeHeaders, null, 2) + '\n');
+    process.stdout.write('Body: ' + JSON.stringify(JSON.parse(body), null, 2) + '\n');
+  }
+
+  const response = await fetchWithLocalhostFallback(`${endpoint}/chat/completions`, {
+    method: 'POST',
+    headers,
+    body
+  });
+
+  printRequestEndSeparator();
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`${label} API failed: ${response.status} - ${errorText}`);
+    return null;
+  }
+
+  const data = await response.json() as any;
+
+  if (process.env.NODE_ENV !== 'production') {
+    printRespondStartSeparator();
+    process.stdout.write(`\n--- ${label} RESPONSE ---\n`);
+    process.stdout.write('Status: ' + response.status + '\n');
+    process.stdout.write('Body: ' + JSON.stringify(data, null, 2) + '\n');
+    printRespondEndSeparator();
+  }
+
+  return data.choices?.[0]?.message?.content || null;
+}
+
+/**
  * Security Analyzer: Analyze a bash command for risk and risk description
  */
 async function analyzeCommand(
@@ -382,81 +484,17 @@ Risk levels:
 - high: Destructive operations, system modifications, network access`;
 
     try {
-        // We use fetch inside electron main process (Node 18+ has fetch)
-        // If not available, we can require it or use axios if installed, but let's assume global fetch or require('node-fetch').
-        // Electron usually has fetch in main process for recent versions.
-        
         const messages = [
             { role: 'system', content: prompt },
             { role: 'user', content: `Analyze this bash command: ${command}` }
         ];
 
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json'
-        };
-        
-        let endpoint = apiConfig.endpoint;
-
-        if (apiConfig.type === 'copilot' && apiConfig.apiKey) {
-             if (!endpoint || endpoint.includes('api.openai.com')) {
-                 endpoint = 'https://api.githubcopilot.com'; 
-             }
-             const copilotToken = await getCopilotToken(apiConfig.apiKey);
-             headers['Authorization'] = `Bearer ${copilotToken}`;
-             headers['Copilot-Integration-Id'] = 'vscode-chat';
-             headers['Editor-Version'] = 'vscode/1.107.0'; 
-             headers['Editor-Plugin-Version'] = 'copilot-chat/0.35.0';
-             headers['User-Agent'] = 'GitHubCopilotChat/0.35.0';
-             headers['Openai-Intent'] = 'conversation-edits';
-        } else if (apiConfig.apiKey) {
-            headers['Authorization'] = `Bearer ${apiConfig.apiKey}`;
-        }
-        
-        try { const url = new URL(endpoint); headers['Origin'] = url.origin; } catch(e){}
-
-        const body = JSON.stringify({
-            model: apiConfig.model,
+        const content = await callNonStreamingChatCompletion(
+            { type: apiConfig.type, endpoint: apiConfig.endpoint, apiKey: apiConfig.apiKey, model: apiConfig.model },
             messages,
-            temperature: 0.1, 
-            max_tokens: 1000,
-            stream: false
-        });
+            { temperature: 0.1, maxTokens: 1000, label: 'ANALYZE COMMAND' }
+        );
 
-        printRequestStartSeparator();
-        if (process.env.NODE_ENV !== 'production') {
-             process.stdout.write('\n--- ANALYZE COMMAND REQUEST ---\n');
-             process.stdout.write('URL: ' + `${endpoint}/chat/completions` + '\n');
-             const safeHeaders = { ...headers };
-             if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
-             process.stdout.write('Headers: ' + JSON.stringify(safeHeaders, null, 2) + '\n');
-             process.stdout.write('Body: ' + JSON.stringify(JSON.parse(body), null, 2) + '\n');
-        }
-
-        const response = await fetchWithLocalhostFallback(`${endpoint}/chat/completions`, {
-            method: 'POST',
-            headers,
-            body
-        });
-
-        printRequestEndSeparator();
-
-        if (!response.ok) {
-            console.error(`Analyzer API failed: ${response.status} - ${await response.text()}`);
-            return { needsPermission: true, description: `Execute: ${command}`, riskLevel: 'medium' };
-        }
-
-        const data = await response.json() as any;
-        
-        if (process.env.NODE_ENV !== 'production') {
-             printRespondStartSeparator();
-             process.stdout.write('\n--- ANALYZE COMMAND RESPONSE ---\n');
-             process.stdout.write('Status: ' + response.status + '\n');
-             process.stdout.write('Body: ' + JSON.stringify(data, null, 2) + '\n');
-             printRespondEndSeparator();
-        }
-
-        const content = data.choices?.[0]?.message?.content;
-        
         if (content) {
             const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/{[\s\S]*}/);
             const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : content;
@@ -751,6 +789,22 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     // 2. Build Initial Messages
     chatService.addMessage(conversationId, 'user', content);
     const dbMessages = chatService.getMessages(conversationId);
+
+    // Auto-generate title for new conversations (first user message)
+    const userMessages = dbMessages.filter(m => m.role === 'user');
+    if (userMessages.length === 1) {
+      // Fire and forget: generate title asynchronously without blocking the main response
+      generateConversationTitle(
+        content,
+        provider,
+        apiKey,
+        modelToUse,
+        customHeaders,
+        conversationId,
+        chatService,
+        _event.sender
+      ).catch(err => console.error('Title generation failed:', err));
+    }
     
     // Construct System Prompt from system_prompts table
     // Check global system prompts switch from database
@@ -1201,46 +1255,17 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
             { role: 'user', content: `Search query: "${query}"\n\nFind all tools that match this query and return as JSON.` }
         ];
 
-        if (process.env.NODE_ENV !== 'production') {
-             printRequestStartSeparator();
-             console.log('--- TOOL SEARCH REQUEST ---');
-             console.log('URL:', `${provider.endpoint || 'https://api.openai.com/v1'}/chat/completions`);
-             console.log('Model:', model);
-             console.log('Messages:', JSON.stringify(messages, null, 2));
-        }
-
-        // Call API (non-streaming)
-        const response = await fetch(`${provider.endpoint || 'https://api.openai.com/v1'}/chat/completions`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
+        const jsonStr = await callNonStreamingChatCompletion(
+            {
+                type: provider.type,
+                endpoint: provider.endpoint || 'https://api.openai.com/v1',
+                apiKey,
+                model,
+                autoCORSFix: provider.auto_cors_fix === 1
             },
-            body: JSON.stringify({
-                model: model,
-                messages: messages,
-                temperature: 0,
-                max_tokens: 2000
-            })
-        });
-        printRequestEndSeparator();
-        
-        if (!response.ok) {
-             console.error(`ToolSearch API failed: ${response.status} - ${await response.text()}`);
-             return [];
-        }
-        
-        const data = await response.json() as any;
-        
-        if (process.env.NODE_ENV !== 'production') {
-             printRespondStartSeparator();
-             console.log('\n--- TOOL SEARCH RESPONSE ---');
-             console.log('Status:', response.status);
-             console.log('Body:', JSON.stringify(data, null, 2));
-             printRespondEndSeparator();
-        }
-
-        const jsonStr = data.choices?.[0]?.message?.content || '';
+            messages,
+            { temperature: 0, maxTokens: 2000, label: 'TOOL SEARCH' }
+        ) || '';
         
         // Parse JSON from text
         const match = jsonStr.match(/```json\n([\s\S]*?)\n```/) || jsonStr.match(/{[\s\S]*}/);
@@ -1340,6 +1365,73 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
     } catch (error) {
       return { success: false, error: (error as Error).message };
     }
+}
+
+/**
+ * Generate a conversation title from the first user message using the current AI model.
+ * Runs asynchronously without blocking the main response stream.
+ */
+async function generateConversationTitle(
+  userMessage: string,
+  provider: any,
+  apiKey: string | null,
+  model: string,
+  customHeaders: Record<string, string>,
+  conversationId: string,
+  chatService: ReturnType<typeof getChatService>,
+  sender: any
+): Promise<void> {
+  const TITLE_SYSTEM_PROMPT = 'You are a conversation title generator. Based on the user\'s message, create a brief, descriptive title (2-6 words). Respond with ONLY the title text. No quotes, no explanation, no extra punctuation.';
+
+  const messages = [
+    { role: 'system', content: TITLE_SYSTEM_PROMPT },
+    { role: 'user', content: userMessage.slice(0, 500) }
+  ];
+
+  // Helper: save fallback title
+  const saveFallback = () => {
+    const fallback = userMessage.split(/\s+/).slice(0, 5).join(' ');
+    const fallbackTitle = fallback.length > 30 ? fallback.slice(0, 30) + '...' : fallback;
+    chatService.updateTitle(conversationId, fallbackTitle);
+    sender.send('chat:title-updated', { conversationId, title: fallbackTitle });
+  };
+
+  try {
+    let title = await callNonStreamingChatCompletion(
+      {
+        type: provider.type,
+        endpoint: provider.endpoint || 'https://api.openai.com/v1',
+        apiKey,
+        model,
+        autoCORSFix: provider.auto_cors_fix === 1,
+        customHeaders
+      },
+      messages,
+      { temperature: 0.3, maxTokens: 30, label: 'TITLE GENERATION' }
+    );
+
+    if (!title) {
+      saveFallback();
+      return;
+    }
+
+    // Clean up: remove surrounding quotes if present
+    title = title.replace(/^["']+|["']+$/g, '').trim();
+    // Limit length
+    if (title.length > 60) {
+      title = title.slice(0, 57) + '...';
+    }
+
+    chatService.updateTitle(conversationId, title);
+    sender.send('chat:title-updated', { conversationId, title });
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Title Generated] "${title}" for conversation ${conversationId}`);
+    }
+  } catch (e) {
+    console.error('Title generation error:', e);
+    saveFallback();
+  }
 }
 
 function processLine(

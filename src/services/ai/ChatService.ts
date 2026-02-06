@@ -26,6 +26,7 @@ export interface CategoryData {
   name: string;
   isPinned: boolean;
   isExpanded: boolean;
+  isCurrent: boolean;
   rank: number;
 }
 
@@ -42,11 +43,14 @@ export class ChatService {
     const id = require('crypto').randomUUID();
     const now = Date.now();
 
+    // Determine category: use current category or fallback to 1
+    const currentCategoryId = isTransient ? 1 : this.getCurrentCategoryId();
+
     const conversation: Conversation = {
       id,
       title: null,
       providerId: providerId || null,
-      categoryId: 1,
+      categoryId: currentCategoryId,
       isPinned: false,
       isFavorite: false,
       createdAt: now,
@@ -59,9 +63,9 @@ export class ChatService {
     } else {
       const db = getDatabase().getDb();
       db.prepare(`
-        INSERT INTO conversations (id, title, provider_id, created_at, updated_at)
-        VALUES (?, NULL, ?, ?, ?)
-      `).run(id, providerId || null, now, now);
+        INSERT INTO conversations (id, title, provider_id, category_id, created_at, updated_at)
+        VALUES (?, NULL, ?, ?, ?, ?)
+      `).run(id, providerId || null, currentCategoryId, now, now);
     }
 
     return conversation;
@@ -287,7 +291,7 @@ export class ChatService {
   getAllCategories(): CategoryData[] {
     const db = getDatabase().getDb();
     const rows = db.prepare(`
-      SELECT id, name, is_pinned, is_expanded, rank
+      SELECT id, name, is_pinned, is_expanded, is_current, rank
       FROM conversation_categories
       ORDER BY is_pinned DESC, rank ASC
     `).all() as Array<{
@@ -295,6 +299,7 @@ export class ChatService {
       name: string;
       is_pinned: number;
       is_expanded: number;
+      is_current: number;
       rank: number;
     }>;
 
@@ -303,6 +308,7 @@ export class ChatService {
       name: row.name,
       isPinned: row.is_pinned === 1,
       isExpanded: row.is_expanded === 1,
+      isCurrent: row.is_current === 1,
       rank: row.rank,
     }));
   }
@@ -327,6 +333,7 @@ export class ChatService {
       name,
       isPinned: false,
       isExpanded: true,
+      isCurrent: false,
       rank: maxRank + 1,
     };
   }
@@ -387,6 +394,32 @@ export class ChatService {
       ids.forEach((id, index) => {
         db.prepare('UPDATE conversation_categories SET rank = ?, updated_at = ? WHERE id = ?').run(index, now, id);
       });
+    });
+    
+    update();
+  }
+
+  /**
+   * Get the ID of the current (active) category
+   */
+  getCurrentCategoryId(): number {
+    const db = getDatabase().getDb();
+    const row = db.prepare('SELECT id FROM conversation_categories WHERE is_current = 1').get() as { id: number } | undefined;
+    return row?.id || 1; // Fallback to Default
+  }
+
+  /**
+   * Set a category as the current one (all others become non-current and collapsed)
+   */
+  setCurrentCategory(id: number): void {
+    const db = getDatabase().getDb();
+    const now = Date.now();
+    
+    const update = db.transaction(() => {
+      // Clear all current flags and collapse all categories
+      db.prepare('UPDATE conversation_categories SET is_current = 0, is_expanded = 0, updated_at = ?').run(now);
+      // Set the selected category as current and expand it
+      db.prepare('UPDATE conversation_categories SET is_current = 1, is_expanded = 1, updated_at = ? WHERE id = ?').run(now, id);
     });
     
     update();

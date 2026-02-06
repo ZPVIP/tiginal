@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight, MoreHorizontal, Pin, Edit2, Trash2, FolderOpen } from 'lucide-react';
+import { ChevronDown, ChevronRight, MoreHorizontal, Pin, Edit2, Trash2, FolderOpen, Check } from 'lucide-react';
 import { clsx } from 'clsx';
 import { ConversationItem } from './ConversationItem';
 import { Pagination } from './Pagination';
@@ -15,7 +15,7 @@ interface CategoryItemProps {
 }
 
 export function CategoryItem({ category }: CategoryItemProps) {
-  const { currentConversationId, onSelectConversation, refreshCategories, sortBy } = useDrawerContext();
+  const { currentConversationId, onSelectConversation, refreshCategories, conversationsRefreshKey, sortBy } = useDrawerContext();
   const [isExpanded, setIsExpanded] = useState(category.isExpanded);
   const [conversations, setConversations] = useState<ConversationData[]>([]);
   const [total, setTotal] = useState(0);
@@ -23,6 +23,11 @@ export function CategoryItem({ category }: CategoryItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Sync local expanded state when category prop changes (e.g. after setCurrentCategory)
+  useEffect(() => {
+    setIsExpanded(category.isExpanded);
+  }, [category.isExpanded]);
 
   const loadConversations = useCallback(async () => {
     if (!isExpanded) return;
@@ -33,7 +38,7 @@ export function CategoryItem({ category }: CategoryItemProps) {
     } catch (e) {
       console.error('Failed to load conversations:', e);
     }
-  }, [category.id, page, isExpanded, sortBy]);
+  }, [category.id, page, isExpanded, sortBy, conversationsRefreshKey]);
 
   useEffect(() => {
     loadConversations();
@@ -94,13 +99,26 @@ export function CategoryItem({ category }: CategoryItemProps) {
     }
   };
 
+  const handleSetCurrent = async () => {
+    try {
+      await invoke('chat:set-current-category', category.id);
+      await refreshCategories();
+      setShowMenu(false);
+    } catch (e) {
+      console.error('Failed to set current category:', e);
+    }
+  };
+
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   return (
     <div>
       {/* Header - fixed height to prevent height change on hover */}
       <div
-        className="flex items-center gap-2 px-3 h-8 cursor-pointer hover:bg-elevated transition-colors relative group"
+        className={clsx(
+          "flex items-center gap-2 px-3 h-8 cursor-pointer hover:bg-elevated transition-colors relative group",
+          category.isCurrent && "bg-primary/5"
+        )}
         onClick={handleToggleExpanded}
       >
         {isExpanded ? (
@@ -108,7 +126,7 @@ export function CategoryItem({ category }: CategoryItemProps) {
         ) : (
           <ChevronRight size={14} className="text-text-muted flex-shrink-0" />
         )}
-        <FolderOpen size={14} className="text-text-muted flex-shrink-0" />
+        <FolderOpen size={14} className="flex-shrink-0 text-text-muted" />
         <span className="text-xs font-medium text-text-sec truncate">
           {category.name}
           {category.isPinned && (
@@ -120,16 +138,21 @@ export function CategoryItem({ category }: CategoryItemProps) {
         {/* Flex spacer */}
         <div className="flex-1" />
 
-        {/* Context Menu Trigger - always present but invisible unless hovered */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowMenu(!showMenu);
-          }}
-          className="p-0.5 rounded hover:bg-surface transition-colors opacity-0 group-hover:opacity-100"
-        >
-          <MoreHorizontal size={14} className="text-text-muted" />
-        </button>
+        {/* Current indicator (green check) + Context Menu Trigger */}
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          {category.isCurrent && (
+            <Check size={14} className="text-green-500" strokeWidth={3} />
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(!showMenu);
+            }}
+            className="p-0.5 rounded hover:bg-surface transition-colors opacity-0 group-hover:opacity-100"
+          >
+            <MoreHorizontal size={14} className="text-text-muted" />
+          </button>
+        </div>
 
         {/* Context Menu */}
         {showMenu && (
@@ -147,6 +170,14 @@ export function CategoryItem({ category }: CategoryItemProps) {
             >
               <Edit2 size={12} /> Rename
             </button>
+            {!category.isCurrent && (
+              <button
+                onClick={handleSetCurrent}
+                className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
+              >
+                <Check size={12} /> Set as Current
+              </button>
+            )}
             <button
               onClick={handleTogglePinned}
               className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"

@@ -288,6 +288,8 @@ export const Chat = forwardRef<ChatHandle, {}>(function Chat(_props, ref) {
               const conv = await invoke('chat:create-conversation', selectedProviderId);
               convId = conv.id;
               setCurrentConversationId(conv.id);
+              // Notify drawer to refresh and show the new conversation
+              window.dispatchEvent(new CustomEvent('drawer-refresh'));
           } catch (e) {
               console.error("Failed to create conv", e);
               setIsLoading(false);
