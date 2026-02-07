@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare, PanelLeft, PanelLeftClose, SquarePen, EyeOff } from 'lucide-react';
+import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare, PanelLeft, PanelLeftClose, SquarePen, EyeOff, SquareSplitHorizontal } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SettingsModal } from './components/Settings/SettingsModal';
 import { Chat, ChatHandle } from './components/Chat/Chat';
@@ -19,7 +19,7 @@ export default function App() {
   // Layout State
   const [showTerminal, setShowTerminal] = useState(true);
   const [showChat, setShowChat] = useState(true);
-  const [chatRatio, setChatRatio] = useState(0.4); // Default 40% for chat, 60% for terminal
+  const [chatRatio, setChatRatio] = useState(0.5); // Default 50% for IDE mode
 
   // Resizing State
   const [isResizing, setIsResizing] = useState(false);
@@ -137,45 +137,25 @@ export default function App() {
     };
   }, [isResizing]);
 
-  // Toggle Handlers
-  const toggleTerminal = () => {
-    // If only terminal is shown, do nothing (cannot deactivate)
-    if (showTerminal && !showChat) return;
-
-    // If hidden, show it
-    if (!showTerminal) {
-      setShowTerminal(true);
-      return;
-    }
-
-    // If visible (and chat is also visible), hide it -> Chat becomes full
-    if (showTerminal && showChat) {
-      setShowTerminal(false);
-    }
+  // View Switching Logic
+  const switchToChat = () => {
+    setShowChat(true);
+    setShowTerminal(false);
   };
 
-  const toggleChat = () => {
-    // If only chat is shown, do nothing
-    if (showChat && !showTerminal) return;
+  const switchToTerminal = (tab?: 'terminal' | 'ssh') => {
+    setShowChat(false);
+    setShowTerminal(true);
+    if (tab) setActiveTab(tab);
+  };
 
-    // If hidden, show it
-    if (!showChat) {
-      setShowChat(true);
-      return;
-    }
-
-    // If visible (and terminal is visible), hide it -> Terminal becomes full
-    if (showChat && showTerminal) {
-      setShowChat(false);
-    }
+  const switchToIDE = () => {
+    setShowChat(true);
+    setShowTerminal(true);
   };
 
   const handleNavClick = (id: 'terminal' | 'ssh') => {
-    setActiveTab(id);
-    // Ensure terminal panel is visible if we click a nav item intended for it
-    if (!showTerminal) {
-      setShowTerminal(true);
-    }
+    switchToTerminal(id);
   };
 
   // Global keyboard shortcuts for Chat
@@ -207,93 +187,104 @@ export default function App() {
           className="h-8 bg-surface/50 border-b border-border w-full flex items-center shrink-0"
           style={{ WebkitAppRegion: 'drag' } as any}
         >
-          {/* Left spacer for macOS traffic lights + extra padding */}
-          <div className={clsx("shrink-0", isMac ? "w-[76px]" : "w-4")} />
+          {/* Left Section: Aligned with Drawer Width (256px) - Static */}
+          <div 
+             className="h-full w-64 flex items-center shrink-0 border-r border-border"
+          >
+              {/* Traffic Lights Spacer */}
+              <div className={clsx("shrink-0", isMac ? "w-[76px]" : "w-4")} />
 
-          {/* Nav buttons group - next to traffic lights */}
+              {/* Spacer to push left buttons to the right */}
+              <div className="flex-1" />
+
+              {/* Left Action Buttons Group */}
+              <div
+                className="flex items-center gap-1 pr-2"
+                style={{ WebkitAppRegion: 'no-drag' } as any}
+              >
+                {/* Drawer Toggle Button */}
+                <button
+                  onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+                  disabled={!showChat}
+                  className={clsx(
+                    "p-1.5 rounded-md transition-colors",
+                    !showChat
+                      ? "text-text-muted opacity-50 cursor-not-allowed"
+                      : isDrawerOpen
+                        ? "text-primary hover:bg-[var(--tab-hover)]"
+                        : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
+                  )}
+                  title={!showChat ? 'Chat is hidden' : (isDrawerOpen ? 'Close drawer' : 'Open drawer')}
+                >
+                  {isDrawerOpen ? <PanelLeftClose size={16} strokeWidth={2} /> : <PanelLeft size={16} strokeWidth={2} />}
+                </button>
+
+                {/* New Chat Button */}
+                <button
+                  onClick={() => chatRef.current?.newChat()}
+                  disabled={!showChat}
+                  className={clsx(
+                    "p-1.5 rounded-md transition-colors",
+                    !showChat
+                      ? "text-text-muted opacity-50 cursor-not-allowed"
+                      : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
+                  )}
+                  title={`New Chat (${isMac ? '⌘ + N' : 'Ctrl + N'})`}
+                >
+                  <SquarePen size={16} strokeWidth={2} />
+                </button>
+
+                {/* Incognito Mode Button */}
+                <button
+                  onClick={() => chatRef.current?.toggleIncognito()}
+                  disabled={!showChat}
+                  className={clsx(
+                    "p-1.5 rounded-md transition-colors",
+                    !showChat
+                      ? "text-text-muted opacity-50 cursor-not-allowed"
+                      : isIncognito
+                        ? "bg-purple-500/20 text-purple-400"
+                        : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
+                  )}
+                  title={`Incognito Mode (${isMac ? '⌘ + I' : 'Ctrl + I'})`}
+                >
+                  <EyeOff size={16} strokeWidth={2} />
+                </button>
+              </div>
+          </div>
+
+          {/* Right Section: Navigation Icons */}
           <div
-            className="flex items-center gap-2 h-full"
+            className="flex items-center gap-2 h-full pl-2"
             style={{ WebkitAppRegion: 'no-drag' } as any}
           >
-            {/* Drawer Toggle Button */}
-            <button
-              onClick={() => setIsDrawerOpen(!isDrawerOpen)}
-              disabled={!showChat}
-              className={clsx(
-                "p-1.5 rounded-md transition-colors",
-                !showChat
-                  ? "text-text-muted opacity-50 cursor-not-allowed"
-                  : isDrawerOpen
-                    ? "text-primary hover:bg-[var(--tab-hover)]"
-                    : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
-              )}
-              title={!showChat ? 'Chat is hidden' : (isDrawerOpen ? 'Close drawer' : 'Open drawer')}
-            >
-              {isDrawerOpen ? <PanelLeftClose size={16} strokeWidth={2} /> : <PanelLeft size={16} strokeWidth={2} />}
-            </button>
-
-            {/* New Chat Button */}
-            <button
-              onClick={() => chatRef.current?.newChat()}
-              disabled={!showChat}
-              className={clsx(
-                "p-1.5 rounded-md transition-colors",
-                !showChat
-                  ? "text-text-muted opacity-50 cursor-not-allowed"
-                  : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
-              )}
-              title={`New Chat (${isMac ? '⌘ + N' : 'Ctrl + N'})`}
-            >
-              <SquarePen size={16} strokeWidth={2} />
-            </button>
-
-            {/* Incognito Mode Button */}
-            <button
-              onClick={() => chatRef.current?.toggleIncognito()}
-              disabled={!showChat}
-              className={clsx(
-                "p-1.5 rounded-md transition-colors",
-                !showChat
-                  ? "text-text-muted opacity-50 cursor-not-allowed"
-                  : isIncognito
-                    ? "bg-purple-500/20 text-purple-400"
-                    : "text-text-sec hover:text-text-main hover:bg-[var(--tab-hover)]"
-              )}
-              title={`Incognito Mode (${isMac ? '⌘ + I' : 'Ctrl + I'})`}
-            >
-              <EyeOff size={16} strokeWidth={2} />
-            </button>
-
-            {/* Separator */}
-            <div className="w-px h-4 bg-border mx-0.5" />
-
             <NavItem
               id="chat"
               icon={MessageSquare}
               title="AI Chat"
-              isActive={showChat}
-              onClick={toggleChat}
+              isActive={showChat && !showTerminal}
+              onClick={switchToChat}
             />
             <NavItem
               id="terminal"
               icon={TerminalSquare}
               title="Terminal"
-              isActive={showTerminal && activeTab === 'terminal'}
-              onClick={() => {
-                handleNavClick('terminal');
-                if (activeTab === 'terminal') toggleTerminal();
-                else setActiveTab('terminal');
-              }}
+              isActive={!showChat && showTerminal && activeTab === 'terminal'}
+              onClick={() => switchToTerminal('terminal')}
+            />
+            <NavItem
+              id="ide"
+              icon={SquareSplitHorizontal}
+              title="IDE Mode"
+              isActive={showChat && showTerminal}
+              onClick={switchToIDE}
             />
             <NavItem
               id="ssh"
               icon={Server}
               title="SSH Servers"
-              isActive={showTerminal && activeTab === 'ssh'}
-              onClick={() => {
-                handleNavClick('ssh');
-                if (activeTab === 'ssh') toggleTerminal();
-              }}
+              isActive={!showChat && showTerminal && activeTab === 'ssh'}
+              onClick={() => switchToTerminal('ssh')}
             />
             <NavItem
               id="settings"
