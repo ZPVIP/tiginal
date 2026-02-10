@@ -81,27 +81,38 @@ const ATTEMPT_COMPLETION_DEF = {
   }
 };
 
-const TOOL_SEARCH_PROMPT = `You are a tool search assistant. Your task is to find tools that match the user's search query.
+function buildToolSearchPrompt(db: any): string {
+  try {
+    const rows = db.prepare(`
+      SELECT t.name, t.description, tc.name as category
+      FROM tools t
+      LEFT JOIN tool_categories tc ON t.category_id = tc.id
+      WHERE t.enabled = 1 AND (tc.enabled IS NULL OR tc.enabled = 1)
+      ORDER BY tc.rank ASC, t.name ASC
+    `).all() as Array<{ name: string; description: string; category: string }>;
 
-Available tools:
-Built-in tools:
-- Task: [builtin] Launch sub-agents for complex multi-step tasks
-- Bash: [builtin] Run shell commands
-- Glob: [builtin] Find files matching glob patterns
-- Grep: [builtin] Search file contents with ripgrep
-- Read: [builtin] Read file contents
-- Edit: [builtin] Modify files
-- Write: [builtin] Create or overwrite files
-- WebFetch: [builtin] Fetch URL contents
-- WebSearch: [builtin] Search the web
-- TodoWrite: [builtin] Manage TODO lists
-- BashOutput: [builtin] Get output from running shell commands
-- KillShell: [builtin] Terminate running shell commands
-- Skill: [builtin] Invoke saved skills or workflows
-- AttemptCompletion: [builtin] Signal completion
+    let toolsList = '';
+    
+    if (rows.length === 0) {
+       toolsList = '[]';
+    } else {
+       // Format as JSON to handle multiline descriptions gracefully
+       const tools = rows.map(row => ({
+           name: row.name,
+           category: row.category || 'General',
+           description: row.description || ''
+       }));
+       toolsList = JSON.stringify(tools, null, 2);
+    }
+
+    return `You are a tool search assistant. Your task is to find tools that match the user's search query.
+
+Below is a list of available tools in JSON format:
+
+${toolsList}
 
 Based on the search query, select all tools that are relevant. Return your response as a JSON object with:
-- "tools": an array of tool IDs that match the search query
+- "tools": an array of tool names (strings) that match the search query
 - "reasoning": a brief explanation of why these tools were selected
 
 Guidelines:
@@ -109,6 +120,18 @@ Guidelines:
 2. If the query is broad, include multiple relevant tools
 3. If no tools match, return an empty array
 `;
+  } catch (error) {
+    console.error('Failed to build tool search prompt:', error);
+    return `You are a tool search assistant. Find relevant tools.
+    
+Available tools:
+- Task: [builtin] Launch sub-agents
+- Bash: [builtin] Run shell commands
+- WebSearch: [builtin] Search the web
+
+Return JSON with "tools" array.`;
+  }
+}
 
 /**
  * Setup Chat-related IPC handlers
@@ -1297,8 +1320,11 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
              try { apiKey = crypto.decrypt(provider.api_key_encrypted); } catch {}
         }
         
+
+        const toolSearchPrompt = buildToolSearchPrompt(db);
+
         const messages = [
-            { role: 'system', content: TOOL_SEARCH_PROMPT },
+            { role: 'system', content: toolSearchPrompt },
             { role: 'user', content: `Search query: "${query}"\n\nFind all tools that match this query and return as JSON.` }
         ];
 
