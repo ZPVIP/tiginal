@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Search, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Search, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface SystemPrompt {
@@ -11,6 +11,13 @@ interface SystemPrompt {
   rank: number;
 }
 
+interface DynamicPrompt {
+  id: string;
+  title: string;
+  content: string;
+  isActive: boolean;
+}
+
 interface SystemPromptsPopoverProps {
   onClose: () => void;
 }
@@ -19,12 +26,16 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
   const [globalEnabled, setGlobalEnabled] = useState(true);
   const [customCategoryEnabled, setCustomCategoryEnabled] = useState(true);
   const [defaultCategoryEnabled, setDefaultCategoryEnabled] = useState(true);
+  const [dynamicCategoryEnabled, setDynamicCategoryEnabled] = useState(true);
+  
   const [prompts, setPrompts] = useState<SystemPrompt[]>([]);
+  const [dynamicPrompts, setDynamicPrompts] = useState<DynamicPrompt[]>([]);
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   
   // Track expanded state for categories
-  const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set(['custom', 'default']));
+  const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set(['custom', 'default', 'dynamic']));
 
   useEffect(() => {
     loadSettings();
@@ -35,16 +46,27 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
 
   const loadSettings = async () => {
     try {
-      const [enabled, customEnabled, defaultEnabled, allPrompts] = await Promise.all([
-        window.electron.invoke('system-prompts:get-global-enabled'),
-        window.electron.invoke('system-prompts:get-category-enabled', 'custom'),
-        window.electron.invoke('system-prompts:get-category-enabled', 'default'),
-        window.electron.invoke('system-prompts:get-all')
+      const [
+        enabled, 
+        customEnabled, 
+        defaultEnabled, 
+        dynamicEnabled,
+        allPrompts,
+        allDynamicPrompts
+      ] = await Promise.all([
+        (window as any).electron.invoke('system-prompts:get-global-enabled'),
+        (window as any).electron.invoke('system-prompts:get-category-enabled', 'custom'),
+        (window as any).electron.invoke('system-prompts:get-category-enabled', 'default'),
+        (window as any).electron.invoke('system-prompts:get-dynamic-global-enabled'),
+        (window as any).electron.invoke('system-prompts:get-all'),
+        (window as any).electron.invoke('system-prompts:get-dynamic-all')
       ]);
       setGlobalEnabled(enabled);
       setCustomCategoryEnabled(customEnabled);
       setDefaultCategoryEnabled(defaultEnabled);
+      setDynamicCategoryEnabled(dynamicEnabled);
       setPrompts(allPrompts || []);
+      setDynamicPrompts(allDynamicPrompts || []);
     } catch (error) {
       console.error('Failed to load system prompt settings:', error);
     } finally {
@@ -55,11 +77,18 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
   const toggleGlobal = async () => {
     const newValue = !globalEnabled;
     setGlobalEnabled(newValue);
-    await window.electron.invoke('system-prompts:set-global-enabled', newValue);
+    await (window as any).electron.invoke('system-prompts:set-global-enabled', newValue);
   };
 
-  const toggleCategory = async (category: 'default' | 'custom') => {
+  const toggleCategory = async (category: 'default' | 'custom' | 'dynamic') => {
     if (!globalEnabled) return;
+    
+    if (category === 'dynamic') {
+        const newValue = !dynamicCategoryEnabled;
+        setDynamicCategoryEnabled(newValue);
+        await (window as any).electron.invoke('system-prompts:set-dynamic-global-enabled', newValue);
+        return;
+    }
     
     const currentValue = category === 'default' ? defaultCategoryEnabled : customCategoryEnabled;
     const newValue = !currentValue;
@@ -71,7 +100,7 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
       setCustomCategoryEnabled(newValue);
     }
     
-    await window.electron.invoke('system-prompts:set-category-enabled', category, newValue);
+    await (window as any).electron.invoke('system-prompts:set-category-enabled', category, newValue);
   };
 
   const togglePrompt = async (id: number, currentActive: boolean) => {
@@ -80,9 +109,22 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
     try {
       const newValue = !currentActive;
       setPrompts(prev => prev.map(p => p.id === id ? { ...p, isActive: newValue } : p));
-      await window.electron.invoke('system-prompts:toggle', id, newValue);
+      await (window as any).electron.invoke('system-prompts:toggle', id, newValue);
     } catch (error) {
       console.error('Failed to toggle prompt:', error);
+      loadSettings();
+    }
+  };
+
+  const toggleDynamicPrompt = async (id: string, currentActive: boolean) => {
+    if (!globalEnabled) return;
+
+    try {
+      const newValue = !currentActive;
+      setDynamicPrompts(prev => prev.map(p => p.id === id ? { ...p, isActive: newValue } : p));
+      await (window as any).electron.invoke('system-prompts:toggle-dynamic', id, newValue);
+    } catch (error) {
+      console.error('Failed to toggle dynamic prompt:', error);
       loadSettings();
     }
   };
@@ -99,9 +141,32 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
     p.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
     p.content.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  
+  const filteredDynamic = dynamicPrompts.filter(p =>
+    p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.content.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const customPrompts = filteredPrompts.filter(p => !p.isDefault);
   const defaultPrompts = filteredPrompts.filter(p => p.isDefault);
+  
+  const hasResults = customPrompts.length > 0 || defaultPrompts.length > 0 || filteredDynamic.length > 0;
+
+  const visibleCategories: string[] = [];
+  if (customPrompts.length > 0) visibleCategories.push('custom');
+  if (defaultPrompts.length > 0) visibleCategories.push('default');
+  if (filteredDynamic.length > 0) visibleCategories.push('dynamic');
+
+  const toggleGlobalExpand = () => {
+    const allExpanded = visibleCategories.length > 0 && visibleCategories.every(c => expandedCats.has(c));
+    if (allExpanded) {
+        setExpandedCats(new Set());
+    } else {
+        const newSet = new Set(expandedCats);
+        visibleCategories.forEach(c => newSet.add(c));
+        setExpandedCats(newSet);
+    }
+  };
 
   return (
     <div className="absolute bottom-full left-0 right-0 mb-4 md:w-96 bg-surface border border-border rounded-xl shadow-xl z-50 flex flex-col max-h-[500px] animate-in fade-in slide-in-from-bottom-2">
@@ -150,6 +215,15 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
             </div>
         </div>
 
+        {/* Utilities Bar */}
+        {!loading && hasResults && (
+           <div className="px-3 py-1 border-b border-border flex justify-end shrink-0">
+             <button onClick={toggleGlobalExpand} className="text-[10px] text-primary hover:underline">
+               {visibleCategories.length > 0 && visibleCategories.every(c => expandedCats.has(c)) ? 'Collapse All' : 'Expand All'}
+             </button>
+          </div>
+        )}
+
         {/* Content */}
         <div className={clsx(
             "overflow-y-auto p-2 flex-col gap-2 transition-opacity duration-200 flex-1 min-h-0",
@@ -157,7 +231,7 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
         )}>
             {loading ? (
                 <div className="p-4 text-center text-text-muted text-sm">Loading prompts...</div>
-            ) : filteredPrompts.length === 0 ? (
+            ) : !hasResults ? (
                 <div className="p-4 text-center text-text-muted text-sm">No prompts found</div>
             ) : (
                 <>
@@ -203,6 +277,7 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
                               <div 
                                   key={prompt.id} 
                                   className="flex items-center justify-between p-2 rounded hover:bg-surface-hover transition-colors group ml-7 pl-2"
+                                  title={prompt.content}
                               >
                                   <div className="flex-1 mr-3 min-w-0">
                                       <div className="flex items-center gap-2">
@@ -279,6 +354,7 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
                               <div 
                                   key={prompt.id} 
                                   className="flex items-center justify-between p-2 rounded hover:bg-surface-hover transition-colors group ml-7 pl-2"
+                                  title={prompt.content}
                               >
                                   <div className="flex-1 mr-3 min-w-0">
                                       <div className="flex items-center gap-2">
@@ -289,6 +365,78 @@ export const SystemPromptsPopover: React.FC<SystemPromptsPopoverProps> = ({ onCl
                                   
                                   <button
                                       onClick={() => togglePrompt(prompt.id, prompt.isActive)}
+                                      className={clsx(
+                                          "relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors focus:outline-none",
+                                          prompt.isActive ? "bg-primary" : "bg-surface-light border border-border"
+                                      )}
+                                  >
+                                      <span
+                                          className={clsx(
+                                              "inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform shadow-sm",
+                                              prompt.isActive ? "translate-x-3" : "translate-x-0.5"
+                                          )}
+                                      />
+                                  </button>
+                              </div>
+                            ))}
+                         </div>
+                       )}
+                    </div>
+                  )}
+                  
+                  {/* Dynamic Prompts (New Section) */}
+                  {filteredDynamic.length > 0 && (
+                    <div className={clsx(
+                      "rounded-lg overflow-hidden bg-surface-light/30 mt-2",
+                      !dynamicCategoryEnabled && "opacity-60"
+                    )}>
+                       {/* Category Header */}
+                       <div className="flex items-center p-2 gap-2 hover:bg-surface-hover/50 transition-colors rounded">
+                          <button
+                              onClick={() => toggleCategory('dynamic')}
+                              className={clsx(
+                                  "relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors focus:outline-none",
+                                  dynamicCategoryEnabled ? "bg-primary" : "bg-surface-light border border-border"
+                              )}
+                          >
+                              <span
+                                  className={clsx(
+                                      "inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform shadow-sm",
+                                      dynamicCategoryEnabled ? "translate-x-3" : "translate-x-0.5"
+                                  )}
+                              />
+                          </button>
+                          <button 
+                            onClick={() => toggleExpand('dynamic')}
+                            className="flex-1 flex items-center justify-between text-left"
+                          >
+                            <div className="flex items-center gap-2">
+                              {expandedCats.has('dynamic') ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                              <span className="text-xs font-semibold text-text-main">Dynamic</span>
+                              <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded">Auto</span>
+                            </div>
+                            <span className="text-[10px] text-text-muted bg-surface border border-border px-1.5 rounded">{filteredDynamic.length}</span>
+                          </button>
+                       </div>
+
+                       {/* Prompts List in Category */}
+                       {expandedCats.has('dynamic') && (
+                         <div className="p-1 space-y-1">
+                            {filteredDynamic.map(prompt => (
+                              <div 
+                                  key={prompt.id} 
+                                  className="flex items-center justify-between p-2 rounded hover:bg-surface-hover transition-colors group ml-7 pl-2"
+                                  title={prompt.content}
+                              >
+                                  <div className="flex-1 mr-3 min-w-0">
+                                      <div className="flex items-center gap-2">
+                                          <span className="font-medium text-xs text-text-main truncate">{prompt.title}</span>
+                                          {!prompt.isActive && <span className="text-[8px] bg-surface border border-border px-1 py-0.5 rounded text-text-muted">Disabled</span>}
+                                      </div>
+                                  </div>
+                                  
+                                  <button
+                                      onClick={() => toggleDynamicPrompt(prompt.id, prompt.isActive)}
                                       className={clsx(
                                           "relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors focus:outline-none",
                                           prompt.isActive ? "bg-primary" : "bg-surface-light border border-border"

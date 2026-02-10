@@ -93,6 +93,12 @@ export function getDynamicPromptTemplates(): Record<string, DynamicPromptTemplat
  * Build dynamic prompts string for AI based on settings
  */
 export function buildDynamicPromptsForAI(dbService: ReturnType<typeof getDatabase>): string {
+  // Check global switch
+  const globalEnabled = dbService.getSetting('dynamicPromptsGlobalEnabled');
+  if (globalEnabled === 'false') {
+    return '';
+  }
+
   const dynamicDateEnabled = dbService.getSetting('dynamicPrompt_dateInfo') !== 'false';
   const dynamicWdEnabled = dbService.getSetting('dynamicPrompt_wdInfo') !== 'false';
   const dynamicSystemEnabled = dbService.getSetting('dynamicPrompt_systemInfo') !== 'false';
@@ -121,6 +127,31 @@ export function buildDynamicPromptsForAI(dbService: ReturnType<typeof getDatabas
   // AppleScript Date Handling (macOS only)
   if (dynamicAppleScriptEnabled && process.platform === 'darwin') {
     dynamicPrompts += `\n\n${getAppleScriptContent()}`;
+  }
+
+  // Web Search Guidance (Dynamic Check)
+  try {
+    const row = dbService.getDb().prepare(`
+      SELECT t.enabled as tool_enabled, tc.enabled as cat_enabled 
+      FROM tools t 
+      LEFT JOIN tool_categories tc ON t.category_id = tc.id 
+      WHERE t.name = ?
+    `).get('WebSearch') as { tool_enabled: number, cat_enabled: number | null };
+
+    const isEnabled = row && 
+                      row.tool_enabled === 1 && 
+                      (row.cat_enabled === null || row.cat_enabled === 1);
+
+    if (isEnabled) {
+         dynamicPrompts += `\n\nWEB SEARCH - You have access to a WebSearch tool.
+IMPORTANT: You MUST use the WebSearch tool when:
+- The user asks about current events, news, sports, or weather.
+- The user asks about topics that may have changed since your training cutoff.
+- You are unsure of the answer or need real-time verification.
+Do NOT say "I don't know" or "My knowledge is limited" without using WebSearch to find the answer first.`;
+    }
+  } catch (e) {
+      // Ignore DB errors
   }
   
   return dynamicPrompts;

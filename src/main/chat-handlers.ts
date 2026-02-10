@@ -907,7 +907,12 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
 
     if (globalToolsEnabled) {
         try {
-          const toolRows = db.prepare(`SELECT name, description, input_schema FROM tools WHERE enabled = 1`).all() as any[];
+          const toolRows = db.prepare(`
+            SELECT t.name, t.description, t.input_schema
+            FROM tools t
+            LEFT JOIN tool_categories tc ON t.category_id = tc.id
+            WHERE t.enabled = 1 AND (tc.enabled IS NULL OR tc.enabled = 1)
+          `).all() as any[];
           currentTools = toolRows.map(row => ({
             name: row.name,
             description: row.description || '',
@@ -1370,6 +1375,39 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
             }
           });
         });
+      }
+
+      if (toolName === 'WebSearch') {
+        const { performSearch } = require('./services/search/index');
+        const db = getDatabase();
+        const provider = db.getSetting('search_provider') || 'duckduckgo';
+        
+        const query = toolInput.query;
+        if (!query) return { success: false, error: 'Query is required for WebSearch' };
+        
+        try {
+            const results = await performSearch(query, provider);
+            // Format results
+            const formatted = results.map((r: any, i: number) => `[${i+1}] ${r.title}\nURL: ${r.url}\n${r.content}`).join('\n\n');
+            return { success: true, result: `Web Search Results for "${query}" (via ${provider}):\n\n${formatted}` };
+        } catch (e: any) {
+             return { success: false, error: `WebSearch failed: ${e.message}` };
+        }
+      }
+
+      if (toolName === 'WebFetch') {
+        const { performWebFetch } = require('./utils/BrowserUtils');
+        const url = toolInput.url;
+        if (!url) return { success: false, error: 'URL is required for WebFetch' };
+        
+        try {
+            // Check if URL is valid
+            new URL(url); 
+            const content = await performWebFetch(url);
+            return { success: true, result: content };
+        } catch (e: any) {
+            return { success: false, error: `WebFetch failed: ${e.message}` };
+        }
       }
 
       if (toolName.toLowerCase() === 'skill' || toolName.toLowerCase() === 'executeskill') {

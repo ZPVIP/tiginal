@@ -287,7 +287,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
     }
   };
 
-  const handleSend = async (text: string, images: string[], useSearch: boolean, useSkills: boolean) => {
+  const handleSend = async (text: string, images: string[], useSkills: boolean) => {
       if (!selectedProviderId) {
           alert("Please select a provider/model first.");
           return;

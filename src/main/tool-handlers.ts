@@ -843,6 +843,48 @@ export function setupToolHandlers(): void {
     return getDynamicPromptTemplates();
   });
 
+  // Get global dynamic system prompts enabled status
+  ipcMain.handle('system-prompts:get-dynamic-global-enabled', async (): Promise<boolean> => {
+    const dbService = getDatabase();
+    const value = dbService.getSetting('dynamicPromptsGlobalEnabled');
+    return value !== 'false'; // Default to true if not set
+  });
+
+  // Set global dynamic system prompts enabled status
+  ipcMain.handle('system-prompts:set-dynamic-global-enabled', async (_event, enabled: boolean): Promise<void> => {
+    const dbService = getDatabase();
+    dbService.setSetting('dynamicPromptsGlobalEnabled', String(enabled));
+  });
+
+  // Get all dynamic prompts with status (Convenience)
+  ipcMain.handle('system-prompts:get-dynamic-all', async (): Promise<any[]> => {
+    const db = getDatabase();
+    const templates = getDynamicPromptTemplates();
+    const prompts = [];
+    
+    for (const [key, template] of Object.entries(templates)) {
+       // Skip macOS specific on non-mac
+       if (key === 'appleScriptInfo' && process.platform !== 'darwin') continue;
+
+       const enabled = db.getSetting(`dynamicPrompt_${key}`) !== 'false';
+       prompts.push({
+         id: key, 
+         title: template.title,
+         content: template.content,
+         isActive: enabled
+       });
+    }
+    // Sort by title or keep predefined order? 
+    // Keys in object iteration order is usually insertion order for JS objects, which matches definition in dynamic-prompts.ts.
+    return prompts;
+  });
+
+  // Toggle dynamic prompt
+  ipcMain.handle('system-prompts:toggle-dynamic', async (_event, key: string, enabled: boolean): Promise<void> => {
+     const db = getDatabase();
+     db.setSetting(`dynamicPrompt_${key}`, String(enabled));
+  });
+
   // Legacy handlers for backwards compatibility (deprecated, will be removed)
   ipcMain.handle('settings:get-default-system-prompt', async (): Promise<any> => {
     return defaults.defaultSystemPrompt;

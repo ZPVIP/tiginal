@@ -2,7 +2,6 @@ import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle } f
 import {
   SendHorizontal, 
   Paperclip, 
-  Globe, 
   Image as ImageIcon,
   X,
   Wand2,
@@ -22,7 +21,7 @@ export interface ChatInputHandle {
 }
 
 interface ChatInputProps {
-  onSend: (text: string, images: string[], useSearch: boolean, useSkills: boolean) => void;
+  onSend: (text: string, images: string[], useSkills: boolean) => void;
   onStop?: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
@@ -70,10 +69,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   const checkGlobalSettings = async () => {
     try {
-      if (window.electron?.invoke) {
+      if ((window as any).electron?.invoke) {
         const [toolsEnabled, promptsEnabled] = await Promise.all([
-          window.electron.invoke('tools:get-global-enabled'),
-          window.electron.invoke('system-prompts:get-global-enabled')
+          (window as any).electron.invoke('tools:get-global-enabled'),
+          (window as any).electron.invoke('system-prompts:get-global-enabled')
         ]);
         setGlobalToolsEnabled(toolsEnabled);
         setGlobalSystemPromptsEnabled(promptsEnabled);
@@ -117,7 +116,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   const handleSend = () => {
     if ((!text.trim() && images.length === 0) || disabled) return;
-    onSend(text, images, useSearch, useSkills);
+    onSend(text, images, useSkills);
     setText('');
     setImages([]);
     // Reset height
@@ -247,16 +246,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                     <Wand2 size={18} />
                 </button>
                 <div className="h-4 w-[1px] bg-border mx-1" />
-                <button 
-                   onClick={() => setUseSearch(!useSearch)}
-                   className={clsx(
-                       "p-2 rounded-lg transition-colors",
-                       useSearch ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
-                   )}
-                   title="Web Search"
-                >
-                    <Globe size={18} />
-                </button>
                 <button 
                    onClick={() => fileInputRef.current?.click()}
                    className="p-2 text-text-muted hover:text-text-main hover:bg-surface-light rounded-lg transition-colors"
