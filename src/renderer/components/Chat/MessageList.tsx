@@ -40,15 +40,40 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
         (window as any).electron?.invoke('shell:show-item-in-folder', path);
     };
 
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const isAtBottomRef = useRef(true);
+
+    // Initial scroll to bottom
     useEffect(() => {
-        // Use 'auto' behavior during streaming for instant updates, 'smooth' otherwise
-        bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+        if (bottomRef.current) {
+            bottomRef.current.scrollIntoView({ behavior: 'auto' });
+        }
+    }, []);
+
+    const handleScroll = () => {
+        if (!scrollContainerRef.current) return;
+        
+        const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+        // Check if user is near the bottom (within 100px)
+        const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
+        isAtBottomRef.current = isAtBottom;
+    };
+
+    useEffect(() => {
+        // Only auto-scroll if we're already at the bottom
+        if (isAtBottomRef.current) {
+            bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+        }
     }, [messages, isStreaming]);
 
     if (messages.length === 0) return null;
 
     return (
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div 
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto custom-scrollbar"
+        >
             {messages.map(msg => {
                 if (msg.role === 'tool-request' && msg.approvalData) {
                     if (msg.approvalData.status === 'pending') {
