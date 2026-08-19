@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 /**
  * Database service for Tiginal
@@ -125,6 +125,10 @@ export class DatabaseService {
 
     if (currentVersion < 15) {
       this.migrateV15();
+    }
+
+    if (currentVersion < 16) {
+      this.migrateV16();
     }
 
     // Update schema version
@@ -559,6 +563,19 @@ export class DatabaseService {
     // Add profile_id column to conversations
     try {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN profile_id TEXT DEFAULT NULL`);
+    } catch (e) {
+      // Column might already exist
+    }
+  }
+
+  /**
+   * Migration v16: Store assistant reasoning text alongside the message
+   */
+  private migrateV16(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN reasoning TEXT`);
     } catch (e) {
       // Column might already exist
     }

@@ -737,6 +737,9 @@ async function streamAIAPI(
       toolCalls: []
   };
 
+  // Tracks <think> tags for models that inline their reasoning in content
+  const thinkState: ThinkTagState = { inThink: false, pending: '' };
+
   try {
     while (true) {
         // Check if aborted
@@ -756,13 +759,20 @@ async function streamAIAPI(
         buffer = lines.pop() || "";  
 
         for (const line of lines) {
-           processLine(line, onChunk, toolCallAccumulator, logAccumulator);
+           processLine(line, onChunk, toolCallAccumulator, logAccumulator, thinkState);
         }
     }
     
     // Process remaining buffer (only if not aborted)
     if (buffer.trim() && !abortSignal?.aborted) {
-        processLine(buffer, onChunk, toolCallAccumulator, logAccumulator);
+        processLine(buffer, onChunk, toolCallAccumulator, logAccumulator, thinkState);
+    }
+
+    // Flush a held-back partial tag that never completed
+    if (thinkState.pending) {
+        const leftover = thinkState.pending;
+        thinkState.pending = '';
+        onChunk(thinkState.inThink ? { reasoning: leftover } : { content: leftover });
     }
 
     // Finalize any pending tool calls after stream ends (only if not aborted)
@@ -950,6 +960,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
 
 
     let finalResponse = '';
+    let finalReasoning = '';
     let turnCount = 0;
     let allowAllOverride = false; // Session-based allow all
     let accumulatedUsage = { prompt_tokens: 0, completion_tokens: 0, reasoning_tokens: 0, cached_tokens: 0, total_tokens: 0 };
@@ -986,6 +997,9 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                     // Stream to UI. 
                     if (chunkData.content) {
                          finalResponse += chunkData.content;
+                    }
+                    if (chunkData.reasoning) {
+                         finalReasoning += chunkData.reasoning;
                     }
                     _event.sender.send('chat:chunk', { conversationId, ...chunkData });
                 },
@@ -1249,7 +1263,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                          cachedTokens: accumulatedUsage.cached_tokens,
                          totalTokens: accumulatedUsage.total_tokens,
                      };
-                     chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData);
+                     chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
                      chatService.updateConversationTokens(conversationId, providerId, modelToUse, tokenData);
                      _event.sender.send('chat:stream-complete', { conversationId, tokenData });
                  }
@@ -1274,7 +1288,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
         cachedTokens: accumulatedUsage.cached_tokens,
         totalTokens: accumulatedUsage.total_tokens,
     };
-    chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData);
+    chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
 
     // Update conversation tokens JSON
     chatService.updateConversationTokens(conversationId, providerId, modelToUse, tokenData);
@@ -1581,11 +1595,69 @@ async function generateConversationTitle(
   }
 }
 
+const THINK_OPEN = '<think>';
+const THINK_CLOSE = '</think>';
+
+/**
+ * Per-stream state for models that inline their reasoning in `content`
+ * as <think>...</think> instead of using a separate delta field.
+ */
+interface ThinkTagState {
+    inThink: boolean;
+    pending: string;
+}
+
+/**
+ * Longest suffix of `buf` that could still grow into `tag`, so a tag split
+ * across two chunks is not emitted as visible content.
+ */
+function partialTagLength(buf: string, tag: string): number {
+    const max = Math.min(buf.length, tag.length - 1);
+    for (let len = max; len > 0; len--) {
+        if (tag.startsWith(buf.slice(buf.length - len))) return len;
+    }
+    return 0;
+}
+
+/**
+ * Split a content delta into visible content and inlined reasoning.
+ * Carries state across chunks, so tags may straddle chunk boundaries.
+ */
+function splitThinkTags(chunk: string, state: ThinkTagState): { content: string; reasoning: string } {
+    let buf = state.pending + chunk;
+    state.pending = '';
+    let content = '';
+    let reasoning = '';
+
+    while (buf) {
+        const tag = state.inThink ? THINK_CLOSE : THINK_OPEN;
+        const idx = buf.indexOf(tag);
+
+        if (idx !== -1) {
+            const before = buf.slice(0, idx);
+            if (state.inThink) reasoning += before; else content += before;
+            state.inThink = !state.inThink;
+            buf = buf.slice(idx + tag.length);
+            continue;
+        }
+
+        // No complete tag: emit everything except a possible partial tag tail
+        const keep = partialTagLength(buf, tag);
+        const emit = buf.slice(0, buf.length - keep);
+        if (state.inThink) reasoning += emit; else content += emit;
+        state.pending = buf.slice(buf.length - keep);
+        break;
+    }
+
+    return { content, reasoning };
+}
+
 function processLine(
     line: string, 
      onChunk: (data: { content?: string; reasoning?: string }) => void,
      toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }>,
-     logAccumulator?: LogAccumulator
+     logAccumulator?: LogAccumulator,
+     thinkState?: ThinkTagState
 ) {
     const trimmed = line.trim();
     if (!trimmed || trimmed === "data: [DONE]") return;
@@ -1598,8 +1670,19 @@ function processLine(
             const delta = data.choices?.[0]?.delta;
             
             if (delta) {
-                if (delta.content || delta.reasoning) {
-                   onChunk({ content: delta.content, reasoning: delta.reasoning });
+                // Providers disagree on the field name: `reasoning` (OpenRouter),
+                // `reasoning_content` (DeepSeek/llama.cpp/vLLM/Qwen/GLM), or the
+                // reasoning inlined in `content` as <think>...</think>.
+                const deltaReasoning = delta.reasoning ?? delta.reasoning_content ?? '';
+                const split = thinkState
+                    ? splitThinkTags(delta.content || '', thinkState)
+                    : { content: delta.content || '', reasoning: '' };
+
+                const content = split.content;
+                const reasoning = deltaReasoning + split.reasoning;
+
+                if (content || reasoning) {
+                   onChunk({ content: content || undefined, reasoning: reasoning || undefined });
                 }
                 
                 // Accumulate tool call parts
@@ -1624,7 +1707,7 @@ function processLine(
             
             // Populate Log Accumulator
             if (logAccumulator) {
-                 updateLogAccumulator(logAccumulator, data, toolCallAccumulator);
+                 updateLogAccumulator(logAccumulator, data, toolCallAccumulator, thinkState);
             }
         } catch (e) {
             console.warn("Failed to parse SSE line", trimmed, e);
@@ -1646,7 +1729,8 @@ function processLine(
 function updateLogAccumulator(
     acc: LogAccumulator, 
     data: any, 
-    toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }>
+    toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }>,
+    thinkState?: ThinkTagState
 ) {
      if (!acc.id && data.id) acc.id = data.id;
      if (!acc.model && data.model) acc.model = data.model;
@@ -1656,8 +1740,11 @@ function updateLogAccumulator(
      const choice = data.choices?.[0];
      if (choice) {
          if (choice.delta?.role && !acc.role) acc.role = choice.delta.role;
-         if (choice.delta?.content) acc.contentParts.push(choice.delta.content);
-         if (choice.delta?.reasoning) acc.reasoningParts.push(choice.delta.reasoning);
+         // processLine already stripped inline <think> from the content it emitted;
+         // the log keeps the raw split so both halves stay readable.
+         const reasoning = choice.delta?.reasoning ?? choice.delta?.reasoning_content;
+         if (reasoning) acc.reasoningParts.push(reasoning);
+         if (choice.delta?.content && !thinkState?.inThink) acc.contentParts.push(choice.delta.content);
      }
      
      // Update tool calls reference (always points to latest state of accumulator)

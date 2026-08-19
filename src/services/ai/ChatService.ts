@@ -29,6 +29,7 @@ export interface Message {
   conversationId: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  reasoning?: string;
   createdAt: number;
   providerId?: string;
   modelId?: string;
@@ -202,7 +203,7 @@ export class ChatService {
   /**
    * Add a message to a conversation
    */
-  addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string, tokenData?: TokenData, overrideCreatedAt?: number): Message {
+  addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string, tokenData?: TokenData, overrideCreatedAt?: number, reasoning?: string): Message {
     const id = require('crypto').randomUUID();
     const now = overrideCreatedAt || Date.now();
 
@@ -211,6 +212,7 @@ export class ChatService {
       conversationId,
       role,
       content,
+      reasoning: reasoning || undefined,
       createdAt: now,
       providerId: tokenData?.providerId,
       modelId: tokenData?.modelId,
@@ -233,9 +235,9 @@ export class ChatService {
     const db = getDatabase().getDb();
     
     db.prepare(`
-      INSERT INTO messages (id, conversation_id, role, content, created_at, provider_id, model_id, prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, total_tokens)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, conversationId, role, content, now,
+      INSERT INTO messages (id, conversation_id, role, content, reasoning, created_at, provider_id, model_id, prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, total_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, conversationId, role, content, reasoning || null, now,
       tokenData?.providerId || null,
       tokenData?.modelId || null,
       tokenData?.promptTokens || 0,
@@ -302,7 +304,7 @@ export class ChatService {
 
     const db = getDatabase().getDb();
     const rows = db.prepare(`
-      SELECT id, conversation_id, role, content, created_at,
+      SELECT id, conversation_id, role, content, reasoning, created_at,
              provider_id, model_id, prompt_tokens, completion_tokens,
              reasoning_tokens, cached_tokens, total_tokens
       FROM messages
@@ -313,6 +315,7 @@ export class ChatService {
       conversation_id: string;
       role: string;
       content: string;
+      reasoning: string | null;
       created_at: number;
       provider_id: string | null;
       model_id: string | null;
@@ -328,6 +331,7 @@ export class ChatService {
       conversationId: row.conversation_id,
       role: row.role as 'user' | 'assistant' | 'system',
       content: row.content,
+      reasoning: row.reasoning || undefined,
       createdAt: row.created_at,
       providerId: row.provider_id || undefined,
       modelId: row.model_id || undefined,
