@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 /**
  * Database service for Tiginal
@@ -121,6 +121,10 @@ export class DatabaseService {
 
     if (currentVersion < 14) {
       this.migrateV14();
+    }
+
+    if (currentVersion < 15) {
+      this.migrateV15();
     }
 
     // Update schema version
@@ -523,6 +527,41 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_statistics_date ON statistics(date);
       CREATE INDEX IF NOT EXISTS idx_statistics_done ON statistics(done);
     `);
+  }
+
+  /**
+   * Migration v15: Create chat_profiles table and add profile_id to conversations
+   */
+  private migrateV15(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // Create chat_profiles table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS chat_profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        ai_provider_id TEXT,
+        ai_model_id TEXT,
+        system_prompts TEXT NOT NULL DEFAULT '{}',
+        tools TEXT NOT NULL DEFAULT '{}',
+        skills TEXT NOT NULL DEFAULT '{}',
+        rank INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (ai_provider_id) REFERENCES ai_providers(id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_chat_profiles_rank ON chat_profiles(rank);
+      CREATE INDEX IF NOT EXISTS idx_chat_profiles_enabled ON chat_profiles(enabled);
+    `);
+
+    // Add profile_id column to conversations
+    try {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN profile_id TEXT DEFAULT NULL`);
+    } catch (e) {
+      // Column might already exist
+    }
   }
 
   /**

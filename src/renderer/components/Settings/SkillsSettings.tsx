@@ -68,6 +68,9 @@ export function SkillsSettings() {
     setSkills(s || []);
   };
 
+  // Let the drawer / chat know the skill set changed
+  const notifySkillsUpdated = () => window.dispatchEvent(new Event('skills-updated'));
+
   const handleAddDirectory = async () => {
     if (!newDirName.trim() || !newDirPath.trim()) return;
     await invoke('skills:add-directory', newDirName.trim(), newDirPath.trim());
@@ -75,6 +78,7 @@ export function SkillsSettings() {
     setNewDirPath('');
     setShowAddForm(false);
     loadDirectories();
+    notifySkillsUpdated();
   };
 
   const handleUpdateDirectory = async (id: string) => {
@@ -84,6 +88,7 @@ export function SkillsSettings() {
     await invoke('skills:update-directory', id, editDirName.trim(), editDirPath.trim(), dir.enabled);
     setEditingDir(null);
     loadDirectories();
+    notifySkillsUpdated();
   };
 
   const handleDeleteDirectory = async (id: string) => {
@@ -91,16 +96,19 @@ export function SkillsSettings() {
     await invoke('skills:delete-directory', id);
     loadDirectories();
     loadSkills();
+    notifySkillsUpdated();
   };
 
   const handleToggleDirectory = async (id: string) => {
     await invoke('skills:toggle-directory', id);
     loadDirectories();
+    notifySkillsUpdated();
   };
 
   const handleToggleSkill = async (id: number) => {
     await invoke('skills:toggle-skill', id);
     loadSkills();
+    notifySkillsUpdated();
   };
 
   const handleScan = async () => {
@@ -110,6 +118,7 @@ export function SkillsSettings() {
     setScanResult(result);
     setScanning(false);
     loadSkills();
+    notifySkillsUpdated();
   };
 
   const handleOpenFolder = async (directoryPath: string, skillFolder: string) => {

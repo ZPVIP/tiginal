@@ -2,8 +2,22 @@ import React, { useState, useEffect, useCallback, createContext, useContext } fr
 import { motion, AnimatePresence } from 'framer-motion';
 import { FavoriteSection } from './FavoriteSection';
 import { CategoryList } from './CategoryList';
+import { ProfileSection } from './ProfileSection';
 
 const invoke = window.electron?.invoke || (async () => {});
+
+// Marks settings events that originate from applying a profile, so the drawer
+// can tell them apart from a user manually editing settings.
+const PROFILE_EVENT_SOURCE = 'profile';
+
+// Applying a profile rewrites model / prompts / tools / skills in the DB. Fire the
+// events the rest of the app already listens to so every popover re-reads them.
+function notifySettingsChanged(detail: Record<string, unknown>): void {
+  const payload = { ...detail, source: PROFILE_EVENT_SOURCE };
+  for (const name of ['profile-applied', 'model-changed', 'system-prompts-updated', 'tools-updated', 'skills-updated']) {
+    window.dispatchEvent(new CustomEvent(name, { detail: payload }));
+  }
+}
 
 export interface CategoryData {
   id: number;
@@ -58,6 +72,10 @@ export function Drawer({ isOpen, currentConversationId, onSelectConversation, on
   const [favoritesRefreshKey, setFavoritesRefreshKey] = useState(0);
   const [conversationsRefreshKey, setConversationsRefreshKey] = useState(0);
   const [sortBy, setSortBy] = useState<'updatedAt' | 'createdAt'>('updatedAt');
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+  const [showSaveProfilePrompt, setShowSaveProfilePrompt] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [saveProfileError, setSaveProfileError] = useState('');
 
   const refreshCategories = useCallback(async () => {
     try {
@@ -124,6 +142,86 @@ export function Drawer({ isOpen, currentConversationId, onSelectConversation, on
     };
   }, []);
 
+  // Handle applying a profile
+  const handleApplyProfile = useCallback(async (profileId: string) => {
+    try {
+      const profile = await invoke('profiles:apply', profileId);
+      if (profile) {
+        setActiveProfileId(profileId);
+        // Set profile_id on current conversation if one is active
+        if (currentConversationId) {
+          await invoke('profiles:set-conversation-profile', currentConversationId, profileId);
+        }
+        notifySettingsChanged({ profileId, profile });
+      }
+    } catch (e) {
+      console.error('Failed to apply profile:', e);
+    }
+  }, [currentConversationId]);
+
+  // Handle saving current settings as a new profile
+  const handleSaveAsProfile = useCallback(async () => {
+    setShowSaveProfilePrompt(true);
+    setNewProfileName('');
+    setSaveProfileError('');
+  }, []);
+
+  const confirmSaveAsProfile = useCallback(async () => {
+    if (!newProfileName.trim()) return;
+    try {
+      const snapshot = await invoke('profiles:snapshot-current');
+      const newProfile = await invoke('profiles:add', {
+        name: newProfileName.trim(),
+        ...snapshot,
+      });
+      setActiveProfileId(newProfile.id);
+      if (currentConversationId) {
+        await invoke('profiles:set-conversation-profile', currentConversationId, newProfile.id);
+      }
+      window.dispatchEvent(new Event('profiles-updated'));
+      setShowSaveProfilePrompt(false);
+      setSaveProfileError('');
+    } catch (e: any) {
+      setSaveProfileError(e?.message?.replace(/^Error invoking remote method '[^']*':\s*/, '') || 'Failed to save profile');
+    }
+  }, [newProfileName, currentConversationId]);
+
+  // Load active profile from current conversation
+  useEffect(() => {
+    const loadConvProfile = async () => {
+      if (currentConversationId) {
+        try {
+          const pid = await invoke('profiles:get-conversation-profile', currentConversationId);
+          setActiveProfileId(pid || null);
+        } catch (e) {
+          setActiveProfileId(null);
+        }
+      } else {
+        setActiveProfileId(null);
+      }
+    };
+    loadConvProfile();
+  }, [currentConversationId]);
+
+  // Listen for settings changes that may cause profile drift
+  useEffect(() => {
+    const handleSettingsChange = (e: Event) => {
+      // Applying a profile fires the same events; only manual edits clear the indicator
+      if ((e as CustomEvent).detail?.source === PROFILE_EVENT_SOURCE) return;
+      setActiveProfileId(null);
+    };
+    window.addEventListener('model-changed', handleSettingsChange);
+    window.addEventListener('tools-updated', handleSettingsChange);
+    window.addEventListener('system-prompts-updated', handleSettingsChange);
+    window.addEventListener('skills-updated', handleSettingsChange);
+    return () => {
+      window.removeEventListener('model-changed', handleSettingsChange);
+      window.removeEventListener('tools-updated', handleSettingsChange);
+      window.removeEventListener('system-prompts-updated', handleSettingsChange);
+      window.removeEventListener('skills-updated', handleSettingsChange);
+    };
+  }, []);
+
   const contextValue: DrawerContextType = {
     categories,
     refreshCategories,
@@ -149,10 +247,51 @@ export function Drawer({ isOpen, currentConversationId, onSelectConversation, on
         >
           <DrawerContext.Provider value={contextValue}>
             <div className="flex-1 overflow-y-auto scrollbar-thin">
+              <ProfileSection
+                activeProfileId={activeProfileId}
+                onApplyProfile={handleApplyProfile}
+                onSaveCurrentAsProfile={handleSaveAsProfile}
+              />
               <FavoriteSection />
               <CategoryList />
             </div>
           </DrawerContext.Provider>
+
+          {/* Save As Profile Prompt Dialog */}
+          {showSaveProfilePrompt && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="bg-surface border border-border rounded-lg shadow-xl w-80 p-4">
+                <h4 className="font-medium text-sm mb-3">Save Current Settings as Profile</h4>
+                <input
+                  type="text"
+                  value={newProfileName}
+                  onChange={(e) => setNewProfileName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && confirmSaveAsProfile()}
+                  placeholder="Profile name..."
+                  className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary mb-3"
+                  autoFocus
+                />
+                {saveProfileError && (
+                  <p className="text-xs text-red-500 mb-3 -mt-2">{saveProfileError}</p>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setShowSaveProfilePrompt(false)}
+                    className="px-3 py-1.5 text-xs text-text-muted hover:text-text border border-border rounded-md hover:bg-surface-hover transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmSaveAsProfile}
+                    disabled={!newProfileName.trim()}
+                    className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

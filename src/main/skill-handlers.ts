@@ -245,6 +245,11 @@ export function setupSkillHandlers(): void {
 
   // Get enabled skills for AI prompt injection
   ipcMain.handle('skills:get-enabled', async (): Promise<Array<{ name: string; description: string; path: string }>> => {
+    // Check global switch first
+    if (getDatabase().getSetting('skillsGlobalEnabled') === 'false') {
+      return [];
+    }
+
     const rows = db.prepare(`
       SELECT s.name, s.description, s.skill_folder, d.path as directory_path
       FROM skills s

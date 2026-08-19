@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Tabs } from '../ui/Tabs';
-import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench, FileText, BarChart3 } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench, FileText, BarChart3, UserCircle } from 'lucide-react';
 import { GeneralSettings } from './GeneralSettings';
 import { AIProviders } from './AIProviders';
 import { ThemeSettings } from './ThemeSettings';
@@ -10,6 +10,7 @@ import { SkillsSettings } from './SkillsSettings';
 import { ToolsSettings } from './ToolsSettings';
 import { SystemPromptSettings } from './SystemPromptSettings';
 import { StatisticsSettings } from './StatisticsSettings';
+import { ChatProfilesSettings } from './ChatProfilesSettings';
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState('general');
@@ -17,11 +18,12 @@ export function Settings() {
   const tabs = [
     { id: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
     { id: 'providers', label: 'AI Providers', icon: <Database size={16} /> },
-    { id: 'system-prompt', label: 'System Prompt', icon: <FileText size={16} /> },
+    { id: 'system-prompt', label: 'System Prompts', icon: <FileText size={16} /> },
     { id: 'tools', label: 'Tools', icon: <Wrench size={16} /> },
+    { id: 'skills', label: 'Skills', icon: <Wand2 size={16} /> },
+    { id: 'profiles', label: 'Chat Profiles', icon: <UserCircle size={16} /> },
     { id: 'terminal', label: 'Terminal', icon: <Terminal size={16} /> },
     { id: 'ssh', label: 'SSH (Coming Soon)', icon: <Shield size={16} /> },
-    { id: 'skills', label: 'Skills', icon: <Wand2 size={16} /> },
     { id: 'statistics', label: 'Statistics', icon: <BarChart3 size={16} /> },
     { id: 'theme', label: 'Theme', icon: <Palette size={16} /> },
     { id: 'shortcuts', label: 'Shortcuts', icon: <div className="font-bold text-[10px] w-4 text-center border border-current rounded">⌘</div> },
@@ -50,6 +52,8 @@ export function Settings() {
           {activeTab === 'providers' && <AIProviders />}
           {activeTab === 'system-prompt' && <SystemPromptSettings />}
           {activeTab === 'tools' && <ToolsSettings />}
+          {activeTab === 'skills' && <SkillsSettings />}
+          {activeTab === 'profiles' && <ChatProfilesSettings />}
           {activeTab === 'terminal' && <TerminalSettings />}
           {activeTab === 'ssh' && (
              <div className="flex flex-col items-center justify-center h-64 text-text-muted">
@@ -57,7 +61,6 @@ export function Settings() {
                 <p>SSH Keys and Host Config coming soon.</p>
              </div>
           )}
-          {activeTab === 'skills' && <SkillsSettings />}
           {activeTab === 'statistics' && <StatisticsSettings />}
           {activeTab === 'theme' && <ThemeSettings />}
           {activeTab === 'shortcuts' && <ShortcutSettings />}

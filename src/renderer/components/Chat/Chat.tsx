@@ -212,6 +212,13 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
       props.onConversationChange?.(currentConversationId);
   }, [currentConversationId]);
 
+  // Applying a chat profile rewrites the default provider/model in the DB
+  useEffect(() => {
+      const handleProfileApplied = () => { loadProviders(); };
+      window.addEventListener('profile-applied', handleProfileApplied);
+      return () => window.removeEventListener('profile-applied', handleProfileApplied);
+  }, []);
+
   // Expose methods via ref for parent component
   useImperativeHandle(ref, () => ({
     loadConversation: async (id: string) => {
@@ -551,6 +558,9 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
       
       // Persist choice (optional, or rely on Header persistence)
       invoke('chat:set-last-model', { providerId: pId, model: mId }).catch(console.error);
+
+      // Let the drawer know the active profile no longer matches the live settings
+      window.dispatchEvent(new Event('model-changed'));
   };
 
 
