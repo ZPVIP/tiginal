@@ -22,6 +22,8 @@ export interface TokenData {
   reasoningTokens?: number;
   cachedTokens?: number;
   totalTokens?: number;
+  /** Size of the context for the final turn (prompt + completion). */
+  contextTokens?: number;
 }
 
 export interface Message {
@@ -38,6 +40,7 @@ export interface Message {
   reasoningTokens?: number;
   cachedTokens?: number;
   totalTokens?: number;
+  contextTokens?: number;
 }
 
 export interface CategoryData {
@@ -221,6 +224,7 @@ export class ChatService {
       reasoningTokens: tokenData?.reasoningTokens || 0,
       cachedTokens: tokenData?.cachedTokens || 0,
       totalTokens: tokenData?.totalTokens || 0,
+      contextTokens: tokenData?.contextTokens || 0,
     };
 
     if (this.transientConversations.has(conversationId)) {
@@ -235,8 +239,8 @@ export class ChatService {
     const db = getDatabase().getDb();
     
     db.prepare(`
-      INSERT INTO messages (id, conversation_id, role, content, reasoning, created_at, provider_id, model_id, prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, total_tokens)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, conversation_id, role, content, reasoning, created_at, provider_id, model_id, prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, total_tokens, context_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, conversationId, role, content, reasoning || null, now,
       tokenData?.providerId || null,
       tokenData?.modelId || null,
@@ -244,7 +248,8 @@ export class ChatService {
       tokenData?.completionTokens || 0,
       tokenData?.reasoningTokens || 0,
       tokenData?.cachedTokens || 0,
-      tokenData?.totalTokens || 0
+      tokenData?.totalTokens || 0,
+      tokenData?.contextTokens || 0
     );
 
     // Update conversation timestamp
@@ -306,7 +311,7 @@ export class ChatService {
     const rows = db.prepare(`
       SELECT id, conversation_id, role, content, reasoning, created_at,
              provider_id, model_id, prompt_tokens, completion_tokens,
-             reasoning_tokens, cached_tokens, total_tokens
+             reasoning_tokens, cached_tokens, total_tokens, context_tokens
       FROM messages
       WHERE conversation_id = ?
       ORDER BY created_at ASC
@@ -324,6 +329,7 @@ export class ChatService {
       reasoning_tokens: number;
       cached_tokens: number;
       total_tokens: number;
+      context_tokens: number;
     }>;
 
     return rows.map(row => ({
@@ -340,6 +346,7 @@ export class ChatService {
       reasoningTokens: row.reasoning_tokens || 0,
       cachedTokens: row.cached_tokens || 0,
       totalTokens: row.total_tokens || 0,
+      contextTokens: row.context_tokens || 0,
     }));
   }
 

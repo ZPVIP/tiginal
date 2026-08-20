@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 17;
+const SCHEMA_VERSION = 18;
 
 /**
  * Database service for Tiginal
@@ -133,6 +133,10 @@ export class DatabaseService {
 
     if (currentVersion < 17) {
       this.migrateV17();
+    }
+
+    if (currentVersion < 18) {
+      this.migrateV18();
     }
 
     // Update schema version
@@ -615,6 +619,23 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_mcp_servers_rank ON mcp_servers(rank);
       CREATE INDEX IF NOT EXISTS idx_mcp_servers_enabled ON mcp_servers(enabled);
     `);
+  }
+
+  /**
+   * Migration v18: Record how large the context actually was for a turn
+   *
+   * prompt_tokens is accumulated across every turn of the agent loop, so it
+   * over-reports once tools are involved. context_tokens holds just the final
+   * turn's prompt + completion, which is what the next request starts from.
+   */
+  private migrateV18(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN context_tokens INTEGER DEFAULT 0`);
+    } catch (e) {
+      // Column might already exist
+    }
   }
 
   /**

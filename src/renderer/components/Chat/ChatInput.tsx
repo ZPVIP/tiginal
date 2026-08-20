@@ -13,6 +13,7 @@ import {
 import { clsx } from 'clsx';
 import { ToolsPopover } from './ToolsPopover';
 import { McpPopover } from './McpPopover';
+import { ContextRing } from './ContextRing';
 import { SystemPromptsPopover } from './SystemPromptsPopover';
 import { ModelSelectorPopover } from './ModelSelectorPopover';
 import { Bot, ChevronUp } from 'lucide-react';
@@ -33,6 +34,9 @@ interface ChatInputProps {
   selectedProviderId?: string;
   selectedModel?: string;
   onModelSelect?: (providerId: string, modelId: string) => void;
+
+  /** Tokens the last turn occupied, for the context ring. */
+  contextUsed?: number;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({ 
@@ -43,7 +47,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     models = [],
     selectedProviderId = '',
     selectedModel = '',
-    onModelSelect = () => {}
+    onModelSelect = () => {},
+    contextUsed = 0
 }, ref) => {
   const [text, setText] = useState('');
   const [useSearch, setUseSearch] = useState(false);
@@ -310,9 +315,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
 
 
-            {/* Right side: Model Selector + Send Button */}
+            {/* Right side: Context Ring + Send Button */}
             <div className="flex items-center gap-2">
 
+                <ContextRing
+                    providerId={selectedProviderId}
+                    modelId={selectedModel}
+                    used={contextUsed}
+                />
 
                 {isStreaming ? (
                 <button

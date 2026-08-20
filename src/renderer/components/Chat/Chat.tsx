@@ -145,6 +145,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
               reasoningTokens: data.tokenData.reasoningTokens,
               cachedTokens: data.tokenData.cachedTokens,
               totalTokens: data.tokenData.totalTokens,
+              contextTokens: data.tokenData.contextTokens,
             };
             break;
           }
@@ -617,6 +618,16 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
       }
   };
 
+  // How full the context is right now: the newest turn that reported its size.
+  // Accumulated prompt tokens would over-report once tools add extra turns.
+  const contextUsed = React.useMemo(() => {
+    const list = isIncognito ? incognitoMessages : messages;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i]?.contextTokens > 0) return list[i].contextTokens as number;
+    }
+    return 0;
+  }, [messages, incognitoMessages, isIncognito]);
+
   return (
     <div className="flex h-full w-full flex-col bg-background relative">
       {/* Incognito Warning Bar */}
@@ -662,6 +673,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
         selectedProviderId={selectedProviderId}
         selectedModel={selectedModel}
         onModelSelect={(pId, mId) => handleModelSelect(`${pId}:${mId}`)}
+        contextUsed={contextUsed}
       />
     </div>
   );

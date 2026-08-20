@@ -17,6 +17,7 @@ import { printRequestEndSeparator, printRequestStartSeparator, printRespondEndSe
 import { fetchWithLocalhostFallback } from './utils/NetworkUtils';
 import { buildDynamicPromptsForAI } from './dynamic-prompts';
 import { getMcpService } from './services/mcp/McpService';
+import { getContextWindow, setOverride as setContextWindowOverride } from './services/context-window';
 
 interface LogAccumulator {
     id?: string;
@@ -294,6 +295,17 @@ export function setupChatHandlers(): void {
   // Send message to AI (Autonomous Agent Loop)
   ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string, options: { useSystemPrompt?: boolean, useSkills?: boolean } = {}): Promise<{ response: string; error?: string }> => {
     return runAgentLoop(_event, conversationId, providerId, content, specificModel, options);
+  });
+
+  // How many tokens the current provider/model can hold, for the context ring
+  ipcMain.handle('chat:get-context-window', async (_event, providerId: string, modelId: string) => {
+    return getContextWindow(providerId, modelId);
+  });
+
+  // Servers that expose no metadata need the window set by hand
+  ipcMain.handle('chat:set-context-window', async (_event, providerId: string, modelId: string, tokens: number | null) => {
+    setContextWindowOverride(providerId, modelId, tokens);
+    return getContextWindow(providerId, modelId);
   });
 
   // Execute a tool (called after user approves)
@@ -975,6 +987,9 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     let turnCount = 0;
     let allowAllOverride = false; // Session-based allow all
     let accumulatedUsage = { prompt_tokens: 0, completion_tokens: 0, reasoning_tokens: 0, cached_tokens: 0, total_tokens: 0 };
+    // Accumulated totals over-report how full the context is once tools trigger
+    // extra turns, so keep the last turn on its own for the context indicator.
+    let lastTurnContextTokens = 0;
 
     // Create AbortController for this conversation
     const abortController = new AbortController();
@@ -1240,6 +1255,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                 accumulatedUsage.total_tokens += streamResult.usage.total_tokens || 0;
                 accumulatedUsage.reasoning_tokens += (streamResult.usage.completion_tokens_details?.reasoning_tokens || 0);
                 accumulatedUsage.cached_tokens += (streamResult.usage.prompt_tokens_details?.cached_tokens || 0);
+                lastTurnContextTokens = (streamResult.usage.prompt_tokens || 0) + (streamResult.usage.completion_tokens || 0);
             }
 
             if (!toolCallOccurred) {
@@ -1273,6 +1289,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                          reasoningTokens: accumulatedUsage.reasoning_tokens,
                          cachedTokens: accumulatedUsage.cached_tokens,
                          totalTokens: accumulatedUsage.total_tokens,
+                         contextTokens: lastTurnContextTokens,
                      };
                      chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
                      chatService.updateConversationTokens(conversationId, providerId, modelToUse, tokenData);
@@ -1298,6 +1315,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
         reasoningTokens: accumulatedUsage.reasoning_tokens,
         cachedTokens: accumulatedUsage.cached_tokens,
         totalTokens: accumulatedUsage.total_tokens,
+        contextTokens: lastTurnContextTokens,
     };
     chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
 
