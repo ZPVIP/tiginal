@@ -4,6 +4,7 @@
  */
 
 import * as os from 'os';
+import { defaultWorkspaceDir, expandHome } from './utils/paths';
 import * as path from 'path';
 import { getDatabase } from '../services/database/database';
 
@@ -20,13 +21,7 @@ export function getWorkspacePath(): string {
   const dbService = getDatabase();
   let workspacePath = dbService.getSetting('workspacePath');
   
-  if (!workspacePath) {
-    workspacePath = process.platform === 'win32' 
-      ? path.join(process.env.APPDATA || os.homedir(), 'Tiginal', 'workspaces')
-      : path.join(os.homedir(), '.config', 'tiginal', 'workspaces');
-  }
-  
-  return workspacePath;
+  return workspacePath ? expandHome(workspacePath) : defaultWorkspaceDir();
 }
 
 /**

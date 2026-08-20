@@ -57,9 +57,4 @@ export function buildSpawnEnv(extra?: Record<string, string>): NodeJS.ProcessEnv
   };
 }
 
-/** Expand a leading `~/` so configs can use home-relative paths. */
-export function expandHome(p: string): string {
-  if (p === '~') return os.homedir();
-  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2));
-  return p;
-}
+export { expandHome } from '../../utils/paths';

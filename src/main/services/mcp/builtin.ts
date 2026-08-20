@@ -3,8 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { McpClient, McpServerConfig, McpTool, McpError } from './types';
-import { buildSpawnEnv, expandHome } from './env';
-import { getDatabase } from '../../../services/database/database';
+import { buildSpawnEnv } from './env';
+import { expandHome, isWithin, resolveExisting, workspaceDir } from '../../utils/paths';
 
 /**
  * Built-in MCP servers run inside the main process instead of spawning an
@@ -77,9 +77,7 @@ function runInterpreter(
 }
 
 function workspacePath(): string {
-  const stored = getDatabase().getSetting('workspacePath');
-  if (stored) return expandHome(stored);
-  return path.join(os.homedir(), '.config', 'tiginal', 'workspaces');
+  return workspaceDir();
 }
 
 // ------------------------------------------------------------------ filesystem
@@ -87,44 +85,17 @@ function workspacePath(): string {
 function allowedRoots(config: McpServerConfig): string[] {
   const raw = config.options?.allowedDirectories;
   const list = Array.isArray(raw) && raw.length > 0 ? raw : [workspacePath()];
-  return list.map((p: string) => {
-    const resolved = path.resolve(expandHome(String(p)));
-    // Requested paths are canonicalized before the check, so the roots must be
-    // too -- on macOS /var and /tmp are symlinks and would never match.
-    try {
-      return fs.realpathSync(resolved);
-    } catch {
-      return resolved;
-    }
-  });
+  return list.map((p: string) => path.resolve(expandHome(String(p))));
 }
 
 /**
  * Resolve a user-supplied path and refuse anything outside the allow-list.
- * Symlinks are resolved first so a link cannot escape the sandbox; for paths
- * that do not exist yet the closest existing parent is checked instead.
+ * Containment is checked after following symlinks, so a link cannot escape.
  */
 function resolveInside(target: string, config: McpServerConfig): string {
   const roots = allowedRoots(config);
-  const requested = path.resolve(expandHome(target));
-
-  let probe = requested;
-  while (!fs.existsSync(probe)) {
-    const parent = path.dirname(probe);
-    if (parent === probe) break;
-    probe = parent;
-  }
-
-  let real = requested;
-  try {
-    const realProbe = fs.realpathSync(probe);
-    real = path.join(realProbe, path.relative(probe, requested));
-  } catch {
-    /* fall back to the lexical path */
-  }
-
-  const inside = roots.some(root => real === root || real.startsWith(root + path.sep));
-  if (!inside) {
+  const real = resolveExisting(target);
+  if (!roots.some(root => isWithin(root, real))) {
     throw new McpError(`Access denied: "${target}" is outside the allowed directories (${roots.join(', ')})`);
   }
   return real;

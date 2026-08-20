@@ -1,10 +1,11 @@
 import Database from 'better-sqlite3';
+import { configDir } from './utils/paths';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 
-// Config path: ~/.config/tiginal/directories.db
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'tiginal');
+// Config path: <config dir>/directories.db
+const CONFIG_DIR = configDir();
 const DB_PATH = path.join(CONFIG_DIR, 'directories.db');
 
 interface VisitRow {

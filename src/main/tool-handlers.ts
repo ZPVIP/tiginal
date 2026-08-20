@@ -6,6 +6,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import defaults from './defaults.json';
 import { getDynamicPromptTemplates } from './dynamic-prompts';
+import { defaultWorkspaceDir } from './utils/paths';
 
 interface Tool {
   id: string;
@@ -57,17 +58,7 @@ interface SystemPromptInput {
  * Get platform-specific default workspace path
  */
 function getDefaultWorkspacePath(): string {
-  let baseDir: string;
-  
-  if (process.platform === 'win32') {
-    // Windows: %APPDATA%\Tiginal\workspaces
-    baseDir = path.join(process.env.APPDATA || os.homedir(), 'Tiginal');
-  } else {
-    // macOS and Linux: ~/.config/tiginal/workspaces
-    baseDir = path.join(os.homedir(), '.config', 'tiginal');
-  }
-  
-  return path.join(baseDir, 'workspaces');
+  return defaultWorkspaceDir();
 }
 
 /**

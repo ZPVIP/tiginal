@@ -3,6 +3,7 @@ import { getDatabase } from '../services/database/database';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { defaultSkillsDir, expandHome } from './utils/paths';
 
 interface SkillDirectory {
   id: string;
@@ -60,21 +61,13 @@ function parseSkillMd(filePath: string): { name: string; description: string } |
 /**
  * Expand ~ to home directory
  */
-function expandPath(p: string): string {
-  if (p.startsWith('~/')) {
-    return path.join(os.homedir(), p.slice(2));
-  }
-  return p;
-}
+const expandPath = expandHome;
 
 /**
  * Get the default skills directory path
  */
 function getDefaultSkillsDir(): string {
-  if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA || os.homedir(), 'Tiginal', 'skills');
-  }
-  return path.join(os.homedir(), '.config', 'tiginal', 'skills');
+  return defaultSkillsDir();
 }
 
 /**

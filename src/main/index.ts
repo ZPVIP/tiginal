@@ -264,9 +264,7 @@ app.whenReady().then(() => {
   ).run(
     require('crypto').randomUUID(),
     'Tiginal',
-    process.platform === 'win32'
-      ? require('path').join(process.env.APPDATA || require('os').homedir(), 'Tiginal', 'skills')
-      : require('path').join(require('os').homedir(), '.config', 'tiginal', 'skills'),
+    require('./utils/paths').defaultSkillsDir(),
     1
   );
   

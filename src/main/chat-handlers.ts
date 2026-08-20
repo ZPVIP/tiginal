@@ -18,6 +18,7 @@ import { fetchWithLocalhostFallback } from './utils/NetworkUtils';
 import { buildDynamicPromptsForAI } from './dynamic-prompts';
 import { getMcpService } from './services/mcp/McpService';
 import { getContextWindow, setOverride as setContextWindowOverride } from './services/context-window';
+import { expandHome, normalizeForCompare, workspaceDir } from './utils/paths';
 
 interface LogAccumulator {
     id?: string;
@@ -314,8 +315,7 @@ export function setupChatHandlers(): void {
       if (toolName === 'Bash') {
         // Execute bash command
         const { exec } = require('child_process');
-        const workspacePath = getDatabase().getSetting('workspacePath') || 
-          require('path').join(require('os').homedir(), '.config', 'tiginal', 'workspaces');
+        const workspacePath = workspaceDir();
         
         return new Promise((resolve) => {
           exec(toolInput.command, { cwd: workspacePath, timeout: 60000 }, (error: any, stdout: string, stderr: string) => {
@@ -361,7 +361,7 @@ export function setupChatHandlers(): void {
           }
           
           // Helper to expand path
-          const expandPath = (p: string) => p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p;
+          const expandPath = expandHome;
           const fullPath = path.join(expandPath(dir.path), skill.skill_folder);
           const skillMdPath = path.join(fullPath, 'SKILL.md');
           
@@ -1161,7 +1161,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                          if (skill) {
                                              const dir = db.prepare('SELECT path FROM skill_directories WHERE id = ?').get(skill.skill_directory_id) as any;
                                              if (dir) {
-                                                 const expandPath = (p: string) => p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p;
+                                                 const expandPath = expandHome;
                                                  const fullPath = path.join(expandPath(dir.path), skill.skill_folder);
                                                  skillPath = path.join(fullPath, 'SKILL.md');
                                              }
@@ -1437,8 +1437,7 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
 
       if (toolName === 'Bash') {
         const { exec } = require('child_process');
-        const workspacePath = getDatabase().getSetting('workspacePath') || 
-          require('path').join(require('os').homedir(), '.config', 'tiginal', 'workspaces');
+        const workspacePath = workspaceDir();
         
         return new Promise((resolve) => {
           exec(toolInput.command, { cwd: workspacePath, timeout: 60000 }, (error: any, stdout: string, stderr: string) => {
@@ -1503,7 +1502,7 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
           const dir = db.prepare('SELECT path FROM skill_directories WHERE id = ?').get(skill.skill_directory_id) as any;
           if (!dir) return { success: false, error: 'Skill directory error' };
           
-          const expandPath = (p: string) => p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p;
+          const expandPath = expandHome;
           const fullPath = path.join(expandPath(dir.path), skill.skill_folder);
           const skillMdPath = path.join(fullPath, 'SKILL.md');
           
