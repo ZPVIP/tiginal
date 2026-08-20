@@ -133,7 +133,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           {!isMacOS && (
             <div className="flex items-center gap-1" data-window-control>
               <button
-                className="h-7 w-8 rounded-md flex items-center justify-center text-text-muted hover:text-text-main hover:bg-white/10"
+                className="h-7 w-8 rounded-md flex items-center justify-center text-text-muted hover:text-text-main hover:bg-surface-hover"
                 title="Minimize"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => setIsMinimized(prev => !prev)}
@@ -149,7 +149,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <Square size={12} />
               </button>
               <button
-                className="h-7 w-8 rounded-md flex items-center justify-center text-text-muted hover:text-white hover:bg-red-500"
+                className="h-7 w-8 rounded-md flex items-center justify-center text-text-muted hover:text-text-main hover:bg-red-500"
                 title="Close"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={onClose}

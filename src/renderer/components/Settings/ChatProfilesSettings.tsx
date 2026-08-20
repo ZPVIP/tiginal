@@ -171,7 +171,7 @@ export function ChatProfilesSettings() {
                   <button
                     onClick={() => handleMove(index, -1)}
                     disabled={index === 0}
-                    className="text-text-muted hover:text-text transition-colors disabled:opacity-25 disabled:hover:text-text-muted"
+                    className="text-text-muted hover:text-text-main transition-colors disabled:opacity-25 disabled:hover:text-text-muted"
                     title="Move up"
                   >
                     <ChevronUp size={12} />
@@ -179,7 +179,7 @@ export function ChatProfilesSettings() {
                   <button
                     onClick={() => handleMove(index, 1)}
                     disabled={index === profiles.length - 1}
-                    className="text-text-muted hover:text-text transition-colors disabled:opacity-25 disabled:hover:text-text-muted"
+                    className="text-text-muted hover:text-text-main transition-colors disabled:opacity-25 disabled:hover:text-text-muted"
                     title="Move down"
                   >
                     <ChevronDown size={12} />
@@ -189,7 +189,7 @@ export function ChatProfilesSettings() {
                 {/* Expand toggle */}
                 <button
                   onClick={() => toggleExpanded(profile.id)}
-                  className="text-text-muted hover:text-text transition-colors"
+                  className="text-text-muted hover:text-text-main transition-colors"
                 >
                   {expandedIds.has(profile.id) ? (
                     <ChevronDown size={16} />
@@ -220,7 +220,7 @@ export function ChatProfilesSettings() {
                 {/* Edit */}
                 <button
                   onClick={() => handleEdit(profile)}
-                  className="p-1.5 text-text-muted hover:text-text hover:bg-surface-hover rounded transition-colors"
+                  className="p-1.5 text-text-muted hover:text-text-main hover:bg-surface-hover rounded transition-colors"
                   title="Edit"
                 >
                   <Edit2 size={14} />
@@ -237,7 +237,7 @@ export function ChatProfilesSettings() {
                     </button>
                     <button
                       onClick={() => setDeleteConfirmId(null)}
-                      className="px-2 py-1 text-xs text-text-muted hover:text-text rounded transition-colors"
+                      className="px-2 py-1 text-xs text-text-muted hover:text-text-main rounded transition-colors"
                     >
                       Cancel
                     </button>

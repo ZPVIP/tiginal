@@ -190,20 +190,20 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
            
            {/* Custom Preset Selector */}
            <div className="relative" ref={presetRef}>
-               <label className="block text-sm font-medium text-gray-300 mb-1">Provider Preset</label>
+               <label className="block text-sm font-medium text-text-main mb-1">Provider Preset</label>
                <button
                   type="button"
                   onClick={togglePreset}
-                  className="w-full bg-background border border-border rounded-lg p-2.5 text-sm flex items-center justify-between hover:border-gray-500 transition-colors"
+                  className="w-full bg-background border border-border rounded-lg p-2.5 text-sm flex items-center justify-between hover:border-primary/60 transition-colors"
                >
                    <div className="flex items-center gap-2">
                        <div 
-                           className="w-5 h-5 flex items-center justify-center text-gray-400"
+                           className="w-5 h-5 flex items-center justify-center text-text-muted"
                            dangerouslySetInnerHTML={{ __html: ICONS[selectedPreset.value] || ICONS.default }} 
                        />
                        <span>{selectedPreset.label}</span>
                    </div>
-                   <ChevronDown size={16} className={clsx("text-gray-500 transition-transform", isPresetOpen ? "rotate-180" : "")} />
+                   <ChevronDown size={16} className={clsx("text-text-muted transition-transform", isPresetOpen ? "rotate-180" : "")} />
                </button>
 
                {/* Dropdown Menu Portal */}
@@ -223,14 +223,14 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
                                key={p.value}
                                type="button"
                                onClick={() => handlePresetSelect(p)}
-                               className="w-full p-2.5 text-left text-sm hover:bg-white/5 flex items-center gap-2 transition-colors border-b border-white/5 last:border-0"
+                               className="w-full p-2.5 text-left text-sm hover:bg-surface-hover flex items-center gap-2 transition-colors border-b border-border last:border-0"
                            >
                                <div 
-                                   className="w-5 h-5 flex items-center justify-center text-gray-400"
+                                   className="w-5 h-5 flex items-center justify-center text-text-muted"
                                    dangerouslySetInnerHTML={{ __html: ICONS[p.value] || ICONS.default }} 
                                />
                                <span className="font-medium">{p.label}</span>
-                               {p.baseUrl && <span className="text-xs text-gray-500 ml-auto truncate max-w-[150px]">{new URL(p.baseUrl).hostname}</span>}
+                               {p.baseUrl && <span className="text-xs text-text-muted ml-auto truncate max-w-[150px]">{new URL(p.baseUrl).hostname}</span>}
                            </button>
                        ))}
                    </div>,
@@ -240,7 +240,7 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
 
            <div className="grid grid-cols-2 gap-4">
                <div>
-                   <label className="block text-sm font-medium text-gray-300 mb-1">Name</label>
+                   <label className="block text-sm font-medium text-text-main mb-1">Name</label>
                    <input 
                       type="text" 
                       required
@@ -251,7 +251,7 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
                    />
                </div>
                <div>
-                   <label className="block text-sm font-medium text-gray-300 mb-1">Models</label>
+                   <label className="block text-sm font-medium text-text-main mb-1">Models</label>
                     <FancySelect
                       className="w-full"
                       value={formData.model || ''}
@@ -263,7 +263,7 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
            </div>
 
            <div>
-               <label className="block text-sm font-medium text-gray-300 mb-1">API Endpoint</label>
+               <label className="block text-sm font-medium text-text-main mb-1">API Endpoint</label>
                <input 
                   type="url" 
                   required
@@ -275,7 +275,7 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
            </div>
 
             <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">API Key</label>
+                <label className="block text-sm font-medium text-text-main mb-1">API Key</label>
                 <div className="relative">
                     <input 
                        type={showApiKey ? "text" : "password"}
@@ -287,7 +287,7 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
                     <button
                         type="button"
                         onClick={() => setShowApiKey(!showApiKey)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main transition-colors"
                     >
                         {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
@@ -295,12 +295,12 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
             </div>
 
            <div className="flex items-center gap-4 py-2">
-               <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+               <label className="flex items-center gap-2 text-sm text-text-main cursor-pointer">
                    <input 
                       type="checkbox"
                       checked={formData.isDefault}
                       onChange={(e) => handleChange('isDefault', e.target.checked)}
-                      className="rounded border-gray-600 bg-background text-primary focus:ring-primary"
+                      className="rounded border-border bg-background text-primary focus:ring-primary"
                    />
                    Set as Default Provider
                </label>
@@ -312,32 +312,32 @@ export function ProviderModal({ isOpen, onClose, initialData, onSave }: Provider
                   type="button"
                   onClick={handleTest}
                   disabled={isTesting || !formData.endpoint}
-                  className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
+                  className="px-3 py-1.5 bg-surface-light border border-border hover:border-primary hover:bg-surface-hover text-text-main rounded-lg text-xs font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
                >
                    {isTesting ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
                    Test Connection
                </button>
                
                {testResult && (
-                   <div className={clsx("text-xs flex items-center gap-1", testResult.success ? "text-green-400" : "text-red-400")}>
+                   <div className={clsx("text-xs flex items-center gap-1", testResult.success ? "text-accent-success" : "text-accent-danger")}>
                        {testResult.success ? <Check size={14} /> : <AlertTriangle size={14} />}
                        {testResult.success ? "Connected!" : "Failed"} 
                    </div>
                )}
-               {testResult?.error && <div className="text-xs text-red-400 truncate max-w-xs" title={testResult.error}>{testResult.error}</div>}
+               {testResult?.error && <div className="text-xs text-accent-danger truncate max-w-xs" title={testResult.error}>{testResult.error}</div>}
            </div>
 
            <div className="pt-4 flex justify-end gap-3 border-t border-border mt-4">
                <button 
                   type="button" 
                   onClick={onClose}
-                  className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                  className="px-4 py-2 text-sm text-text-muted hover:text-text-main transition-colors"
                >
                    Cancel
                </button>
                <button 
                   type="submit"
-                  className="px-4 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors"
+                  className="px-4 py-2 bg-primary hover:opacity-90 text-primary-foreground rounded-lg text-sm font-medium transition-colors"
                >
                    Save Provider
                </button>

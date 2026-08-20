@@ -277,7 +277,7 @@ export function Drawer({ isOpen, currentConversationId, onSelectConversation, on
                 <div className="flex justify-end gap-2">
                   <button
                     onClick={() => setShowSaveProfilePrompt(false)}
-                    className="px-3 py-1.5 text-xs text-text-muted hover:text-text border border-border rounded-md hover:bg-surface-hover transition-colors"
+                    className="px-3 py-1.5 text-xs text-text-muted hover:text-text-main border border-border rounded-md hover:bg-surface-hover transition-colors"
                   >
                     Cancel
                   </button>

@@ -32,8 +32,8 @@ export function Modal({ isOpen, onClose, title, children, width = 'max-w-md' }: 
            className={`bg-surface border border-border rounded-xl shadow-xl w-full ${width} max-h-[90vh] overflow-hidden flex flex-col`}
         >
           <div className="flex items-center justify-between p-4 border-b border-border">
-            <h3 className="font-semibold text-gray-100">{title}</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+            <h3 className="font-semibold text-text-main">{title}</h3>
+            <button onClick={onClose} className="text-text-muted hover:text-text-main transition-colors">
               <X size={20} />
             </button>
           </div>

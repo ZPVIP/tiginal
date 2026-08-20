@@ -103,7 +103,7 @@ export function AIProviders() {
              </button>
              <button 
                 onClick={openAdd}
-                className="flex items-center gap-2 px-3 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm transition-colors"
+                className="flex items-center gap-2 px-3 py-2 bg-primary hover:opacity-90 text-primary-foreground rounded-lg text-sm transition-colors"
              >
                 <Plus size={16} /> Add Provider
              </button>
@@ -140,13 +140,13 @@ export function AIProviders() {
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
                            onClick={() => openEdit(provider)}
-                           className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                           className="p-1.5 text-text-muted hover:text-text-main hover:bg-surface-hover rounded-lg transition-colors"
                         >
                             <Edit2 size={14} />
                         </button>
                         <button 
                            onClick={() => setManagingModelsProvider(provider)}
-                           className="p-1.5 text-text-muted hover:text-text-main hover:bg-white/10 rounded-lg transition-colors"
+                           className="p-1.5 text-text-muted hover:text-accent-danger hover:bg-surface-hover rounded-lg transition-colors"
                            title="Manage Models"
                         >
                             <DownloadCloud size={14} />

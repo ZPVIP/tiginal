@@ -378,7 +378,7 @@ export function ToolsSettings() {
             className={clsx(
               "flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all",
               activeTab === tab.id
-                ? "bg-primary text-white shadow-sm"
+                ? "bg-primary text-primary-foreground shadow-sm"
                 : "text-text-sec hover:text-text-main hover:bg-surface-light"
             )}
           >
@@ -423,7 +423,7 @@ export function ToolsSettings() {
                     setCatError('');
                     setShowAddCatModal(true);
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary hover:bg-blue-600 text-white rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary hover:opacity-90 text-primary-foreground rounded-lg transition-colors"
                 >
                   <Plus size={16} /> Add Category
                 </button>
@@ -519,7 +519,7 @@ export function ToolsSettings() {
                 </button>
                 <button
                   onClick={openAddToolModal}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary hover:bg-blue-600 text-white rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary hover:opacity-90 text-primary-foreground rounded-lg transition-colors"
                 >
                   <Plus size={16} /> Add Tool
                 </button>
@@ -578,7 +578,7 @@ export function ToolsSettings() {
                                       onClick={() => handleToolToggle(tool.id, !tool.enabled)}
                                       className={clsx(
                                         "w-9 h-5 rounded-full relative transition-colors",
-                                        tool.enabled ? "bg-green-500" : "bg-gray-600"
+                                        tool.enabled ? "bg-accent-success" : "bg-surface-light border border-border"
                                       )}
                                     >
                                       <div className={clsx(
@@ -630,7 +630,7 @@ export function ToolsSettings() {
             />
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowAddCatModal(false)} className="px-3 py-1.5 text-sm text-text-sec hover:text-text-main">Cancel</button>
-              <button onClick={handleAddCategory} className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-blue-600">Add</button>
+              <button onClick={handleAddCategory} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90">Add</button>
             </div>
           </div>
         </div>
@@ -724,7 +724,7 @@ export function ToolsSettings() {
                {(!showToolDetailModal?.isSystem) && (
                  <button 
                    onClick={handleSaveTool}
-                   className="flex items-center gap-1.5 px-4 py-2 text-sm bg-primary hover:bg-blue-600 text-white rounded-lg transition-colors"
+                   className="flex items-center gap-1.5 px-4 py-2 text-sm bg-primary hover:opacity-90 text-primary-foreground rounded-lg transition-colors"
                  >
                    <Save size={16} />
                    Save Changes

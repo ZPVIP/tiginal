@@ -27,7 +27,7 @@ export function ConsoleOutput({ content, className }: ConsoleOutputProps) {
       // Adaptive height: max-height roughly 15 lines (15 * 1.25em + padding)
       "max-h-[205px] overflow-y-auto custom-scrollbar",
       "whitespace-pre-wrap break-all", // Ensure wrap
-      "shadow-inner border border-white/10",
+      "shadow-inner border border-border",
       className
     )}>
       {processedContent}

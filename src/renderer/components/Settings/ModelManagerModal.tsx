@@ -120,54 +120,54 @@ export function ModelManagerModal({ isOpen, onClose, provider, onSave }: ModelMa
         <Modal isOpen={isOpen} onClose={onClose} title="Manage Models" width="max-w-xl">
             <div className="p-6 space-y-4">
                  <div className="flex items-center gap-2 bg-surface border border-border rounded-lg px-3 py-2">
-                    <Search size={16} className="text-gray-400" />
+                    <Search size={16} className="text-text-muted" />
                     <input 
                         type="text" 
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Search models..." 
-                        className="bg-transparent border-none focus:outline-none text-sm w-full text-gray-100 placeholder-gray-500"
+                        className="bg-transparent border-none focus:outline-none text-sm w-full text-text-main placeholder-text-muted"
                     />
                  </div>
 
                  <div className="flex items-center justify-between text-sm">
-                    <label className="flex items-center gap-2 cursor-pointer text-gray-300">
+                    <label className="flex items-center gap-2 cursor-pointer text-text-sec">
                         <input 
                             type="checkbox" 
                             checked={isAllSelected}
                             ref={input => { if (input) input.indeterminate = isIndeterminate; }}
                             onChange={(e) => handleSelectAll(e.target.checked)}
-                            className="rounded border-gray-600 bg-background text-primary focus:ring-primary"
+                            className="rounded border-border bg-background text-primary focus:ring-primary"
                         />
                         Select All
                     </label>
-                    <span className="text-gray-500">{models.filter(m => m.enabled).length} / {models.length} enabled</span>
+                    <span className="text-text-muted">{models.filter(m => m.enabled).length} / {models.length} enabled</span>
                  </div>
 
                  <div className="border border-border rounded-lg h-[300px] overflow-y-auto bg-background/50">
                     {isFetching && models.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
+                        <div className="h-full flex flex-col items-center justify-center text-text-muted gap-2">
                             <Loader2 size={24} className="animate-spin" />
                             <span>Fetching models...</span>
                         </div>
                     ) : (
                         <div className="divide-y divide-border/50">
                             {filteredModels.map(model => (
-                                <label key={model.id} className="flex items-center gap-3 p-3 hover:bg-white/5 cursor-pointer transition-colors">
+                                <label key={model.id} className="flex items-center gap-3 p-3 hover:bg-surface-hover cursor-pointer transition-colors">
                                     <input 
                                         type="checkbox"
                                         checked={model.enabled}
                                         onChange={(e) => handleToggle(model.id, e.target.checked)}
-                                        className="rounded border-gray-600 bg-background text-primary focus:ring-primary"
+                                        className="rounded border-border bg-background text-primary focus:ring-primary"
                                     />
                                     <div className="flex flex-col overflow-hidden">
-                                        <span className="text-sm font-medium text-gray-200 truncate">{model.name}</span>
-                                        {model.id !== model.name && <span className="text-xs text-gray-500 truncate font-mono">{model.id}</span>}
+                                        <span className="text-sm font-medium text-text-main truncate">{model.name}</span>
+                                        {model.id !== model.name && <span className="text-xs text-text-muted truncate font-mono">{model.id}</span>}
                                     </div>
                                 </label>
                             ))}
                             {filteredModels.length === 0 && !isFetching && (
-                                <div className="p-8 text-center text-gray-500 text-sm">
+                                <div className="p-8 text-center text-text-muted text-sm">
                                     No models found matching your search.
                                 </div>
                             )}
@@ -178,14 +178,14 @@ export function ModelManagerModal({ isOpen, onClose, provider, onSave }: ModelMa
                  <div className="pt-4 flex justify-end gap-3 border-t border-border">
                     <button 
                        onClick={onClose}
-                       className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                       className="px-4 py-2 text-sm text-text-muted hover:text-text-main transition-colors"
                     >
                         Cancel
                     </button>
                     <button 
                        onClick={handleSave}
                        disabled={isSaving}
-                       className="px-4 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                       className="px-4 py-2 bg-primary hover:opacity-90 text-primary-foreground rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
                     >
                         {isSaving && <Loader2 size={14} className="animate-spin" />}
                         Save Changes

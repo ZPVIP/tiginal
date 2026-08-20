@@ -55,7 +55,7 @@ export function CreateCategoryDialog({ isOpen, onClose, onConfirm }: CreateCateg
           <button
             onClick={handleSubmit}
             disabled={!name.trim()}
-            className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Add
           </button>

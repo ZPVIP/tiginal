@@ -13,6 +13,48 @@
   --color-text-main: var(--text-primary);
   --color-text-sec: var(--text-secondary);
   --color-text-muted: var(--text-muted);
+
+  /* Used in over a hundred places but never defined, so every `bg-surface-light`
+     and `hover:bg-surface-hover` silently rendered as nothing. */
+  --color-surface-light: var(--bg-elevated);
+  --color-surface-hover: var(--tab-hover);
+  --color-border-subtle: var(--border-color);
+  --color-primary-foreground: var(--primary-foreground, #ffffff);
+
+  /* Semantic accents: readable on this theme's surfaces, light or dark */
+  --color-accent-tool: var(--accent-tool);
+  --color-accent-success: var(--accent-success);
+  --color-accent-danger: var(--accent-danger);
+  --color-accent-info: var(--accent-info);
+
+  /* Terminal palette, for places that want the theme's own hues */
+  --color-ansi-red: var(--ansi-red);
+  --color-ansi-green: var(--ansi-green);
+  --color-ansi-yellow: var(--ansi-yellow);
+  --color-ansi-blue: var(--ansi-blue);
+  --color-ansi-magenta: var(--ansi-magenta);
+  --color-ansi-cyan: var(--ansi-cyan);
+}
+
+/*
+ * Two values per accent, not eight: the only thing that decides legibility is
+ * whether the surface behind it is light or dark. Dark is the default so the
+ * app still looks right before ThemeContext has run.
+ */
+:root {
+  --accent-tool: #fbbf24;
+  --accent-success: #4ade80;
+  --accent-danger: #f87171;
+  --accent-info: #60a5fa;
+}
+
+:root[data-theme-type='light'] {
+  /* One shade darker than looks necessary on white: Tokyo Night Light's surface
+     is a mid grey (#cbccd1), and these clear 4.5:1 on all three light themes. */
+  --accent-tool: #78350f;
+  --accent-success: #14532d;
+  --accent-danger: #991b1b;
+  --accent-info: #1e40af;
 }
 
 @layer base {

@@ -639,7 +639,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
               </div>
               <button 
                  onClick={handleClearIncognito}
-                 className="flex items-center gap-1 text-purple-400 hover:text-purple-200 px-2 py-1 hover:bg-white/5 rounded transition-colors"
+                 className="flex items-center gap-1 text-purple-400 hover:text-purple-200 px-2 py-1 hover:bg-surface-hover rounded transition-colors"
                  title="Clear Incognito Chat"
               >
                   <Trash2 size={14} />

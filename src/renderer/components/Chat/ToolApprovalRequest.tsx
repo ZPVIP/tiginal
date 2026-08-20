@@ -74,7 +74,7 @@ export function ToolApprovalRequest({
                 </button>
                 <button
                     onClick={onAllow}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/90 hover:bg-primary text-white rounded shadow-sm hover:shadow transition-all"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/90 hover:bg-primary text-primary-foreground rounded shadow-sm hover:shadow transition-all"
                 >
                     <Check size={14} />
                     Allow

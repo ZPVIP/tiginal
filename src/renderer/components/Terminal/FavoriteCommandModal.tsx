@@ -131,7 +131,7 @@ export function FavoriteCommandModal({ initialCommand, onSave, onClose }: Favori
             className={clsx(
               "px-4 py-2 text-sm rounded-lg transition-colors",
               command.trim()
-                ? "bg-primary text-white hover:opacity-90"
+                ? "bg-primary text-primary-foreground hover:opacity-90"
                 : "bg-surface-light text-text-muted cursor-not-allowed"
             )}
           >

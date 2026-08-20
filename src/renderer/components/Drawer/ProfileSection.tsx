@@ -85,7 +85,7 @@ export function ProfileSection({ activeProfileId, onApplyProfile, onSaveCurrentA
                 'flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-colors text-sm',
                 activeProfileId === profile.id
                   ? 'bg-primary/10 text-primary border-l-2 border-primary'
-                  : 'text-text hover:bg-elevated pl-[14px]'
+                  : 'text-text-main hover:bg-elevated pl-[14px]'
               )}
             >
               <UserCircle size={14} className="shrink-0 opacity-60" />

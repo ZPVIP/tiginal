@@ -166,21 +166,21 @@ export function CategoryItem({ category }: CategoryItemProps) {
                 setShowRenameDialog(true);
                 setShowMenu(false);
               }}
-              className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
+              className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-primary-foreground flex items-center gap-2"
             >
               <Edit2 size={12} /> Rename
             </button>
             {!category.isCurrent && (
               <button
                 onClick={handleSetCurrent}
-                className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
+                className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-primary-foreground flex items-center gap-2"
               >
                 <Check size={12} /> Set as Current
               </button>
             )}
             <button
               onClick={handleTogglePinned}
-              className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
+              className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-primary-foreground flex items-center gap-2"
             >
               <Pin size={12} /> {category.isPinned ? 'Unpin' : 'Pin'}
             </button>
@@ -189,7 +189,7 @@ export function CategoryItem({ category }: CategoryItemProps) {
                 <div className="h-px bg-border my-1" />
                 <button
                   onClick={handleDelete}
-                  className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-500 hover:text-white flex items-center gap-2"
+                  className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-500 hover:text-text-main flex items-center gap-2"
                 >
                   <Trash2 size={12} /> Delete
                 </button>

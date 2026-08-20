@@ -254,7 +254,7 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
                          return !inline && match ? (
                            <div className="relative group/code my-4">
                                <div className="absolute right-2 top-2 opacity-0 group-hover/code:opacity-100 transition-opacity">
-                                   <div className="text-xs text-gray-400">{match[1]}</div>
+                                   <div className="text-xs text-text-muted">{match[1]}</div>
                                </div>
                                <pre className={clsx(className, "bg-elevated p-4 rounded-lg overflow-x-auto border border-border text-text-main")} {...props}>
                                  <code className={className} {...props}>
@@ -308,7 +308,7 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
                {/* Copy Markdown (Original) */}
                <button 
                  onClick={handleCopy}
-                 className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded hover:bg-surface flex items-center gap-1"
+                 className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1"
                  title="Copy Markdown"
                >
                    {copied ? <Check size={14} /> : <Copy size={14} />}
@@ -318,7 +318,7 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
                {/* Copy Plain Text */}
                <button 
                  onClick={handleCopyPlain}
-                 className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded hover:bg-surface flex items-center gap-1"
+                 className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1"
                  title="Copy Plain Text"
                >
                    {copiedPlain ? <Check size={14} /> : <FileText size={14} />}
@@ -328,7 +328,7 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
                {/* Copy Rendered */}
                <button 
                  onClick={handleCopyRendered}
-                 className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded hover:bg-surface flex items-center gap-1"
+                 className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1"
                  title="Copy Rich Text (for Word/Docs)"
                >
                    {copiedRendered ? <Check size={14} /> : <Monitor size={14} />}
@@ -338,7 +338,7 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
                {/* Token Stats */}
                {!isUser && (totalTokens ?? 0) > 0 && (
                    <div
-                     className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded hover:bg-surface flex items-center gap-1 cursor-default"
+                     className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1 cursor-default"
                      title={formatTokenTooltip({ promptTokens, completionTokens, reasoningTokens, cachedTokens, totalTokens })}
                    >
                        <Activity size={14} />
@@ -350,7 +350,7 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
                {isUser && onEdit && (
                    <button 
                        onClick={() => onEdit(content)}
-                       className="p-1.5 text-gray-500 hover:text-primary transition-colors rounded hover:bg-surface flex items-center gap-1"
+                       className="p-1.5 text-text-muted hover:text-primary transition-colors rounded hover:bg-surface flex items-center gap-1"
                        title="Edit"
                    >
                        <Pencil size={14} />

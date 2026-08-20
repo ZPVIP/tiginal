@@ -791,7 +791,7 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                       </div>
                   ))
               ) : (
-                 <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                 <div className="flex flex-col items-center justify-center h-full text-text-muted">
                      <Monitor size={48} className="mb-4 opacity-20" />
                      <p>No active terminals</p>
                      <button onClick={createTab} className="mt-4 px-4 py-2 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors">
@@ -841,26 +841,26 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                                }
                                setContextMenu(null); 
                              }}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground"
                           >
                               Copy Path
                           </button>
                           <div className="h-px bg-border my-1" />
                           <button 
                              onClick={() => { closeTab(contextMenu.tabId); setContextMenu(null); }}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground"
                           >
                               Close Tab
                           </button>
                           <button 
                              onClick={() => { closeOthers(contextMenu.tabId); setContextMenu(null); }}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground"
                           >
                               Close Others
                           </button>
                           <button 
                              onClick={() => { closeToRight(contextMenu.tabId); setContextMenu(null); }}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground"
                           >
                               Close to Right
                           </button>
@@ -878,14 +878,14 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                           {/* Copy / Paste */}
                           <button 
                              onClick={() => handleCopy(globalTargetId)}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground flex justify-between"
                           >
                               <span>Copy</span>
                               <span className="opacity-50">⌘C</span>
                           </button>
                           <button 
                              onClick={() => handlePaste(globalTargetId)}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground flex justify-between"
                           >
                               <span>Paste</span>
                               <span className="opacity-50">⌘V</span>
@@ -896,7 +896,7 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                           <button 
                              onClick={() => { if(canSplitRight) { splitRight(); setContextMenu(null); } }}
                              disabled={!canSplitRight}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-current flex justify-between"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-current flex justify-between"
                           >
                               <span>Split Right</span>
                               <span className="opacity-50">⌘D</span>
@@ -904,7 +904,7 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                           <button 
                              onClick={() => { if(canSplitVertical) { splitVertical('down', globalTargetId); setContextMenu(null); } }}
                              disabled={!canSplitVertical}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-current flex justify-between"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-current flex justify-between"
                           >
                               <span>Split Down</span>
                               <span className="opacity-50">⇧⌘D</span>
@@ -914,7 +914,7 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
                           
                           <button 
                              onClick={() => { toggleMaximize(); setContextMenu(null); }}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground flex justify-between"
                           >
                               <span>{isMaximized ? 'Restore' : 'Maximize'}</span>
                               <span className="opacity-50">⇧⌘↵</span>
@@ -924,21 +924,21 @@ export function TerminalView({ onActivePathChange }: TerminalViewProps) {
 
                           <button 
                              onClick={() => { changeFontSize(globalTargetId, 2); setContextMenu(null); }}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground flex justify-between"
                           >
                               <span>Zoom In</span>
                               <span className="opacity-50">⌘+</span>
                           </button>
                           <button 
                              onClick={() => { changeFontSize(globalTargetId, -2); setContextMenu(null); }}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground flex justify-between"
                           >
                               <span>Zoom Out</span>
                               <span className="opacity-50">⌘-</span>
                           </button>
                           <button 
                              onClick={() => { resetFontSize(globalTargetId); setContextMenu(null); }}
-                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-white flex justify-between"
+                             className="w-full text-left px-3 py-1.5 hover:bg-primary hover:text-primary-foreground flex justify-between"
                           >
                               <span>Reset Zoom</span>
                               <span className="opacity-50">⌘0</span>

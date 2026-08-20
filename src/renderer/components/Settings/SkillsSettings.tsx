@@ -156,7 +156,7 @@ export function SkillsSettings() {
             className={clsx(
               "flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all",
               activeTab === tab.id
-                ? "bg-primary text-white shadow-sm"
+                ? "bg-primary text-primary-foreground shadow-sm"
                 : "text-text-sec hover:text-text-main hover:bg-surface-light"
             )}
           >
@@ -173,7 +173,7 @@ export function SkillsSettings() {
           {!showAddForm && (
             <button
               onClick={() => setShowAddForm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm rounded-lg hover:opacity-90 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm rounded-lg hover:opacity-90 transition-colors"
             >
               <Plus size={14} />
               Add Directory
@@ -214,7 +214,7 @@ export function SkillsSettings() {
               <div className="flex gap-2">
                 <button
                   onClick={handleAddDirectory}
-                  className="px-4 py-2 bg-primary text-white text-sm rounded-lg hover:opacity-90"
+                  className="px-4 py-2 bg-primary text-primary-foreground text-sm rounded-lg hover:opacity-90"
                 >
                   Add
                 </button>
@@ -246,7 +246,7 @@ export function SkillsSettings() {
                     className={clsx(
                       "w-5 h-5 rounded border flex items-center justify-center transition-colors",
                       dir.enabled
-                        ? "bg-primary border-primary text-white"
+                        ? "bg-primary border-primary text-primary-foreground"
                         : "border-border hover:border-primary"
                     )}
                   >
@@ -342,7 +342,7 @@ export function SkillsSettings() {
               onClick={handleScan}
               disabled={scanning}
               className={clsx(
-                "flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm rounded-lg transition-colors",
+                "flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm rounded-lg transition-colors",
                 scanning ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"
               )}
             >
@@ -374,7 +374,7 @@ export function SkillsSettings() {
                     className={clsx(
                       "w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0",
                       skill.enabled
-                        ? "bg-primary border-primary text-white"
+                        ? "bg-primary border-primary text-primary-foreground"
                         : "border-border hover:border-primary"
                     )}
                   >

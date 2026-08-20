@@ -230,7 +230,7 @@ export function SystemPromptSettings() {
     dateInfo: <Calendar size={16} className="text-green-400" />,
     wdInfo: <FolderOpen size={16} className="text-orange-400" />,
     systemInfo: <Monitor size={16} className="text-blue-400" />,
-    appleScriptInfo: <Apple size={16} className="text-gray-400" />,
+    appleScriptInfo: <Apple size={16} className="text-text-muted" />,
   };
 
   // Dynamic prompt info for display (from backend templates)
@@ -359,7 +359,7 @@ export function SystemPromptSettings() {
           className={clsx(
             "flex-1 px-4 py-2 text-sm font-medium rounded-md transition-all",
             activeTab === 'default'
-              ? "bg-primary text-white shadow-sm"
+              ? "bg-primary text-primary-foreground shadow-sm"
               : "text-text-sec hover:text-text-main hover:bg-surface-light"
           )}
         >
@@ -370,7 +370,7 @@ export function SystemPromptSettings() {
           className={clsx(
             "flex-1 px-4 py-2 text-sm font-medium rounded-md transition-all",
             activeTab === 'custom'
-              ? "bg-primary text-white shadow-sm"
+              ? "bg-primary text-primary-foreground shadow-sm"
               : "text-text-sec hover:text-text-main hover:bg-surface-light"
           )}
         >
@@ -438,7 +438,7 @@ export function SystemPromptSettings() {
               </p>
               <button
                 onClick={openAddModal}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary hover:bg-blue-600 text-white rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary hover:opacity-90 text-primary-foreground rounded-lg transition-colors"
               >
                 <Plus size={16} /> Add Prompt
               </button>
@@ -573,7 +573,7 @@ export function SystemPromptSettings() {
               </button>
               <button
                 onClick={handleSavePrompt}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm bg-primary hover:bg-blue-600 text-white rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2 text-sm bg-primary hover:opacity-90 text-primary-foreground rounded-lg transition-colors"
               >
                 <Save size={16} />
                 Save

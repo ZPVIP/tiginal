@@ -98,17 +98,17 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
                             <div key={msg.id} className="mx-auto max-w-3xl px-4 py-2 flex gap-4">
                                 <div className="w-8 shrink-0" /> {/* Spacer for Avatar alignment */}
                                 <div className="flex-1 min-w-0">
-                                    <div className="rounded-lg bg-[#1e1e1e] border border-white/10 overflow-hidden">
+                                    <div className="rounded-lg bg-surface border border-border overflow-hidden">
                                         {/* Status Header */}
-                                        <div className="flex items-center justify-between p-2 pl-3 bg-white/5 border-b border-white/5">
+                                        <div className="flex items-center justify-between p-2 pl-3 bg-surface-light/50 border-b border-border">
                                             <div className="flex items-center gap-2 text-xs text-text-muted">
                                                 <span>Tool Execution:</span>
-                                                <span className="font-mono text-text-main">{msg.approvalData.name}</span>
+                                                <span className="font-mono font-medium text-accent-tool">{msg.approvalData.name}</span>
                                             </div>
                                             <span className={`font-bold uppercase text-[10px] tracking-wider px-2 py-0.5 rounded ${
-                                                msg.approvalData.status.includes('approved') 
-                                                    ? "bg-green-500/10 text-green-400" 
-                                                    : "bg-red-500/10 text-red-400"
+                                                msg.approvalData.status.includes('approved')
+                                                    ? "bg-accent-success/15 text-accent-success"
+                                                    : "bg-accent-danger/15 text-accent-danger"
                                             }`}>
                                                 {msg.approvalData.status}
                                             </span>
@@ -116,22 +116,22 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
                                         
                                         {/* Skill Path (if available) */}
                                         {msg.approvalData.skillPath && (
-                                            <div className="flex items-center gap-2 px-3 py-2 bg-black/20 border-b border-white/5">
-                                                <button 
+                                            <div className="flex items-center gap-2 px-3 py-2 bg-background/60 border-b border-border">
+                                                <button
                                                     onClick={() => handleOpenFolder(msg.approvalData!.skillPath!)}
-                                                    className="p-1 hover:bg-white/10 rounded-md transition-colors text-blue-400"
+                                                    className="p-1 hover:bg-surface-hover rounded-md transition-colors text-accent-info"
                                                     title="Open in Folder"
                                                 >
                                                     <Folder size={14} />
                                                 </button>
-                                                <div className="font-mono text-[10px] text-gray-400 break-all">
+                                                <div className="font-mono text-[10px] text-text-sec break-all">
                                                     {msg.approvalData.skillPath}
                                                 </div>
                                             </div>
                                         )}
 
                                         {/* Command / Input Details */}
-                                        <div className="p-3 font-mono text-xs text-text-sec whitespace-pre-wrap overflow-x-auto bg-black/20">
+                                        <div className="p-3 font-mono text-xs text-text-main whitespace-pre-wrap overflow-x-auto bg-background/60">
                                             {msg.approvalData.command}
                                         </div>
                                     </div>
@@ -160,9 +160,9 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
             {isStreaming && (
                 <div className="max-w-3xl mx-auto px-4 py-2">
                    <div className="flex gap-1">
-                       <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                       <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                       <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
+                       <div className="w-2 h-2 bg-text-muted rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                       <div className="w-2 h-2 bg-text-muted rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                       <div className="w-2 h-2 bg-text-muted rounded-full animate-bounce"></div>
                    </div>
                 </div>
             )}

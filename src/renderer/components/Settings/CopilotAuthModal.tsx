@@ -99,7 +99,7 @@ export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModa
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-semibold">GitHub Copilot Login</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+            <button onClick={onClose} className="text-text-muted hover:text-text-main transition-colors">
               <X size={20} />
             </button>
           </div>
@@ -107,19 +107,19 @@ export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModa
           {step === 'init' && !error && (
             <div className="flex flex-col items-center justify-center py-12 space-y-4">
                <RotateCw className="animate-spin text-primary" size={32} />
-               <p className="text-gray-400">Connecting to GitHub...</p>
+               <p className="text-text-muted">Connecting to GitHub...</p>
             </div>
           )}
 
           {step === 'code' && (
             <div className="space-y-6">
               <div className="bg-surface-light p-4 rounded-lg border border-border text-center">
-                 <p className="text-sm text-gray-400 mb-2">Device Code</p>
+                 <p className="text-sm text-text-muted mb-2">Device Code</p>
                  <div className="flex items-center justify-center gap-3">
                     <code className="text-2xl font-mono text-primary font-bold tracking-wider">{userCode}</code>
                     <button 
                        onClick={handleCopyCode}
-                       className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors"
+                       className="p-2 hover:bg-surface-hover rounded-lg text-text-muted hover:text-text-main transition-colors"
                        title="Copy Code"
                     >
                         <Copy size={18} />
@@ -128,7 +128,7 @@ export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModa
               </div>
 
               <div className="space-y-4">
-                  <ol className="list-decimal list-inside space-y-3 text-sm text-gray-300">
+                  <ol className="list-decimal list-inside space-y-3 text-sm text-text-sec">
                       <li>Copy the code above</li>
                       <li>
                           Click the link below to open GitHub
@@ -147,7 +147,7 @@ export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModa
               </div>
               
               <div className="pt-4 border-t border-border flex justify-center">
-                   <div className="flex items-center gap-2 text-xs text-gray-500">
+                   <div className="flex items-center gap-2 text-xs text-text-muted">
                        <RotateCw size={12} className="animate-spin" />
                        Waiting for authorization...
                    </div>
@@ -160,8 +160,8 @@ export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModa
                  <div className="w-16 h-16 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mb-2">
                      <CheckCircle2 size={32} />
                  </div>
-                 <h4 className="text-lg font-medium text-white">Successfully Logged In!</h4>
-                 <p className="text-sm text-gray-400">You can now use GitHub Copilot.</p>
+                 <h4 className="text-lg font-medium text-text-main">Successfully Logged In!</h4>
+                 <p className="text-sm text-text-muted">You can now use GitHub Copilot.</p>
              </div>
           )}
 
@@ -170,11 +170,11 @@ export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModa
                  <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-2">
                      <X size={32} />
                  </div>
-                 <h4 className="text-lg font-medium text-white">Login Failed</h4>
+                 <h4 className="text-lg font-medium text-text-main">Login Failed</h4>
                  <p className="text-sm text-red-400">{error}</p>
                  <button 
                     onClick={startAuth}
-                    className="mt-4 px-4 py-2 bg-surface-light hover:bg-white/5 border border-border rounded-lg text-sm transition-colors"
+                    className="mt-4 px-4 py-2 bg-surface-light hover:bg-surface-hover border border-border rounded-lg text-sm transition-colors"
                  >
                     Try Again
                  </button>

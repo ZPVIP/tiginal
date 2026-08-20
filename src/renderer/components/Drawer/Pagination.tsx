@@ -37,7 +37,7 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
       <button
         onClick={handlePrev}
         disabled={currentPage === 0}
-        className="p-0.5 rounded hover:bg-bg-secondary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        className="p-0.5 rounded hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
       >
         <ChevronLeft size={14} />
       </button>
@@ -45,7 +45,7 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
       <button
         onClick={handleNext}
         disabled={currentPage >= totalPages - 1}
-        className="p-0.5 rounded hover:bg-bg-secondary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        className="p-0.5 rounded hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
       >
         <ChevronRight size={14} />
       </button>
@@ -55,7 +55,7 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
         onChange={(e) => setInputValue(e.target.value)}
         onKeyDown={handleInputSubmit}
         placeholder="#"
-        className="w-6 h-5 text-center text-xs bg-bg-secondary border border-border-subtle rounded focus:outline-none focus:border-accent-primary"
+        className="w-6 h-5 text-center text-xs bg-surface border border-border-subtle rounded focus:outline-none focus:border-primary"
       />
     </div>
   );

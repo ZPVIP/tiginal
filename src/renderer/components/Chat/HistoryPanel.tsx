@@ -115,7 +115,7 @@ export function HistoryPanel({ isOpen, onClose, onSelectConversation }: HistoryP
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border">
         <h2 className="text-lg font-semibold text-text-main">Chat History</h2>
-        <button onClick={onClose} className="p-2 text-text-muted hover:text-text-main hover:bg-white/10 rounded-lg">
+        <button onClick={onClose} className="p-2 text-text-muted hover:text-text-main hover:bg-surface-hover rounded-lg">
           <X size={20} />
         </button>
       </div>
@@ -126,7 +126,7 @@ export function HistoryPanel({ isOpen, onClose, onSelectConversation }: HistoryP
           <button 
             onClick={() => setPage(p => Math.max(0, p - 1))}
             disabled={page === 0}
-            className="p-1 text-gray-400 hover:text-white disabled:opacity-30"
+            className="p-1 text-text-muted hover:text-text-main disabled:opacity-30"
           >
             <ChevronLeft size={16} />
           </button>
@@ -136,7 +136,7 @@ export function HistoryPanel({ isOpen, onClose, onSelectConversation }: HistoryP
           <button 
             onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
             disabled={page >= totalPages - 1}
-            className="p-1 text-gray-400 hover:text-white disabled:opacity-30"
+            className="p-1 text-text-muted hover:text-text-main disabled:opacity-30"
           >
             <ChevronRight size={16} />
           </button>
@@ -146,16 +146,16 @@ export function HistoryPanel({ isOpen, onClose, onSelectConversation }: HistoryP
       {/* List */}
       <div className="flex-1 overflow-y-auto p-2">
         {isLoading ? (
-          <div className="text-center text-gray-500 py-8">Loading...</div>
+          <div className="text-center text-text-muted py-8">Loading...</div>
         ) : conversations.length === 0 ? (
-          <div className="text-center text-gray-500 py-8">No conversations yet</div>
+          <div className="text-center text-text-muted py-8">No conversations yet</div>
         ) : (
           <div className="space-y-1">
             {pagedConversations.map(conv => (
               <div
                 key={conv.id}
                 onClick={() => onSelectConversation(conv.id)}
-                className="flex items-start gap-3 p-3 rounded-lg hover:bg-white/5 cursor-pointer group"
+                className="flex items-start gap-3 p-3 rounded-lg hover:bg-surface-hover cursor-pointer group"
               >
                 <MessageSquare size={16} className="text-text-muted shrink-0 mt-1" />
                 <div className="flex-1 min-w-0">
@@ -176,7 +176,7 @@ export function HistoryPanel({ isOpen, onClose, onSelectConversation }: HistoryP
                 </div>
                 <button
                   onClick={(e) => handleDelete(conv.id, e)}
-                  className="p-1.5 text-text-muted hover:text-red-400 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="p-1.5 text-text-muted hover:text-red-400 hover:bg-surface-hover rounded opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <Trash2 size={14} />
                 </button>

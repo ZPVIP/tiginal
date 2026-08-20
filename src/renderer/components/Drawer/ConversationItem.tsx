@@ -165,20 +165,20 @@ export function ConversationItem({
               setShowRenameDialog(true);
               setShowMenu(false);
             }}
-            className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-primary-foreground flex items-center gap-2"
           >
             <Edit2 size={12} /> Rename
           </button>
           <button
             onClick={handleTogglePinned}
-            className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-primary-foreground flex items-center gap-2"
           >
             <Pin size={12} /> {conversation.isPinned ? 'Unpin' : 'Pin'}
           </button>
           {showFavoriteOption && (
             <button
               onClick={handleToggleFavorite}
-              className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
+              className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-primary-foreground flex items-center gap-2"
             >
               <Star size={12} /> {conversation.isFavorite ? 'Unfavorite' : 'Favorite'}
             </button>
@@ -188,7 +188,7 @@ export function ConversationItem({
               setShowMoveDialog(true);
               setShowMenu(false);
             }}
-            className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-text-sec hover:bg-primary hover:text-primary-foreground flex items-center gap-2"
           >
             <ArrowRightCircle size={12} /> Move to...
           </button>
@@ -217,7 +217,7 @@ export function ConversationItem({
           <div className="h-px bg-border my-1" />
           <button
             onClick={handleDelete}
-            className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-500 hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-500 hover:text-text-main flex items-center gap-2"
           >
             <Trash2 size={12} /> Delete
           </button>

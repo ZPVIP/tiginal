@@ -420,7 +420,7 @@ export function TerminalSettings() {
             className={clsx(
               "flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all",
               activeTab === tab.id
-                ? "bg-primary text-white shadow-sm"
+                ? "bg-primary text-primary-foreground shadow-sm"
                 : "text-text-sec hover:text-text-main hover:bg-surface-light"
             )}
           >
@@ -730,7 +730,7 @@ export function TerminalSettings() {
                 className="flex-1 bg-surface text-text-main text-sm font-mono rounded-lg py-1.5 px-3 border border-border focus:border-primary outline-none"
                 placeholder="git commit -am(.*)"
               />
-              <button onClick={handleAddCmdBlacklist} className="px-3 py-1.5 bg-primary text-white text-sm rounded-lg hover:opacity-90">
+              <button onClick={handleAddCmdBlacklist} className="px-3 py-1.5 bg-primary text-primary-foreground text-sm rounded-lg hover:opacity-90">
                 <Plus size={14} />
               </button>
             </div>
@@ -848,7 +848,7 @@ export function TerminalSettings() {
                 className="flex-1 bg-surface text-text-main text-sm font-mono rounded-lg py-1.5 px-3 border border-border focus:border-primary outline-none"
                 placeholder="/home/user/\.ssh"
               />
-              <button onClick={handleAddDirBlacklist} className="px-3 py-1.5 bg-primary text-white text-sm rounded-lg hover:opacity-90">
+              <button onClick={handleAddDirBlacklist} className="px-3 py-1.5 bg-primary text-primary-foreground text-sm rounded-lg hover:opacity-90">
                 <Plus size={14} />
               </button>
             </div>
@@ -996,7 +996,7 @@ export function TerminalSettings() {
                 className="flex-1 bg-surface text-text-main text-sm font-mono rounded-lg py-1.5 px-3 border border-border focus:border-primary outline-none"
                 placeholder="ls"
               />
-              <button onClick={handleAddHistoryBlacklist} className="px-3 py-1.5 bg-primary text-white text-sm rounded-lg hover:opacity-90">
+              <button onClick={handleAddHistoryBlacklist} className="px-3 py-1.5 bg-primary text-primary-foreground text-sm rounded-lg hover:opacity-90">
                 <Plus size={14} />
               </button>
             </div>

@@ -546,7 +546,7 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
             "p-2 rounded-lg transition-colors flex items-center justify-center gap-2",
             !value
                ? "bg-surface/50 text-text-muted cursor-not-allowed"
-               : "bg-primary text-white hover:opacity-90"
+               : "bg-primary text-primary-foreground hover:opacity-90"
         )}
         title="Send and Execute"
       >

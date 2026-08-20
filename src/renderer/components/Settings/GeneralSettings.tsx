@@ -151,7 +151,7 @@ export function GeneralSettings() {
           ) : !showMasterKeyInput ? (
             <button
               onClick={() => setShowMasterKeyInput(true)}
-              className="h-9 px-3 bg-primary text-white text-sm rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 disabled:opacity-50"
+              className="h-9 px-3 bg-primary text-primary-foreground text-sm rounded-lg hover:opacity-90 transition-colors flex items-center gap-2 disabled:opacity-50"
               title={isSetupState ? 'Set master password' : 'Unlock master key'}
               disabled={isLoadingCrypto}
             >
@@ -166,7 +166,7 @@ export function GeneralSettings() {
                   else await handleUnlock();
                 }}
                 disabled={isLoadingCrypto}
-                className="h-9 w-10 bg-primary text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center disabled:opacity-50"
+                className="h-9 w-10 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-colors flex items-center justify-center disabled:opacity-50"
                 title={isSetupState ? 'Set master password' : 'Unlock'}
               >
                 {isSetupState ? <KeyRound size={16} /> : <Unlock size={16} />}

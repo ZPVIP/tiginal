@@ -57,6 +57,27 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     }
   };
 
+/** WCAG relative luminance, for deciding what to put on top of a colour. */
+function relativeLuminance(hex: string): number | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16) / 255);
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/**
+ * Text colour for filled accent buttons. White is the conventional look and is
+ * kept whenever it clears AA; only pale accents (Monokai's green at 1.6:1,
+ * Tiginal's blue at 2.1:1) fall back to near-black.
+ */
+function foregroundFor(accent: string): string {
+  const lum = relativeLuminance(accent);
+  if (lum === null) return '#ffffff';
+  const whiteContrast = 1.05 / (lum + 0.05);
+  return whiteContrast >= 4.5 ? '#ffffff' : '#0d0d0d';
+}
+
   const applyTheme = (theme: Theme) => {
     setCurrentThemeState(theme);
     
@@ -76,6 +97,26 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     root.style.setProperty('--tab-active', theme.colors.tabActive);
     root.style.setProperty('--tab-hover', theme.colors.tabHover);
     root.style.setProperty('--split-border-active', theme.colors.splitBorderActive);
+
+    // The terminal palette is already tuned per theme, so reuse it for accents
+    // that need to sit on this theme's background (tool names, diagnostics).
+    const ansi: Array<[string, keyof typeof theme.terminal]> = [
+      ['--ansi-red', 'red'],
+      ['--ansi-green', 'green'],
+      ['--ansi-yellow', 'yellow'],
+      ['--ansi-blue', 'blue'],
+      ['--ansi-magenta', 'magenta'],
+      ['--ansi-cyan', 'cyan'],
+    ];
+    for (const [cssVar, key] of ansi) {
+      const value = theme.terminal[key];
+      if (typeof value === 'string') root.style.setProperty(cssVar, value);
+    }
+
+    // Semantic accents are picked per light/dark rather than per theme, because
+    // what matters is contrast against a light or a dark surface.
+    root.setAttribute('data-theme-type', theme.type);
+    root.style.setProperty('--primary-foreground', foregroundFor(theme.colors.primary));
     
     // We can also broadcast an event if needed outside of React context
     window.dispatchEvent(new CustomEvent('theme-changed', { detail: theme }));

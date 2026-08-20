@@ -1187,7 +1187,7 @@ button:focus, input:focus, textarea:focus, select:focus {
 
 .input-with-icon .toggle-password:hover {
   color: var(--text-primary);
-  background-color: var(--surface-hover);
+  background-color: var(--tab-hover);
 }
 
 /* Flex row utility */

@@ -340,7 +340,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                         "p-2 rounded-lg transition-colors flex items-center gap-2",
                         (!text.trim() && images.length === 0) || disabled
                         ? "bg-surface/50 text-text-muted cursor-not-allowed"
-                        : "bg-primary text-white hover:opacity-90"
+                        : "bg-primary text-primary-foreground hover:opacity-90"
                     )}
                 >
                     <SendHorizontal size={18} />
