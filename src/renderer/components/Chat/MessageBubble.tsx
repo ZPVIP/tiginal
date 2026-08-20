@@ -3,9 +3,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { clsx } from 'clsx';
-import { User, Copy, Check, ChevronDown, ChevronRight, BrainCircuit, Maximize2, Minimize2, Pencil, FileText, Monitor, Smartphone, Activity } from 'lucide-react';
+import { User, Copy, Check, ChevronDown, ChevronRight, Brain, Maximize2, Minimize2, Pencil, FileText, Monitor, Smartphone, Activity } from 'lucide-react';
 import { TigiCat } from '../icons/TigiCat';
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import { ConsoleOutput } from './ConsoleOutput';
 
@@ -44,12 +44,40 @@ function formatTokenTooltip(props: { promptTokens?: number; completionTokens?: n
 }
 
 
+/** Rendered lines of reasoning shown before the box stops growing and scrolls. */
+const REASONING_COLLAPSED_LINES = 7;
+
 function ReasoningBlock({ content }: { content: string }) {
     const [isExpanded, setIsExpanded] = useState(false);
+    const [collapsedMaxHeight, setCollapsedMaxHeight] = useState<number | null>(null);
+    const [canExpand, setCanExpand] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [userScrolled, setUserScrolled] = useState(false);
 
-    // Auto-scroll to bottom if not expanded and not paused by user scroll
+    // Measure the cap rather than hard-coding it, so it follows the type scale.
+    useLayoutEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const styles = getComputedStyle(el);
+        const lineHeight = parseFloat(styles.lineHeight);
+        if (!Number.isFinite(lineHeight)) return;
+        // max-height covers the content box unless border-box is in effect
+        const padding = styles.boxSizing === 'border-box'
+            ? parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom)
+            : 0;
+        setCollapsedMaxHeight(Math.round(lineHeight * REASONING_COLLAPSED_LINES + padding));
+    }, []);
+
+    // Reasoning streams in, so re-check on every change whether it still fits.
+    // Only meaningful while collapsed -- expanded, nothing ever overflows, so
+    // the previous answer is kept and the Collapse button stays put.
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el || collapsedMaxHeight === null || isExpanded) return;
+        setCanExpand(el.scrollHeight > el.clientHeight + 1);
+    }, [content, collapsedMaxHeight, isExpanded]);
+
+    // Follow the tail while collapsed, unless the user scrolled away from it
     useEffect(() => {
         if (!isExpanded && !userScrolled && scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -60,30 +88,26 @@ function ReasoningBlock({ content }: { content: string }) {
         if (scrollRef.current) {
             const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
             const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 10;
-            if (!isAtBottom) {
-                setUserScrolled(true);
-            } else {
-                setUserScrolled(false);
-            }
+            setUserScrolled(!isAtBottom);
         }
     };
 
     return (
         <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-xs font-medium text-purple-400 mb-1">
-                <BrainCircuit size={12} />
+                <Brain size={13} />
                 <span>Thinking Process</span>
             </div>
-            
-            <div 
+
+            <div
                 ref={scrollRef}
                 onScroll={handleScroll}
-                className={clsx(
-                    "bg-surface/30 p-3 rounded-lg text-gray-400 text-xs custom-scrollbar transition-all duration-300",
-                    isExpanded ? "h-auto max-h-none" : "h-32 overflow-y-auto"
-                )}
+                // No fixed height: the box grows with the text and only caps once
+                // it passes REASONING_COLLAPSED_LINES.
+                style={{ maxHeight: isExpanded || collapsedMaxHeight === null ? undefined : collapsedMaxHeight }}
+                className="bg-surface/30 p-3 rounded-lg text-text-muted text-xs custom-scrollbar overflow-y-auto"
             >
-                <ReactMarkdown 
+                <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkBreaks]}
                     components={{
                         code({node, inline, className, children, ...props}: any) {
@@ -108,22 +132,24 @@ function ReasoningBlock({ content }: { content: string }) {
                 </ReactMarkdown>
             </div>
 
-            <button 
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="self-start flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wider text-purple-400/70 hover:text-purple-400 transition-colors mt-1 px-1 py-0.5 rounded hover:bg-purple-500/10"
-            >
-                {isExpanded ? (
-                    <>
-                        <Minimize2 size={10} />
-                        Collapse
-                    </>
-                ) : (
-                    <>
-                        <Maximize2 size={10} />
-                        Expand
-                    </>
-                )}
-            </button>
+            {canExpand && (
+                <button
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="self-start flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wider text-purple-400/70 hover:text-purple-400 transition-colors mt-1 px-1 py-0.5 rounded hover:bg-purple-500/10"
+                >
+                    {isExpanded ? (
+                        <>
+                            <Minimize2 size={10} />
+                            Collapse
+                        </>
+                    ) : (
+                        <>
+                            <Maximize2 size={10} />
+                            Expand
+                        </>
+                    )}
+                </button>
+            )}
         </div>
     );
 }
