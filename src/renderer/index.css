@@ -27,6 +27,11 @@
   --color-accent-danger: var(--accent-danger);
   --color-accent-info: var(--accent-info);
 
+  /* Inline code */
+  --color-code-fg: var(--code-fg);
+  --color-code-bg: var(--code-bg);
+  --color-code-border: var(--code-border);
+
   /* Terminal palette, for places that want the theme's own hues */
   --color-ansi-red: var(--ansi-red);
   --color-ansi-green: var(--ansi-green);
@@ -47,6 +52,18 @@
   --accent-danger: #f87171;
   --accent-info: #60a5fa;
 }
+
+/*
+ * Inline code is painted with the theme's own blue instead of one fixed pink.
+ * ThemeContext computes the exact values (including the faint same-hue wash)
+ * from the active palette; these are only the pre-paint fallbacks.
+ */
+:root {
+  --code-fg: #89b4fa;
+  --code-bg: rgba(137, 180, 250, 0.035);
+  --code-border: rgba(137, 180, 250, 0.16);
+}
+
 
 :root[data-theme-type='light'] {
   /* One shade darker than looks necessary on white: Tokyo Night Light's surface

@@ -1306,13 +1306,17 @@ button:focus, input:focus, textarea:focus, select:focus {
 .ai-message-content code {
   font-family: "SF Mono", monospace;
   font-size: 12px;
-  background-color: var(--bg-elevated);
+  color: var(--code-fg);
+  background-color: var(--code-bg);
+  border: 1px solid var(--code-border);
   padding: 2px 4px;
   border-radius: 3px;
 }
 
 .ai-message-content pre code {
+  color: inherit;
   background: none;
+  border: none;
   padding: 0;
 }
 

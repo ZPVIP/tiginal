@@ -132,7 +132,7 @@ function ReasoningBlock({ content }: { content: string }) {
                                 </pre>
                             </div>
                             ) : (
-                            <code className={clsx(className, "bg-elevated px-1 py-0.5 rounded text-pink-300")} {...props}>
+                            <code className={clsx(className, "bg-code-bg text-code-fg border border-code-border px-1.5 py-0.5 rounded font-medium")} {...props}>
                                 {children}
                             </code>
                             )
@@ -279,7 +279,7 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
                                </pre>
                            </div>
                          ) : (
-                           <code className={clsx(className, "bg-elevated px-1 py-0.5 rounded text-pink-300")} {...props}>
+                           <code className={clsx(className, "bg-code-bg text-code-fg border border-code-border px-1.5 py-0.5 rounded font-medium")} {...props}>
                              {children}
                            </code>
                          )

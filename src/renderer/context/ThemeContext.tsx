@@ -66,6 +66,22 @@ function relativeLuminance(hex: string): number | null {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
+/** WCAG contrast ratio between two opaque colours. */
+function contrast(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  if (la === null || lb === null) return 21;
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/** `#rrggbb` plus an alpha, as an rgba() string. */
+function withAlpha(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 /**
  * Text colour for filled accent buttons. White is the conventional look and is
  * kept whenever it clears AA; only pale accents (Monokai's green at 1.6:1,
@@ -107,6 +123,9 @@ function foregroundFor(accent: string): string {
       ['--ansi-blue', 'blue'],
       ['--ansi-magenta', 'magenta'],
       ['--ansi-cyan', 'cyan'],
+      // Dark themes need the bright variant for inline code: vs-code-dark's
+      // plain blue only reaches 3.6:1 on its own surface.
+      ['--ansi-bright-blue', 'brightBlue'],
     ];
     for (const [cssVar, key] of ansi) {
       const value = theme.terminal[key];
@@ -117,6 +136,25 @@ function foregroundFor(accent: string): string {
     // what matters is contrast against a light or a dark surface.
     root.setAttribute('data-theme-type', theme.type);
     root.style.setProperty('--primary-foreground', foregroundFor(theme.colors.primary));
+
+    // Inline code prefers the theme's own accent -- the colour it already uses
+    // for interactive text, and generally the tastefully desaturated one. Where
+    // that accent is too dim to read on the surface (VS Code's #007acc lands
+    // near 3.8:1) it falls back to the palette's blue.
+    const paletteBlue = String(
+      (theme.type === 'light' ? theme.terminal.blue : theme.terminal.brightBlue) || ''
+    );
+    const accent = theme.colors.primary;
+    const codeHex = contrast(accent, theme.colors.surface) >= 4.6 || !paletteBlue
+      ? accent
+      : paletteBlue;
+
+    root.style.setProperty('--code-fg', codeHex);
+    // Barely-there wash: the tint pulls the background toward the text, so any
+    // more of it costs contrast. 3.5% is the most every theme can carry and
+    // still clear 4.5:1.
+    root.style.setProperty('--code-bg', withAlpha(codeHex, 0.035));
+    root.style.setProperty('--code-border', withAlpha(codeHex, 0.16));
     
     // We can also broadcast an event if needed outside of React context
     window.dispatchEvent(new CustomEvent('theme-changed', { detail: theme }));
