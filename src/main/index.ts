@@ -27,6 +27,7 @@ import { setupSkillHandlers } from './skill-handlers';
 import { setupToolHandlers } from './tool-handlers';
 import { setupStatisticsHandlers } from './statistics-handlers';
 import { setupProfileHandlers } from './profile-handlers';
+import { setupMcpHandlers } from './mcp-handlers';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
 import * as crypto from 'crypto';
@@ -255,6 +256,7 @@ app.whenReady().then(() => {
   setupToolHandlers();
   setupStatisticsHandlers();
   setupProfileHandlers();
+  setupMcpHandlers();
   
   // Initialize default skills directory
   getDatabase().getDb().prepare(
@@ -291,4 +293,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// Stdio MCP servers are child processes; stop them so they don't outlive the app
+app.on('will-quit', () => {
+  const { getMcpService } = require('./services/mcp/McpService');
+  void getMcpService().disposeAll();
 });

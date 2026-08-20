@@ -7,10 +7,12 @@ import {
   Wand2,
   MessageSquareText,
   Wrench,
+  Server,
   Square
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { ToolsPopover } from './ToolsPopover';
+import { McpPopover } from './McpPopover';
 import { SystemPromptsPopover } from './SystemPromptsPopover';
 import { ModelSelectorPopover } from './ModelSelectorPopover';
 import { Bot, ChevronUp } from 'lucide-react';
@@ -47,22 +49,26 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [useSearch, setUseSearch] = useState(false);
   const [useSkills, setUseSkills] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [showMcp, setShowMcp] = useState(false);
   const [showSystemPrompts, setShowSystemPrompts] = useState(false);
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [globalToolsEnabled, setGlobalToolsEnabled] = useState(false);
+  const [globalMcpEnabled, setGlobalMcpEnabled] = useState(false);
   const [globalSystemPromptsEnabled, setGlobalSystemPromptsEnabled] = useState(true);
   const [images, setImages] = useState<string[]>([]);
 
   useEffect(() => {
     checkGlobalSettings();
-  }, [showTools, showSystemPrompts, showModelSelector]); // Re-check when popovers toggle (closed)
+  }, [showTools, showMcp, showSystemPrompts, showModelSelector]); // Re-check when popovers toggle (closed)
 
   useEffect(() => {
     const handleSettingsUpdate = () => checkGlobalSettings();
     window.addEventListener('tools-updated', handleSettingsUpdate);
+    window.addEventListener('mcp-updated', handleSettingsUpdate);
     window.addEventListener('system-prompts-updated', handleSettingsUpdate);
     return () => {
       window.removeEventListener('tools-updated', handleSettingsUpdate);
+      window.removeEventListener('mcp-updated', handleSettingsUpdate);
       window.removeEventListener('system-prompts-updated', handleSettingsUpdate);
     };
   }, []);
@@ -70,11 +76,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const checkGlobalSettings = async () => {
     try {
       if ((window as any).electron?.invoke) {
-        const [toolsEnabled, promptsEnabled] = await Promise.all([
+        const [toolsEnabled, mcpEnabled, promptsEnabled] = await Promise.all([
           (window as any).electron.invoke('tools:get-global-enabled'),
+          (window as any).electron.invoke('mcp:get-global-enabled'),
           (window as any).electron.invoke('system-prompts:get-global-enabled')
         ]);
         setGlobalToolsEnabled(toolsEnabled);
+        setGlobalMcpEnabled(mcpEnabled);
         setGlobalSystemPromptsEnabled(promptsEnabled);
       }
     } catch (e) {
@@ -151,6 +159,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 <div 
                   className="fixed inset-0 z-40 bg-transparent" 
                   onClick={() => setShowTools(false)}
+                />
+            </>
+        )}
+
+        {/* MCP Servers Popover */}
+        {showMcp && (
+            <>
+                <McpPopover onClose={() => setShowMcp(false)} />
+                <div 
+                  className="fixed inset-0 z-40 bg-transparent" 
+                  onClick={() => setShowMcp(false)}
                 />
             </>
         )}
@@ -234,6 +253,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                    title="Tools"
                 >
                     <Wrench size={18} />
+                </button>
+                <button 
+                   onClick={() => setShowMcp(!showMcp)}
+                   className={clsx(
+                       "p-2 rounded-lg transition-colors",
+                       (showMcp || globalMcpEnabled) ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                   )}
+                   title="MCP Servers"
+                >
+                    <Server size={18} />
                 </button>
                 <button 
                    onClick={() => setUseSkills(!useSkills)}

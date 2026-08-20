@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Tabs } from '../ui/Tabs';
-import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench, FileText, BarChart3, UserCircle } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench, FileText, BarChart3, UserCircle, Server } from 'lucide-react';
 import { GeneralSettings } from './GeneralSettings';
 import { AIProviders } from './AIProviders';
 import { ThemeSettings } from './ThemeSettings';
 import { ShortcutSettings } from './ShortcutSettings';
 import { TerminalSettings } from './TerminalSettings';
 import { SkillsSettings } from './SkillsSettings';
+import { McpSettings } from './McpSettings';
 import { ToolsSettings } from './ToolsSettings';
 import { SystemPromptSettings } from './SystemPromptSettings';
 import { StatisticsSettings } from './StatisticsSettings';
@@ -20,6 +21,7 @@ export function Settings() {
     { id: 'providers', label: 'AI Providers', icon: <Database size={16} /> },
     { id: 'system-prompt', label: 'System Prompts', icon: <FileText size={16} /> },
     { id: 'tools', label: 'Tools', icon: <Wrench size={16} /> },
+    { id: 'mcp', label: 'MCP Servers', icon: <Server size={16} /> },
     { id: 'skills', label: 'Skills', icon: <Wand2 size={16} /> },
     { id: 'profiles', label: 'Chat Profiles', icon: <UserCircle size={16} /> },
     { id: 'terminal', label: 'Terminal', icon: <Terminal size={16} /> },
@@ -52,6 +54,7 @@ export function Settings() {
           {activeTab === 'providers' && <AIProviders />}
           {activeTab === 'system-prompt' && <SystemPromptSettings />}
           {activeTab === 'tools' && <ToolsSettings />}
+          {activeTab === 'mcp' && <McpSettings />}
           {activeTab === 'skills' && <SkillsSettings />}
           {activeTab === 'profiles' && <ChatProfilesSettings />}
           {activeTab === 'terminal' && <TerminalSettings />}

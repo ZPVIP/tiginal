@@ -16,6 +16,7 @@ import { getCopilotToken } from './services/ai/CopilotAuthService';
 import { printRequestEndSeparator, printRequestStartSeparator, printRespondEndSeparator, printRespondStartSeparator, printVisualSeparator } from './utils/DebugUtils';
 import { fetchWithLocalhostFallback } from './utils/NetworkUtils';
 import { buildDynamicPromptsForAI } from './dynamic-prompts';
+import { getMcpService } from './services/mcp/McpService';
 
 interface LogAccumulator {
     id?: string;
@@ -958,6 +959,16 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
         if (!currentTools.find(t => t.name === 'AttemptCompletion')) currentTools.push(ATTEMPT_COMPLETION_DEF);
     } // If disabled, currentTools remains [] which means no tools header sent to API
 
+    // MCP servers have their own global switch, so they contribute tools even
+    // when the built-in tool box is off.
+    try {
+        for (const mcpTool of await getMcpService().getEnabledTools()) {
+            if (!currentTools.find(t => t.name === mcpTool.name)) currentTools.push(mcpTool);
+        }
+    } catch (e) {
+        console.error('[MCP] Failed to load tools', e);
+    }
+
 
     let finalResponse = '';
     let finalReasoning = '';
@@ -1401,6 +1412,11 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
     
     // ... Copy of logic ...
       try {
+      // MCP tools are namespaced (mcp__<server>__<tool>) and routed to their server
+      if (getMcpService().isMcpTool(toolName)) {
+        return await getMcpService().callTool(toolName, toolInput);
+      }
+
       if (toolName === 'Bash') {
         const { exec } = require('child_process');
         const workspacePath = getDatabase().getSetting('workspacePath') || 

@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 /**
  * Database service for Tiginal
@@ -129,6 +129,10 @@ export class DatabaseService {
 
     if (currentVersion < 16) {
       this.migrateV16();
+    }
+
+    if (currentVersion < 17) {
+      this.migrateV17();
     }
 
     // Update schema version
@@ -579,6 +583,38 @@ export class DatabaseService {
     } catch (e) {
       // Column might already exist
     }
+  }
+
+  /**
+   * Migration v17: Create mcp_servers table
+   *
+   * A server is stored as a name plus a raw JSON config so the UI can edit and
+   * import the same shape other MCP clients use. `tools_cache` holds the last
+   * successful tools/list result so the UI can render without reconnecting.
+   */
+  private migrateV17(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS mcp_servers (
+        id TEXT PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL,
+        type TEXT NOT NULL DEFAULT 'stdio',
+        description TEXT,
+        config TEXT NOT NULL DEFAULT '{}',
+        is_builtin INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        disabled_tools TEXT NOT NULL DEFAULT '[]',
+        tools_cache TEXT,
+        last_error TEXT,
+        rank INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_mcp_servers_rank ON mcp_servers(rank);
+      CREATE INDEX IF NOT EXISTS idx_mcp_servers_enabled ON mcp_servers(enabled);
+    `);
   }
 
   /**
