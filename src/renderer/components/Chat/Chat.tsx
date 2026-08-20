@@ -307,9 +307,19 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
       let messageContent = text;
       // Note: Skills injection is now handled by backend via useSkills option
 
+      // Attachments arrive as data URLs. Persist them under the workspace and
+      // carry the paths from here on, so they survive a reload and reach the model.
+      let imagePaths: string[] = [];
+      if (images.length > 0) {
+          try {
+              imagePaths = await invoke('images:save', images) || [];
+          } catch (e) {
+              console.error('Failed to save attachments', e);
+          }
+      }
 
       // Add User Message
-      const userMsg = { id: Date.now().toString(), role: 'user', content: text, images };
+      const userMsg = { id: Date.now().toString(), role: 'user', content: text, images: imagePaths };
       
       // Add Placeholder Assistant Message
       const placeholderMsg = { id: (Date.now() + 1).toString(), role: 'assistant', content: '' };
@@ -346,7 +356,8 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
               activeStreamingId.current = conv.id;
 
               await invoke('chat:send-message', conv.id, selectedProviderId, messageContent, selectedModel, { 
-                  useSkills 
+                  useSkills,
+                  images: imagePaths
               });
               
               await invoke('chat:delete-conversation', conv.id);
@@ -387,7 +398,8 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
 
       try {
           await invoke('chat:send-message', convId, selectedProviderId, messageContent, selectedModel, { 
-              useSkills 
+              useSkills,
+              images: imagePaths
           });
       } catch (err) {
           setMessages(prev => {

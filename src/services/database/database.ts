@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 19;
 
 /**
  * Database service for Tiginal
@@ -137,6 +137,10 @@ export class DatabaseService {
 
     if (currentVersion < 18) {
       this.migrateV18();
+    }
+
+    if (currentVersion < 19) {
+      this.migrateV19();
     }
 
     // Update schema version
@@ -633,6 +637,22 @@ export class DatabaseService {
 
     try {
       this.db.exec(`ALTER TABLE messages ADD COLUMN context_tokens INTEGER DEFAULT 0`);
+    } catch (e) {
+      // Column might already exist
+    }
+  }
+
+  /**
+   * Migration v19: Remember images attached to a message
+   *
+   * Stores the paths of files written under <workspace>/pictures, not the image
+   * data, so conversation rows stay small and the originals stay browsable.
+   */
+  private migrateV19(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN images TEXT`);
     } catch (e) {
       // Column might already exist
     }

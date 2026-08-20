@@ -28,6 +28,7 @@ import { setupToolHandlers } from './tool-handlers';
 import { setupStatisticsHandlers } from './statistics-handlers';
 import { setupProfileHandlers } from './profile-handlers';
 import { setupMcpHandlers } from './mcp-handlers';
+import { registerImageScheme, setupImageHandlers } from './image-handlers';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
 import * as crypto from 'crypto';
@@ -37,6 +38,10 @@ import defaults from './defaults.json';
 
 // Set app name for macOS menu bar
 app.name = 'Tiginal';
+
+// Attached images are served over a custom scheme; it has to be declared
+// privileged before the app is ready.
+registerImageScheme();
 
 // Override userData path to ~/.config/tiginal/support on macOS/Linux
 if (process.platform !== 'win32') {
@@ -257,6 +262,7 @@ app.whenReady().then(() => {
   setupStatisticsHandlers();
   setupProfileHandlers();
   setupMcpHandlers();
+  setupImageHandlers();
   
   // Initialize default skills directory
   getDatabase().getDb().prepare(

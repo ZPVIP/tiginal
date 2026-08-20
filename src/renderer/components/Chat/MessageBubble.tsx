@@ -23,6 +23,17 @@ interface MessageProps {
   totalTokens?: number;
 }
 
+/**
+ * Attachments are stored as filesystem paths, which an <img> cannot load: the
+ * CSP forbids file: and a file:// request from the dev server origin is blocked.
+ * They are served over the tigimg: scheme instead. A data: URL (the preview
+ * shown before a message is sent) is already loadable and passes through.
+ */
+function toImageSrc(pathOrUrl: string): string {
+  if (/^(data:|blob:|tigimg:)/.test(pathOrUrl)) return pathOrUrl;
+  return `tigimg://f/?p=${encodeURIComponent(pathOrUrl)}`;
+}
+
 function formatTokenTooltip(props: { promptTokens?: number; completionTokens?: number; reasoningTokens?: number; cachedTokens?: number; totalTokens?: number }): string {
   const parts: string[] = [];
 
@@ -221,9 +232,14 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
 
            {/* Images */}
            {images && images.length > 0 && (
-               <div className="flex flex-wrap gap-2">
+               <div className={clsx("flex flex-wrap gap-2", isUser && "justify-end")}>
                    {images.map((img, i) => (
-                       <img key={i} src={img} alt="User upload" className="max-w-[200px] rounded-lg border border-border" />
+                       <img
+                           key={i}
+                           src={toImageSrc(img)}
+                           alt="Attachment"
+                           className="max-w-[200px] max-h-[200px] object-contain rounded-lg border border-border"
+                       />
                    ))}
                </div>
            )}

@@ -14,6 +14,17 @@ export interface Conversation {
   tokens?: string | null;
 }
 
+/** messages.images holds a JSON array of paths; tolerate anything else. */
+function parseImages(raw: string | null): string[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface TokenData {
   providerId?: string;
   modelId?: string;
@@ -41,6 +52,8 @@ export interface Message {
   cachedTokens?: number;
   totalTokens?: number;
   contextTokens?: number;
+  /** Absolute paths of attached images under <workspace>/pictures. */
+  images?: string[];
 }
 
 export interface CategoryData {
@@ -206,7 +219,7 @@ export class ChatService {
   /**
    * Add a message to a conversation
    */
-  addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string, tokenData?: TokenData, overrideCreatedAt?: number, reasoning?: string): Message {
+  addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string, tokenData?: TokenData, overrideCreatedAt?: number, reasoning?: string, images?: string[]): Message {
     const id = require('crypto').randomUUID();
     const now = overrideCreatedAt || Date.now();
 
@@ -225,6 +238,7 @@ export class ChatService {
       cachedTokens: tokenData?.cachedTokens || 0,
       totalTokens: tokenData?.totalTokens || 0,
       contextTokens: tokenData?.contextTokens || 0,
+      images: images && images.length ? images : undefined,
     };
 
     if (this.transientConversations.has(conversationId)) {
@@ -239,8 +253,8 @@ export class ChatService {
     const db = getDatabase().getDb();
     
     db.prepare(`
-      INSERT INTO messages (id, conversation_id, role, content, reasoning, created_at, provider_id, model_id, prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, total_tokens, context_tokens)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, conversation_id, role, content, reasoning, created_at, provider_id, model_id, prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, total_tokens, context_tokens, images)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, conversationId, role, content, reasoning || null, now,
       tokenData?.providerId || null,
       tokenData?.modelId || null,
@@ -249,7 +263,8 @@ export class ChatService {
       tokenData?.reasoningTokens || 0,
       tokenData?.cachedTokens || 0,
       tokenData?.totalTokens || 0,
-      tokenData?.contextTokens || 0
+      tokenData?.contextTokens || 0,
+      images && images.length ? JSON.stringify(images) : null
     );
 
     // Update conversation timestamp
@@ -311,7 +326,7 @@ export class ChatService {
     const rows = db.prepare(`
       SELECT id, conversation_id, role, content, reasoning, created_at,
              provider_id, model_id, prompt_tokens, completion_tokens,
-             reasoning_tokens, cached_tokens, total_tokens, context_tokens
+             reasoning_tokens, cached_tokens, total_tokens, context_tokens, images
       FROM messages
       WHERE conversation_id = ?
       ORDER BY created_at ASC
@@ -330,6 +345,7 @@ export class ChatService {
       cached_tokens: number;
       total_tokens: number;
       context_tokens: number;
+      images: string | null;
     }>;
 
     return rows.map(row => ({
@@ -347,6 +363,7 @@ export class ChatService {
       cachedTokens: row.cached_tokens || 0,
       totalTokens: row.total_tokens || 0,
       contextTokens: row.context_tokens || 0,
+      images: parseImages(row.images),
     }));
   }
 

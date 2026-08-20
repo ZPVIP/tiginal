@@ -18,6 +18,7 @@ import { fetchWithLocalhostFallback } from './utils/NetworkUtils';
 import { buildDynamicPromptsForAI } from './dynamic-prompts';
 import { getMcpService } from './services/mcp/McpService';
 import { getContextWindow, setOverride as setContextWindowOverride } from './services/context-window';
+import { toModelDataUrl, deleteImages } from './image-handlers';
 import { expandHome, normalizeForCompare, workspaceDir } from './utils/paths';
 
 interface LogAccumulator {
@@ -174,6 +175,12 @@ export function setupChatHandlers(): void {
 
   // Delete conversation
   ipcMain.handle('chat:delete-conversation', async (_event, id: string): Promise<void> => {
+    // Attachments live on disk, so removing the rows alone would orphan them.
+    try {
+      deleteImages(collectRemovableImages(id));
+    } catch (e) {
+      console.error('[Chat] Failed to clean up attachments', e);
+    }
     getChatService().deleteConversation(id);
   });
 
@@ -294,7 +301,7 @@ export function setupChatHandlers(): void {
   });
 
   // Send message to AI (Autonomous Agent Loop)
-  ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string, options: { useSystemPrompt?: boolean, useSkills?: boolean } = {}): Promise<{ response: string; error?: string }> => {
+  ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string, options: { useSystemPrompt?: boolean, useSkills?: boolean, images?: string[] } = {}): Promise<{ response: string; error?: string }> => {
     return runAgentLoop(_event, conversationId, providerId, content, specificModel, options);
   });
 
@@ -823,7 +830,7 @@ async function streamAIAPI(
   return { usage: logAccumulator.usage };
 }
 
-async function runAgentLoop(_event: any, conversationId: string, providerId: string, content: string, specificModel?: string, options: { useSystemPrompt?: boolean, useSkills?: boolean } = {}): Promise<{ response: string; error?: string }> {
+async function runAgentLoop(_event: any, conversationId: string, providerId: string, content: string, specificModel?: string, options: { useSystemPrompt?: boolean, useSkills?: boolean, images?: string[] } = {}): Promise<{ response: string; error?: string }> {
     const chatService = getChatService();
     const db = getDatabase().getDb();
     const dbService = getDatabase();
@@ -842,7 +849,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     const customHeaders = provider.custom_headers ? JSON.parse(provider.custom_headers) : {};
     
     // 2. Build Initial Messages
-    const userMsg = chatService.addMessage(conversationId, 'user', content);
+    const userMsg = chatService.addMessage(conversationId, 'user', content, undefined, undefined, undefined, options.images);
     const dbMessages = chatService.getMessages(conversationId);
 
     // Auto-generate title for new conversations (first user message)
@@ -935,9 +942,26 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     };
 
     // Current conversation context (will grow with tool calls)
+    /**
+     * Attachments travel as OpenAI-style content parts. Without this the model
+     * only ever saw the text and would answer that no image was provided.
+     */
+    const toApiMessage = (m: any) => {
+        const attachments: string[] = Array.isArray(m.images) ? m.images : [];
+        if (attachments.length === 0) return { role: m.role, content: m.content };
+
+        const parts: any[] = [];
+        if (m.content) parts.push({ type: 'text', text: m.content });
+        for (const file of attachments) {
+            const dataUrl = toModelDataUrl(file);
+            if (dataUrl) parts.push({ type: 'image_url', image_url: { url: dataUrl } });
+        }
+        return parts.length > 0 ? { role: m.role, content: parts } : { role: m.role, content: m.content };
+    };
+
     const currentMessages: any[] = [
         systemMessage,
-        ...dbMessages.map((m: any) => ({ role: m.role, content: m.content }))
+        ...dbMessages.map(toApiMessage)
     ];
 
     // 3. Prepare Tools (Initial Set)
@@ -1419,6 +1443,46 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
         console.error('Tools Model call failed', e);
         return [];
     }
+}
+
+/**
+ * Attachment paths belonging to a conversation that no other conversation
+ * references. Paths are unique per upload, so in practice this is all of them;
+ * the check only guards against a message ever being copied elsewhere.
+ */
+function collectRemovableImages(conversationId: string): string[] {
+    const chatService = getChatService();
+    const own = new Set<string>();
+    for (const message of chatService.getMessages(conversationId)) {
+        for (const file of message.images || []) own.add(file);
+    }
+    if (own.size === 0) return [];
+
+    // Compare parsed values rather than matching the JSON text: a Windows path
+    // is stored with escaped backslashes, so a LIKE on the raw column would
+    // never match and every attachment would be treated as still in use.
+    let usedElsewhere: Set<string>;
+    try {
+        const rows = getDatabase().getDb().prepare(
+            'SELECT images FROM messages WHERE conversation_id != ? AND images IS NOT NULL'
+        ).all(conversationId) as Array<{ images: string }>;
+
+        usedElsewhere = new Set<string>();
+        for (const row of rows) {
+            try {
+                for (const file of JSON.parse(row.images) || []) {
+                    usedElsewhere.add(normalizeForCompare(file));
+                }
+            } catch {
+                /* skip a malformed row */
+            }
+        }
+    } catch (e) {
+        console.error('[Chat] Could not check attachment reuse; keeping files', e);
+        return [];
+    }
+
+    return [...own].filter(file => !usedElsewhere.has(normalizeForCompare(file)));
 }
 
 // Helper: Local execution of tools (reused logic from chat:execute-tool)
