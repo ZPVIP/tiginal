@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   X,
+  Save,
+  UserCircle,
   Check,
   Database,
   FileText,
@@ -50,7 +52,7 @@ interface ToolCategory {
 
 interface Tool {
   id: string;
-  category_id: string | null;
+  categoryId: string | null;
   name: string;
   description: string | null;
   enabled: number;
@@ -66,7 +68,7 @@ interface SkillDirectory {
 interface Skill {
   id: number;
   name: string;
-  skill_directory_id: string;
+  skillDirectoryId: string;
   enabled: number;
 }
 
@@ -276,7 +278,7 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
   const toolsByCategory = useMemo(() => {
     const map = new Map<string | null, Tool[]>();
     for (const t of tools) {
-      const key = t.category_id || '__none__';
+      const key = t.categoryId || '__none__';
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
     }
@@ -286,8 +288,8 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
   const skillsByDir = useMemo(() => {
     const map = new Map<string, Skill[]>();
     for (const s of skills) {
-      if (!map.has(s.skill_directory_id)) map.set(s.skill_directory_id, []);
-      map.get(s.skill_directory_id)!.push(s);
+      if (!map.has(s.skillDirectoryId)) map.set(s.skillDirectoryId, []);
+      map.get(s.skillDirectoryId)!.push(s);
     }
     return map;
   }, [skills]);
@@ -371,48 +373,49 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-surface border border-border rounded-xl shadow-2xl w-[640px] max-h-[80vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-surface border border-border rounded-xl w-full max-w-2xl shadow-xl flex flex-col h-[min(620px,100%)] max-h-full">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
-          <h3 className="font-semibold">
-            {profile ? 'Edit Profile' : 'New Profile'}
-          </h3>
-          <button
-            onClick={onClose}
-            className="p-1 text-text-muted hover:text-text hover:bg-surface-hover rounded transition-colors"
-          >
-            <X size={16} />
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+          <div className="flex items-center gap-2">
+            <UserCircle className="text-primary" size={20} />
+            <h3 className="text-lg font-semibold text-text-main">
+              {profile ? 'Edit Profile' : 'New Profile'}
+            </h3>
+          </div>
+          <button onClick={onClose} className="text-text-muted hover:text-text-main">
+            <X size={20} />
           </button>
         </div>
 
         {/* Name input */}
-        <div className="px-5 pt-4 pb-2">
+        <div className="px-6 pt-5 pb-3 shrink-0">
+          <label className="block text-xs font-medium text-text-sec mb-1.5">Name</label>
           <input
             type="text"
             value={name}
             onChange={(e) => { setName(e.target.value); setNameError(''); }}
-            placeholder="Profile name..."
+            placeholder="e.g. Code review"
             className={clsx(
-              'w-full px-3 py-2 bg-background border rounded-md text-sm focus:outline-none focus:ring-1',
-              nameError ? 'border-red-500 focus:ring-red-500' : 'border-border focus:ring-primary'
+              'w-full bg-background border rounded-lg px-3 py-2 text-sm text-text-main outline-none transition-colors',
+              nameError ? 'border-accent-danger' : 'border-border focus:border-primary'
             )}
             autoFocus
           />
-          {nameError && <p className="text-xs text-red-400 mt-1">{nameError}</p>}
+          {nameError && <p className="text-xs text-accent-danger mt-1.5">{nameError}</p>}
         </div>
 
         {/* Tabs */}
-        <div className="flex px-5 gap-1 border-b border-border">
+        <div className="flex px-6 gap-1 border-b border-border shrink-0">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={clsx(
-                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
+                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
                 activeTab === tab.id
                   ? 'border-primary text-primary'
-                  : 'border-transparent text-text-muted hover:text-text'
+                  : 'border-transparent text-text-muted hover:text-text-main'
               )}
             >
               {tab.icon}
@@ -422,10 +425,10 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
         </div>
 
         {/* Tab content */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0" style={{ maxHeight: '400px' }}>
+        <div className="flex-1 min-h-0 px-6 py-5 flex flex-col">
           {/* AI Provider Tab */}
           {activeTab === 'providers' && (
-            <div className="space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1">
               {/* Provider select */}
               <div>
                 <label className="text-xs font-medium text-text-muted block mb-1.5">Provider</label>
@@ -457,7 +460,7 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
                           'flex items-center justify-between px-3 py-2 rounded-md border text-sm text-left transition-all',
                           selectedModelId === model
                             ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border hover:border-primary/50 text-text'
+                            : 'border-border hover:border-primary/50 text-text-main'
                         )}
                       >
                         <span className="truncate">{model}</span>
@@ -475,7 +478,7 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
 
           {/* System Prompts Tab */}
           {activeTab === 'prompts' && (
-            <div className="space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1">
               {/* Global toggle */}
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">System Prompts</span>
@@ -487,11 +490,11 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
                   {/* Default Prompts section */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Default Prompts</span>
+                      <span className="text-xs font-semibold text-text-sec uppercase tracking-wide">Default Prompts</span>
                       <ToggleSwitch checked={spDefaultEnabled} onChange={setSpDefaultEnabled} size="sm" />
                     </div>
                     {spDefaultEnabled && defaultPrompts.map(p => (
-                      <PromptCheckItem
+                      <CheckRow
                         key={p.id}
                         label={p.title}
                         checked={activePromptIds.has(p.id)}
@@ -503,11 +506,11 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
                   {/* Custom Prompts section */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Custom Prompts</span>
+                      <span className="text-xs font-semibold text-text-sec uppercase tracking-wide">Custom Prompts</span>
                       <ToggleSwitch checked={spCustomEnabled} onChange={setSpCustomEnabled} size="sm" />
                     </div>
                     {spCustomEnabled && customPrompts.map(p => (
-                      <PromptCheckItem
+                      <CheckRow
                         key={p.id}
                         label={p.title}
                         checked={activePromptIds.has(p.id)}
@@ -515,18 +518,18 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
                       />
                     ))}
                     {spCustomEnabled && customPrompts.length === 0 && (
-                      <p className="text-xs text-text-muted pl-2">No custom prompts</p>
+                      <p className="text-sm text-text-muted px-3 py-1.5">No custom prompts</p>
                     )}
                   </div>
 
                   {/* Dynamic Prompts section */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Dynamic Prompts</span>
+                      <span className="text-xs font-semibold text-text-sec uppercase tracking-wide">Dynamic Prompts</span>
                       <ToggleSwitch checked={spDynamicGlobalEnabled} onChange={setSpDynamicGlobalEnabled} size="sm" />
                     </div>
                     {spDynamicGlobalEnabled && Object.entries(dynamicPromptLabels).map(([key, label]) => (
-                      <PromptCheckItem
+                      <CheckRow
                         key={key}
                         label={label}
                         checked={dynamicSettings[key] ?? false}
@@ -541,27 +544,28 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
 
           {/* Tools Tab */}
           {activeTab === 'tools' && (
-            <div className="space-y-3">
-              {/* Global toggle */}
-              <div className="flex items-center justify-between">
+            <div className="flex-1 min-h-0 flex flex-col gap-3">
+              {/* Global toggle stays pinned above the scrolling list */}
+              <div className="flex items-center justify-between shrink-0">
                 <span className="text-sm font-medium">Tools</span>
                 <ToggleSwitch checked={toolsGlobalEnabled} onChange={setToolsGlobalEnabled} />
               </div>
 
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 -mr-1">
               {toolsGlobalEnabled && categories.map(cat => {
                 const catTools = toolsByCategory.get(cat.id) || [];
                 const isExpanded = expandedCategories.has(cat.id);
                 return (
                   <div key={cat.id} className="border border-border/50 rounded-md overflow-hidden">
                     {/* Category header */}
-                    <div className="flex items-center gap-2 px-3 py-2 bg-background/50">
+                    <div className="flex items-center gap-2 px-3 py-2 bg-background/50 hover:bg-surface-hover transition-colors">
                       <button
                         onClick={() => toggleExpandCategory(cat.id)}
-                        className="text-text-muted hover:text-text"
+                        className="text-text-muted hover:text-text-main"
                       >
                         {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </button>
-                      <span className="text-xs font-medium flex-1">{cat.name}</span>
+                      <span className="text-sm font-medium flex-1">{cat.name}</span>
                       <span className="text-xs text-text-muted mr-2">{catTools.length}</span>
                       <ToggleSwitch
                         checked={enabledCategoryIds.has(cat.id)}
@@ -570,17 +574,19 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
                       />
                     </div>
                     {/* Tools in category */}
-                    {isExpanded && enabledCategoryIds.has(cat.id) && catTools.length > 0 && (
-                      <div className="border-t border-border/30">
+                    {isExpanded && catTools.length > 0 && (
+                      <div className={clsx(
+                        'border-t border-border/30 py-0.5',
+                        !enabledCategoryIds.has(cat.id) && 'opacity-50 pointer-events-none'
+                      )}>
                         {catTools.map(tool => (
-                          <div key={tool.id} className="flex items-center justify-between px-3 py-1.5 pl-9">
-                            <span className="text-xs truncate">{tool.name}</span>
-                            <ToggleSwitch
-                              checked={enabledToolIds.has(tool.id)}
-                              onChange={() => toggleToolId(tool.id)}
-                              size="sm"
-                            />
-                          </div>
+                          <CheckRow
+                            key={tool.id}
+                            label={tool.name}
+                            checked={enabledToolIds.has(tool.id)}
+                            onChange={() => toggleToolId(tool.id)}
+                            indent
+                          />
                         ))}
                       </div>
                     )}
@@ -594,45 +600,45 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
                   <div className="px-3 py-2 bg-background/50">
                     <span className="text-xs font-medium text-text-muted">Uncategorized</span>
                   </div>
-                  <div className="border-t border-border/30">
+                  <div className="border-t border-border/30 py-0.5">
                     {(toolsByCategory.get('__none__') || []).map(tool => (
-                      <div key={tool.id} className="flex items-center justify-between px-3 py-1.5">
-                        <span className="text-xs truncate">{tool.name}</span>
-                        <ToggleSwitch
-                          checked={enabledToolIds.has(tool.id)}
-                          onChange={() => toggleToolId(tool.id)}
-                          size="sm"
-                        />
-                      </div>
+                      <CheckRow
+                        key={tool.id}
+                        label={tool.name}
+                        checked={enabledToolIds.has(tool.id)}
+                        onChange={() => toggleToolId(tool.id)}
+                      />
                     ))}
                   </div>
                 </div>
               )}
+              </div>
             </div>
           )}
 
           {/* Skills Tab */}
           {activeTab === 'skills' && (
-            <div className="space-y-3">
-              {/* Global toggle */}
-              <div className="flex items-center justify-between">
+            <div className="flex-1 min-h-0 flex flex-col gap-3">
+              {/* Global toggle stays pinned above the scrolling list */}
+              <div className="flex items-center justify-between shrink-0">
                 <span className="text-sm font-medium">Skills</span>
                 <ToggleSwitch checked={skillsGlobalEnabled} onChange={setSkillsGlobalEnabled} />
               </div>
 
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 -mr-1">
               {skillsGlobalEnabled && directories.map(dir => {
                 const dirSkills = skillsByDir.get(dir.id) || [];
                 const isExpanded = expandedDirs.has(dir.id);
                 return (
                   <div key={dir.id} className="border border-border/50 rounded-md overflow-hidden">
-                    <div className="flex items-center gap-2 px-3 py-2 bg-background/50">
+                    <div className="flex items-center gap-2 px-3 py-2 bg-background/50 hover:bg-surface-hover transition-colors">
                       <button
                         onClick={() => toggleExpandDir(dir.id)}
-                        className="text-text-muted hover:text-text"
+                        className="text-text-muted hover:text-text-main"
                       >
                         {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </button>
-                      <span className="text-xs font-medium flex-1">{dir.name}</span>
+                      <span className="text-sm font-medium flex-1">{dir.name}</span>
                       <span className="text-xs text-text-muted mr-2">{dirSkills.length}</span>
                       <ToggleSwitch
                         checked={enabledDirIds.has(dir.id)}
@@ -640,21 +646,23 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
                         size="sm"
                       />
                     </div>
-                    {isExpanded && enabledDirIds.has(dir.id) && dirSkills.length > 0 && (
-                      <div className="border-t border-border/30">
+                    {isExpanded && dirSkills.length > 0 && (
+                      <div className={clsx(
+                        'border-t border-border/30 py-0.5',
+                        !enabledDirIds.has(dir.id) && 'opacity-50 pointer-events-none'
+                      )}>
                         {dirSkills.map(skill => (
-                          <div key={skill.id} className="flex items-center justify-between px-3 py-1.5 pl-9">
-                            <span className="text-xs truncate">{skill.name}</span>
-                            <ToggleSwitch
-                              checked={enabledSkillIds.has(skill.id)}
-                              onChange={() => toggleSkillId(skill.id)}
-                              size="sm"
-                            />
-                          </div>
+                          <CheckRow
+                            key={skill.id}
+                            label={skill.name}
+                            checked={enabledSkillIds.has(skill.id)}
+                            onChange={() => toggleSkillId(skill.id)}
+                            indent
+                          />
                         ))}
                       </div>
                     )}
-                    {isExpanded && enabledDirIds.has(dir.id) && dirSkills.length === 0 && (
+                    {isExpanded && dirSkills.length === 0 && (
                       <div className="border-t border-border/30 px-3 py-2">
                         <p className="text-xs text-text-muted">No skills in this directory</p>
                       </div>
@@ -666,24 +674,26 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
               {skillsGlobalEnabled && directories.length === 0 && (
                 <p className="text-xs text-text-muted">No skill directories configured</p>
               )}
+              </div>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border">
+        <div className="px-6 py-4 border-t border-border flex justify-end gap-3 shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 text-sm text-text-muted hover:text-text border border-border rounded-md hover:bg-surface-hover transition-colors"
+            className="px-4 py-2 text-sm bg-background hover:bg-surface-light border border-border rounded-lg transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-primary hover:opacity-90 text-primary-foreground rounded-lg transition-colors disabled:opacity-50"
           >
-            {isSaving ? 'Saving...' : (profile ? 'Save' : 'Create')}
+            <Save size={16} />
+            {isSaving ? 'Saving...' : (profile ? 'Save Changes' : 'Create')}
           </button>
         </div>
       </div>
@@ -718,20 +728,23 @@ function ToggleSwitch({ checked, onChange, size = 'md' }: {
   );
 }
 
-function PromptCheckItem({ label, checked, onChange }: {
+/**
+ * One selectable row: label on the left, toggle on the right. Shared by the
+ * prompt, tool and skill lists so all three behave and highlight identically.
+ */
+function CheckRow({ label, checked, onChange, indent }: {
   label: string;
   checked: boolean;
   onChange: () => void;
+  indent?: boolean;
 }) {
   return (
-    <label className="flex items-center gap-2 px-2 py-1 rounded hover:bg-surface-hover cursor-pointer transition-colors">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onChange}
-        className="w-3.5 h-3.5 rounded border-border text-primary focus:ring-primary/50 bg-background"
-      />
-      <span className="text-xs">{label}</span>
+    <label className={clsx(
+      'flex items-center justify-between gap-3 px-3 py-1.5 rounded cursor-pointer transition-colors hover:bg-surface-hover',
+      indent && 'pl-9'
+    )}>
+      <span className="text-sm text-text-main truncate">{label}</span>
+      <ToggleSwitch checked={checked} onChange={onChange} size="sm" />
     </label>
   );
 }

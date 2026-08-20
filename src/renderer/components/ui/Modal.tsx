@@ -29,7 +29,7 @@ export function Modal({ isOpen, onClose, title, children, width = 'max-w-md' }: 
            initial={{ opacity: 0, scale: 0.95 }}
            animate={{ opacity: 1, scale: 1 }}
            exit={{ opacity: 0, scale: 0.95 }}
-           className={`bg-surface border border-border rounded-xl shadow-xl w-full ${width} max-h-[90vh] overflow-hidden flex flex-col`}
+           className={`bg-surface border border-border rounded-xl shadow-xl w-full ${width} max-h-full overflow-hidden flex flex-col`}
         >
           <div className="flex items-center justify-between p-4 border-b border-border">
             <h3 className="font-semibold text-text-main">{title}</h3>
