@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Lock, Unlock, Globe, KeyRound, Calendar, ArrowUpDown, FolderOpen } from 'lucide-react';
-import { clsx } from 'clsx';
 import { FancySelect } from '../ui/FancySelect';
+import { Modal } from '../ui/Modal';
 import { InfoIcon } from '../Shared/InfoIcon';
 
 // Interface for IPC calls
@@ -30,6 +30,10 @@ export function GeneralSettings() {
   const [passwordInput, setPasswordInput] = useState('');
   const [isLoadingCrypto, setIsLoadingCrypto] = useState(false);
   const [showMasterKeyInput, setShowMasterKeyInput] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changePasswordError, setChangePasswordError] = useState('');
 
   // Search State
   const [searchProvider, setSearchProvider] = useState('duckduckgo');
@@ -95,6 +99,47 @@ export function GeneralSettings() {
     setIsUnlocked(false);
   };
 
+  const closeChangePassword = () => {
+    if (isLoadingCrypto) return;
+    setShowChangePassword(false);
+    setNewPassword('');
+    setConfirmPassword('');
+    setChangePasswordError('');
+  };
+
+  const handleChangePassword = async () => {
+    setChangePasswordError('');
+    if (!newPassword) {
+      setChangePasswordError('New password is required.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setChangePasswordError('Passwords do not match.');
+      return;
+    }
+
+    setIsLoadingCrypto(true);
+    try {
+      const result = await invoke('crypto:change-password', newPassword);
+      if (!result.success) {
+        setChangePasswordError(result.error || 'Failed to change password.');
+        return;
+      }
+
+      setHasMasterPassword(true);
+      setHasSavedKey(result.autoUnlockSaved === true);
+      setShowChangePassword(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      setChangePasswordError('');
+      if (result.autoUnlockSaved === false) {
+        alert('Password changed. Automatic unlock is unavailable, so the new password will be required after restart.');
+      }
+    } finally {
+      setIsLoadingCrypto(false);
+    }
+  };
+
   const handleSearchChange = async (val: string) => {
     setSearchProvider(val);
     await invoke('settings:set', 'searchProvider', val);
@@ -140,14 +185,24 @@ export function GeneralSettings() {
 
         <div className="w-[60%] flex justify-end">
           {isUnlocked ? (
-            <button
-              onClick={handleLock}
-              className="h-9 px-3 bg-surface text-text-main text-sm rounded-lg border border-border hover:bg-surface-light transition-colors flex items-center gap-2"
-              title="Lock master key"
-            >
-              <Lock size={14} />
-              Lock
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleLock}
+                className="h-9 px-3 bg-surface text-text-main text-sm rounded-lg border border-border hover:bg-surface-light transition-colors flex items-center gap-2"
+                title="Lock master key"
+              >
+                <Lock size={14} />
+                Lock
+              </button>
+              <button
+                onClick={() => setShowChangePassword(true)}
+                className="h-9 px-3 bg-surface text-text-main text-sm rounded-lg border border-border hover:bg-surface-light transition-colors flex items-center gap-2"
+                title="Change master password"
+              >
+                <KeyRound size={14} />
+                Change
+              </button>
+            </div>
           ) : !showMasterKeyInput ? (
             <button
               onClick={() => setShowMasterKeyInput(true)}
@@ -263,6 +318,65 @@ export function GeneralSettings() {
           </div>
         </div>
       </div>
+
+      <Modal
+        isOpen={showChangePassword}
+        onClose={closeChangePassword}
+        title="Change Master Password"
+      >
+        <div className="p-4 space-y-4">
+          <p className="text-xs text-text-muted">
+            Existing API keys and SSH credentials will be re-encrypted with the new password.
+          </p>
+
+          {changePasswordError && (
+            <div className="px-3 py-2 rounded-lg border border-accent-danger/40 bg-accent-danger/10 text-sm text-accent-danger">
+              {changePasswordError}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-medium text-text-sec mb-1.5">New password</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              autoFocus
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-text-main focus:border-primary"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-text-sec mb-1.5">Confirm new password</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void handleChangePassword();
+              }}
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-text-main focus:border-primary"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              onClick={closeChangePassword}
+              disabled={isLoadingCrypto}
+              className="px-4 py-2 text-sm bg-background border border-border rounded-lg hover:bg-surface-light disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => void handleChangePassword()}
+              disabled={isLoadingCrypto}
+              className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50"
+            >
+              {isLoadingCrypto ? 'Changing...' : 'Change Password'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

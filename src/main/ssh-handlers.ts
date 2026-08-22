@@ -68,6 +68,91 @@ export function setupSSHHandlers(): void {
     }
   });
 
+  // Change the master password and re-encrypt every protected database value.
+  ipcMain.handle('crypto:change-password', async (
+    _event,
+    password: string
+  ): Promise<{ success: boolean; autoUnlockSaved?: boolean; error?: string }> => {
+    const dbService = getDatabase();
+    const db = dbService.getDb();
+    const crypto = getCrypto();
+
+    if (!crypto.isUnlocked()) {
+      return { success: false, error: 'Master key must be unlocked' };
+    }
+    if (!password) {
+      return { success: false, error: 'New password is required' };
+    }
+
+    try {
+      const aiRows = db.prepare(`
+        SELECT id, api_key_encrypted
+        FROM ai_providers
+        WHERE api_key_encrypted IS NOT NULL AND length(api_key_encrypted) > 0
+      `).all() as Array<{ id: string; api_key_encrypted: string }>;
+      const sshRows = db.prepare(`
+        SELECT id, encrypted_credential, encrypted_passphrase
+        FROM ssh_servers
+        WHERE encrypted_credential IS NOT NULL OR encrypted_passphrase IS NOT NULL
+      `).all() as Array<{
+        id: string;
+        encrypted_credential: string | null;
+        encrypted_passphrase: string | null;
+      }>;
+
+      // Decrypt everything before changing the active key. Any unreadable row
+      // aborts the operation before the database or key state is modified.
+      const aiPlaintext = aiRows.map(row => ({
+        id: row.id,
+        apiKey: crypto.decrypt(row.api_key_encrypted),
+      }));
+      const sshPlaintext = sshRows.map(row => ({
+        id: row.id,
+        credential: row.encrypted_credential ? crypto.decrypt(row.encrypted_credential) : null,
+        passphrase: row.encrypted_passphrase ? crypto.decrypt(row.encrypted_passphrase) : null,
+      }));
+
+      const updateApiKey = db.prepare(
+        'UPDATE ai_providers SET api_key_encrypted = ? WHERE id = ?'
+      );
+      const updateSshSecrets = db.prepare(`
+        UPDATE ssh_servers
+        SET encrypted_credential = ?, encrypted_passphrase = ?
+        WHERE id = ?
+      `);
+      const updateSetting = db.prepare(`
+        INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)
+      `);
+
+      await crypto.rotateKey(password, ({ salt, verificationHash }) => {
+        db.transaction(() => {
+          for (const row of aiPlaintext) {
+            updateApiKey.run(crypto.encrypt(row.apiKey), row.id);
+          }
+          for (const row of sshPlaintext) {
+            updateSshSecrets.run(
+              row.credential ? crypto.encrypt(row.credential) : null,
+              row.passphrase ? crypto.encrypt(row.passphrase) : null,
+              row.id
+            );
+          }
+          updateSetting.run('master_password_salt', salt.toString('hex'));
+          updateSetting.run('master_password_hash', verificationHash);
+        })();
+      });
+
+      const autoUnlockSaved = crypto.saveKey();
+      if (!autoUnlockSaved) {
+        // Never leave a stale auto-unlock key pointing at the old ciphertext.
+        // Manual unlock with the new password will still work on next launch.
+        crypto.clearSavedKey();
+      }
+      return { success: true, autoUnlockSaved };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
   // Save encryption key using safeStorage for auto-unlock
   ipcMain.handle('crypto:save-key', async (): Promise<boolean> => {
     return getCrypto().saveKey();

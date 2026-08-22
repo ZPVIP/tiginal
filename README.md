@@ -15,6 +15,10 @@ A cross-platform terminal emulator built with Electron, xterm.js, and node-pty.
 - ☁️ Multi-device sync - *coming soon*
 - 🪟 Split Panes (Cmd+\ for split, Cmd+Opt+Arrow for nav)
 
+## Master Key Encryption
+
+[Master Key Encryption Explained](README-KEY.md)
+
 ## Command History & Suggestions
 
 Commands are automatically recorded and suggested as you type (prefix match, sorted by frequency).

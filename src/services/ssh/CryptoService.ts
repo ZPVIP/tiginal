@@ -113,6 +113,39 @@ export class CryptoService {
   }
 
   /**
+   * Replace the active encryption key and run a synchronous data migration.
+   * The previous key remains available until the migration succeeds, so the
+   * caller can roll back its database transaction without losing access to
+   * existing ciphertext.
+   */
+  async rotateKey(
+    password: string,
+    migrate: (metadata: { salt: Buffer; verificationHash: string }) => void
+  ): Promise<{ salt: Buffer; verificationHash: string }> {
+    if (!this.encryptionKey) {
+      throw new Error('Crypto service not unlocked');
+    }
+
+    const previousKey = this.encryptionKey;
+    const salt = this.generateSalt();
+    const { encryptionKey, verificationKey } = await this.deriveKeys(password, salt);
+    const verificationHash = this.hashVerificationKey(verificationKey);
+    verificationKey.fill(0);
+
+    this.encryptionKey = encryptionKey;
+    try {
+      migrate({ salt, verificationHash });
+      previousKey.fill(0);
+      this.verificationHash = verificationHash;
+      return { salt, verificationHash };
+    } catch (error) {
+      encryptionKey.fill(0);
+      this.encryptionKey = previousKey;
+      throw error;
+    }
+  }
+
+  /**
    * Check if the service is unlocked
    */
   isUnlocked(): boolean {
