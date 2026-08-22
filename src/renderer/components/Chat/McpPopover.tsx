@@ -136,11 +136,12 @@ export const McpPopover: React.FC<McpPopoverProps> = ({ onClose }) => {
               onClick={toggleGlobal}
               className={clsx(
                 'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none',
-                globalEnabled ? 'bg-primary' : 'bg-surface-light border border-border'
+                globalEnabled ? 'bg-primary' : 'bg-toggle-off border border-toggle-off-border'
               )}
             >
               <span className={clsx(
-                'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm',
+                'inline-block h-3.5 w-3.5 transform rounded-full transition-transform shadow-sm',
+                globalEnabled ? 'bg-primary-foreground' : 'bg-toggle-off-thumb',
                 globalEnabled ? 'translate-x-5' : 'translate-x-0.5'
               )} />
             </button>
@@ -171,7 +172,7 @@ export const McpPopover: React.FC<McpPopoverProps> = ({ onClose }) => {
       {/* Content */}
       <div className={clsx(
         'overflow-y-auto p-2 flex flex-col gap-2 transition-opacity duration-200 flex-1 min-h-0',
-        !globalEnabled && 'opacity-50 pointer-events-none grayscale-[0.5]'
+        !globalEnabled && 'pointer-events-none'
       )}>
         {loading ? (
           <div className="p-4 text-center text-text-muted text-sm shrink-0">Loading MCP servers...</div>
@@ -192,11 +193,12 @@ export const McpPopover: React.FC<McpPopoverProps> = ({ onClose }) => {
                       disabled={busyId === server.id}
                       className={clsx(
                         'relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50',
-                        server.enabled ? 'bg-primary' : 'bg-surface-light border border-border'
+                        server.enabled ? 'bg-primary' : 'bg-toggle-off border border-toggle-off-border'
                       )}
                     >
                       <span className={clsx(
-                        'inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform shadow-sm',
+                        'inline-block h-2.5 w-2.5 transform rounded-full transition-transform shadow-sm',
+                        server.enabled ? 'bg-primary-foreground' : 'bg-toggle-off-thumb',
                         server.enabled ? 'translate-x-3' : 'translate-x-0.5'
                       )} />
                     </button>
@@ -241,11 +243,12 @@ export const McpPopover: React.FC<McpPopoverProps> = ({ onClose }) => {
                               onClick={() => toggleTool(server, tool.name)}
                               className={clsx(
                                 'relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors focus:outline-none',
-                                toolEnabled ? 'bg-primary' : 'bg-surface-light border border-border'
+                                toolEnabled ? 'bg-primary' : 'bg-toggle-off border border-toggle-off-border'
                               )}
                             >
                               <span className={clsx(
-                                'inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform shadow-sm',
+                                'inline-block h-2.5 w-2.5 transform rounded-full transition-transform shadow-sm',
+                                toolEnabled ? 'bg-primary-foreground' : 'bg-toggle-off-thumb',
                                 toolEnabled ? 'translate-x-3' : 'translate-x-0.5'
                               )} />
                             </button>

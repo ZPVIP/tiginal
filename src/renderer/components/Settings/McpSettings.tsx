@@ -272,11 +272,12 @@ export function McpSettings() {
             onClick={toggleGlobal}
             className={clsx(
               'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none',
-              globalEnabled ? 'bg-primary' : 'bg-surface-light border border-border'
+              globalEnabled ? 'bg-primary' : 'bg-toggle-off border border-toggle-off-border'
             )}
           >
             <span className={clsx(
-              'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm',
+              'inline-block h-3.5 w-3.5 transform rounded-full transition-transform shadow-sm',
+              globalEnabled ? 'bg-primary-foreground' : 'bg-toggle-off-thumb',
               globalEnabled ? 'translate-x-5' : 'translate-x-0.5'
             )} />
           </button>
@@ -325,7 +326,7 @@ export function McpSettings() {
       )}
 
       {/* Server list */}
-      <div className={clsx('space-y-2', !globalEnabled && 'opacity-50')}>
+      <div className="space-y-2">
         {servers.length === 0 ? (
           <div className="text-center py-8 text-text-muted text-sm">No MCP servers configured</div>
         ) : (
@@ -338,7 +339,9 @@ export function McpSettings() {
                     onClick={() => toggleServer(server)}
                     className={clsx(
                       'w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0',
-                      server.enabled ? 'bg-primary border-primary text-white' : 'border-border hover:border-primary'
+                      server.enabled
+                        ? 'bg-primary border-primary text-primary-foreground'
+                        : 'bg-toggle-off border-toggle-off-border hover:border-primary'
                     )}
                     title={server.enabled ? 'Disable' : 'Enable'}
                   >
@@ -416,11 +419,12 @@ export function McpSettings() {
                               onClick={() => toggleTool(server, tool.name)}
                               className={clsx(
                                 'relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors mt-0.5',
-                                toolEnabled ? 'bg-primary' : 'bg-surface-light border border-border'
+                                toolEnabled ? 'bg-primary' : 'bg-toggle-off border border-toggle-off-border'
                               )}
                             >
                               <span className={clsx(
-                                'inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform shadow-sm',
+                                'inline-block h-2.5 w-2.5 transform rounded-full transition-transform shadow-sm',
+                                toolEnabled ? 'bg-primary-foreground' : 'bg-toggle-off-thumb',
                                 toolEnabled ? 'translate-x-3' : 'translate-x-0.5'
                               )} />
                             </button>

@@ -5,6 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: tigimg:;">
   <title>Tiginal</title>
+  <script>
+    // Replay the last theme's variables before first paint. Without this the
+    // window shows the dark defaults from styles.css until ThemeProvider has
+    // mounted and its settings round-trip has resolved -- a visible flash when
+    // a light theme is selected. Keep the key in sync with THEME_CACHE_KEY.
+    (function () {
+      try {
+        var cached = JSON.parse(localStorage.getItem('tiginal:theme-vars') || 'null');
+        if (!cached || !cached.vars) return;
+        var root = document.documentElement;
+        for (var name in cached.vars) root.style.setProperty(name, cached.vars[name]);
+        if (cached.type) root.setAttribute('data-theme-type', cached.type);
+      } catch (e) {
+        /* nothing cached yet, or storage unavailable */
+      }
+    })();
+  </script>
 </head>
 <body>
   <div id="root"></div>

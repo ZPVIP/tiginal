@@ -21,6 +21,12 @@
   --color-border-subtle: var(--border-color);
   --color-primary-foreground: var(--primary-foreground, #ffffff);
 
+  /* Theme-aware switch colours. Off switches need stronger separation than
+     ordinary cards, especially on light themes where surfaces are near-white. */
+  --color-toggle-off: var(--toggle-off-track);
+  --color-toggle-off-border: var(--toggle-off-border);
+  --color-toggle-off-thumb: var(--toggle-off-thumb);
+
   /* Semantic accents: readable on this theme's surfaces, light or dark */
   --color-accent-tool: var(--accent-tool);
   --color-accent-success: var(--accent-success);
@@ -51,6 +57,9 @@
   --accent-success: #4ade80;
   --accent-danger: #f87171;
   --accent-info: #60a5fa;
+  --toggle-off-track: #313244;
+  --toggle-off-border: #a6adc8;
+  --toggle-off-thumb: #a6adc8;
 }
 
 /*
@@ -72,6 +81,9 @@
   --accent-success: #14532d;
   --accent-danger: #991b1b;
   --accent-info: #1e40af;
+  --toggle-off-track: #e8e8e8;
+  --toggle-off-border: #6e6e6e;
+  --toggle-off-thumb: #6e6e6e;
 }
 
 @layer base {

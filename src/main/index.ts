@@ -35,6 +35,7 @@ import * as crypto from 'crypto';
 
 // Default configuration for first run
 import defaults from './defaults.json';
+import { themes } from '../renderer/themes';
 
 // Set app name for macOS menu bar
 app.name = 'Tiginal';
@@ -83,6 +84,20 @@ function initializeDefaults(): void {
 
 let mainWindow: BrowserWindow | null = null;
 
+/**
+ * Background for the native window, taken from the saved theme. The frame is
+ * painted before any HTML loads, so a fixed dark value flashed on light themes.
+ */
+function savedThemeBackground(): string {
+  try {
+    const savedId = getDatabase().getSetting('theme');
+    const theme = themes.find(t => t.id === savedId) || themes[0];
+    return (theme.terminal.background as string) || '#1e1e2e';
+  } catch {
+    return '#1e1e2e';
+  }
+}
+
 function createWindow(): void {
   // Load window state
   const statePath = path.join(app.getPath('userData'), 'window-state.json');
@@ -103,7 +118,9 @@ function createWindow(): void {
     y: windowState.y,
     minWidth: 400,
     minHeight: 300,
-    backgroundColor: '#1e1e2e',
+    backgroundColor: savedThemeBackground(),
+    // Wait for the first paint, so the theme is already applied when it appears
+    show: false,
     // Custom title bar for immersive feel
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 12, y: 9 },
@@ -134,6 +151,13 @@ function createWindow(): void {
   // In production (built with Vite), point to dist/renderer/index.html
   // __dirname is dist/main/main/
   mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'));
+
+  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  // Safety net: never leave the window hidden if that event does not arrive
+  const showFallback = setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) mainWindow.show();
+  }, 4000);
+  mainWindow.on('closed', () => clearTimeout(showFallback));
 
   // Open external links in default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

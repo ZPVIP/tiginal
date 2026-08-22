@@ -21,42 +21,6 @@ interface ThemeProviderProps {
   children: ReactNode;
 }
 
-export function ThemeProvider({ children }: ThemeProviderProps) {
-  const [currentTheme, setCurrentThemeState] = useState<Theme>(themes[0]);
-
-  // Load theme on startup
-  useEffect(() => {
-    loadTheme();
-  }, []);
-
-  const loadTheme = async () => {
-    try {
-      // @ts-ignore - IPC
-      const savedThemeId = await window.electron?.invoke('settings:get', 'theme');
-      if (savedThemeId) {
-        const theme = themes.find(t => t.id === savedThemeId);
-        if (theme) {
-          applyTheme(theme);
-          return;
-        }
-      }
-      // Default fallback
-      applyTheme(themes[0]);
-    } catch (err) {
-      console.error('Failed to load theme:', err);
-      applyTheme(themes[0]);
-    }
-  };
-
-  const setTheme = async (themeId: string) => {
-    const theme = themes.find(t => t.id === themeId);
-    if (theme) {
-      applyTheme(theme);
-      // @ts-ignore - IPC
-      await window.electron?.invoke('settings:set', 'theme', themeId);
-    }
-  };
-
 /** WCAG relative luminance, for deciding what to put on top of a colour. */
 function relativeLuminance(hex: string): number | null {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -94,68 +58,141 @@ function foregroundFor(accent: string): string {
   return whiteContrast >= 4.5 ? '#ffffff' : '#0d0d0d';
 }
 
+/** Key shared with the boot script in index.html. */
+export const THEME_CACHE_KEY = 'tiginal:theme-vars';
+
+/**
+ * Every CSS variable a theme drives, as a plain map. Kept separate from the
+ * DOM write so the exact same values can be cached for the next startup.
+ */
+export function buildThemeVars(theme: Theme): Record<string, string> {
+  const vars: Record<string, string> = {
+    // background and text are sourced from terminal config for consistency
+    '--bg-primary': theme.terminal.background as string,
+    '--bg-secondary': theme.colors.surface,
+    '--bg-tertiary': theme.colors.sidebar,
+    '--bg-elevated': theme.colors.elevated,
+    '--border-color': theme.colors.border,
+    '--text-primary': theme.terminal.foreground as string,
+    '--text-secondary': theme.colors.textSecondary,
+    '--text-muted': theme.colors.textMuted,
+    '--accent-primary': theme.colors.primary,
+    '--tab-active': theme.colors.tabActive,
+    '--tab-hover': theme.colors.tabHover,
+    '--split-border-active': theme.colors.splitBorderActive,
+  };
+
+  // The terminal palette is already tuned per theme, so reuse it for accents
+  // that need to sit on this theme's background (tool names, diagnostics).
+  const ansi: Array<[string, keyof typeof theme.terminal]> = [
+    ['--ansi-red', 'red'],
+    ['--ansi-green', 'green'],
+    ['--ansi-yellow', 'yellow'],
+    ['--ansi-blue', 'blue'],
+    ['--ansi-magenta', 'magenta'],
+    ['--ansi-cyan', 'cyan'],
+    // Dark themes need the bright variant for inline code: vs-code-dark's
+    // plain blue only reaches 3.6:1 on its own surface.
+    ['--ansi-bright-blue', 'brightBlue'],
+  ];
+  for (const [cssVar, key] of ansi) {
+    const value = theme.terminal[key];
+    if (typeof value === 'string') vars[cssVar] = value;
+  }
+
+  vars['--primary-foreground'] = foregroundFor(theme.colors.primary);
+
+  // A normal card border can be intentionally subtle, but an off switch must
+  // still read as an interactive control. Use each theme's hover surface for
+  // the track and select the least prominent theme text colour that reaches
+  // 3:1 against both the track and the surrounding surface.
+  const offTrack = theme.colors.tabHover;
+  const mutedClearsControlContrast =
+    contrast(theme.colors.textMuted, offTrack) >= 3 &&
+    contrast(theme.colors.textMuted, theme.colors.surface) >= 3;
+  const offControl = mutedClearsControlContrast
+    ? theme.colors.textMuted
+    : theme.colors.textSecondary;
+  vars['--toggle-off-track'] = offTrack;
+  vars['--toggle-off-border'] = offControl;
+  vars['--toggle-off-thumb'] = offControl;
+
+  // Inline code prefers the theme's own accent -- the colour it already uses
+  // for interactive text, and generally the tastefully desaturated one. Where
+  // that accent is too dim to read on the surface (VS Code's #007acc lands
+  // near 3.8:1) it falls back to the palette's blue.
+  const paletteBlue = String(
+    (theme.type === 'light' ? theme.terminal.blue : theme.terminal.brightBlue) || ''
+  );
+  const accent = theme.colors.primary;
+  const codeHex = contrast(accent, theme.colors.surface) >= 4.6 || !paletteBlue
+    ? accent
+    : paletteBlue;
+
+  vars['--code-fg'] = codeHex;
+  // Barely-there wash: the tint pulls the background toward the text, so any
+  // more of it costs contrast. 3.5% is the most every theme can carry and
+  // still clear 4.5:1.
+  vars['--code-bg'] = withAlpha(codeHex, 0.035);
+  vars['--code-border'] = withAlpha(codeHex, 0.16);
+
+  return vars;
+}
+
+export function ThemeProvider({ children }: ThemeProviderProps) {
+  const [currentTheme, setCurrentThemeState] = useState<Theme>(themes[0]);
+
+  // Load theme on startup
+  useEffect(() => {
+    loadTheme();
+  }, []);
+
+  const loadTheme = async () => {
+    try {
+      // @ts-ignore - IPC
+      const savedThemeId = await window.electron?.invoke('settings:get', 'theme');
+      if (savedThemeId) {
+        const theme = themes.find(t => t.id === savedThemeId);
+        if (theme) {
+          applyTheme(theme);
+          return;
+        }
+      }
+      // Default fallback
+      applyTheme(themes[0]);
+    } catch (err) {
+      console.error('Failed to load theme:', err);
+      applyTheme(themes[0]);
+    }
+  };
+
+  const setTheme = async (themeId: string) => {
+    const theme = themes.find(t => t.id === themeId);
+    if (theme) {
+      applyTheme(theme);
+      // @ts-ignore - IPC
+      await window.electron?.invoke('settings:set', 'theme', themeId);
+    }
+  };
+
   const applyTheme = (theme: Theme) => {
     setCurrentThemeState(theme);
-    
-    const root = document.documentElement;
-    
-    // Apply CSS variables
-    // background and text are sourced from terminal config for consistency
-    root.style.setProperty('--bg-primary', theme.terminal.background as string);
-    root.style.setProperty('--bg-secondary', theme.colors.surface);
-    root.style.setProperty('--bg-tertiary', theme.colors.sidebar);
-    root.style.setProperty('--bg-elevated', theme.colors.elevated);
-    root.style.setProperty('--border-color', theme.colors.border);
-    root.style.setProperty('--text-primary', theme.terminal.foreground as string);
-    root.style.setProperty('--text-secondary', theme.colors.textSecondary);
-    root.style.setProperty('--text-muted', theme.colors.textMuted);
-    root.style.setProperty('--accent-primary', theme.colors.primary);
-    root.style.setProperty('--tab-active', theme.colors.tabActive);
-    root.style.setProperty('--tab-hover', theme.colors.tabHover);
-    root.style.setProperty('--split-border-active', theme.colors.splitBorderActive);
 
-    // The terminal palette is already tuned per theme, so reuse it for accents
-    // that need to sit on this theme's background (tool names, diagnostics).
-    const ansi: Array<[string, keyof typeof theme.terminal]> = [
-      ['--ansi-red', 'red'],
-      ['--ansi-green', 'green'],
-      ['--ansi-yellow', 'yellow'],
-      ['--ansi-blue', 'blue'],
-      ['--ansi-magenta', 'magenta'],
-      ['--ansi-cyan', 'cyan'],
-      // Dark themes need the bright variant for inline code: vs-code-dark's
-      // plain blue only reaches 3.6:1 on its own surface.
-      ['--ansi-bright-blue', 'brightBlue'],
-    ];
-    for (const [cssVar, key] of ansi) {
-      const value = theme.terminal[key];
-      if (typeof value === 'string') root.style.setProperty(cssVar, value);
+    const root = document.documentElement;
+    const vars = buildThemeVars(theme);
+    for (const [name, value] of Object.entries(vars)) {
+      root.style.setProperty(name, value);
+    }
+    root.setAttribute('data-theme-type', theme.type);
+
+    // Cached so the boot script in index.html can paint the right colours
+    // before this provider mounts; see THEME_CACHE_KEY there.
+    try {
+      localStorage.setItem(THEME_CACHE_KEY, JSON.stringify({ type: theme.type, vars }));
+    } catch {
+      /* private mode or quota; the flash is cosmetic */
     }
 
-    // Semantic accents are picked per light/dark rather than per theme, because
-    // what matters is contrast against a light or a dark surface.
-    root.setAttribute('data-theme-type', theme.type);
-    root.style.setProperty('--primary-foreground', foregroundFor(theme.colors.primary));
-
-    // Inline code prefers the theme's own accent -- the colour it already uses
-    // for interactive text, and generally the tastefully desaturated one. Where
-    // that accent is too dim to read on the surface (VS Code's #007acc lands
-    // near 3.8:1) it falls back to the palette's blue.
-    const paletteBlue = String(
-      (theme.type === 'light' ? theme.terminal.blue : theme.terminal.brightBlue) || ''
-    );
-    const accent = theme.colors.primary;
-    const codeHex = contrast(accent, theme.colors.surface) >= 4.6 || !paletteBlue
-      ? accent
-      : paletteBlue;
-
-    root.style.setProperty('--code-fg', codeHex);
-    // Barely-there wash: the tint pulls the background toward the text, so any
-    // more of it costs contrast. 3.5% is the most every theme can carry and
-    // still clear 4.5:1.
-    root.style.setProperty('--code-bg', withAlpha(codeHex, 0.035));
-    root.style.setProperty('--code-border', withAlpha(codeHex, 0.16));
-    
     // We can also broadcast an event if needed outside of React context
     window.dispatchEvent(new CustomEvent('theme-changed', { detail: theme }));
   };
