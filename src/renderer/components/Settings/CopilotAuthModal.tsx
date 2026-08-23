@@ -9,6 +9,8 @@ interface CopilotAuthModalProps {
 
 const CLIENT_ID = "Iv1.b507a08c87ecfe98";
 
+const invoke = window.electron?.invoke || (async () => null);
+
 export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModalProps) {
   const [step, setStep] = useState<'init' | 'code' | 'success'>('init');
   const [deviceCode, setDeviceCode] = useState('');
@@ -16,7 +18,7 @@ export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModa
   const [verificationUri, setVerificationUri] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [expiresIn, setExpiresIn] = useState(0);
-  const pollIntervalRef = useRef<NodeJS.Timeout | undefined>();
+  const pollIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   useEffect(() => {
     if (isOpen) {
@@ -37,7 +39,7 @@ export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModa
     setError(undefined);
     try {
       // Use IPC to bypass CORS
-      const data = await window.electron.invoke('ai:github-auth-device-code', CLIENT_ID);
+      const data = await invoke('ai:github-auth-device-code', CLIENT_ID);
       
       setDeviceCode(data.device_code);
       setUserCode(data.user_code);
@@ -57,7 +59,7 @@ export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModa
     pollIntervalRef.current = setInterval(async () => {
       try {
         // Use IPC to bypass CORS
-        const data = await window.electron.invoke('ai:github-auth-poll-token', {
+        const data = await invoke('ai:github-auth-poll-token', {
             clientId: CLIENT_ID,
             deviceCode
         });

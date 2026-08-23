@@ -4,6 +4,7 @@ import { McpClient, McpServer, McpServerConfig, McpServerType, McpTool, McpError
 import { StdioClient } from './StdioClient';
 import { HttpClient } from './HttpClient';
 import { BuiltinClient, BUILTIN_PROVIDERS } from './builtin';
+import { isRecoverableCallError } from './protocol';
 
 const GLOBAL_ENABLED_KEY = 'mcpGlobalEnabled';
 const TOOL_PREFIX = 'mcp__';
@@ -75,6 +76,9 @@ export class McpService {
 
   private toServer(row: Row): McpServer {
     const config = parseJson<McpServerConfig>(row.config, {});
+    const cached = parseJson<any>(row.tools_cache, []);
+    const legacyArray = Array.isArray(cached);
+    const tools = legacyArray ? cached : (Array.isArray(cached?.tools) ? cached.tools : []);
     return {
       id: row.id,
       name: row.name,
@@ -84,7 +88,12 @@ export class McpService {
       isBuiltin: row.is_builtin === 1,
       enabled: row.enabled === 1,
       disabledTools: parseJson<string[]>(row.disabled_tools, []),
-      tools: parseJson<McpTool[]>(row.tools_cache, []),
+      tools,
+      hasToolsCache: row.tools_cache != null,
+      // Array-shaped rows predate cache hints. Refresh them once so a modern
+      // server can provide ttlMs and cacheScope for subsequent reads.
+      toolsCacheExpiresAt: legacyArray ? 0 : (cached?.expiresAt ?? null),
+      warnings: legacyArray ? [] : (Array.isArray(cached?.warnings) ? cached.warnings : []),
       lastError: row.last_error,
       rank: row.rank,
     };
@@ -327,9 +336,20 @@ export class McpService {
     if (!server) throw new McpError('Server not found');
 
     try {
-      const tools = await this.clientFor(server).listTools();
+      const listed = await this.clientFor(server).listTools();
+      const expiresAt = listed.ttlMs === undefined ? null : Date.now() + listed.ttlMs;
+      // `cacheScope: 'private'` needs a cache that is not shared across
+      // authorization contexts. This one is not: it is keyed by server row, and
+      // `saveServer` clears it whenever the config (which holds the
+      // credentials) changes. Revisit if credentials ever move out of config.
+      const cache = {
+        tools: listed.tools,
+        expiresAt,
+        cacheScope: listed.cacheScope,
+        warnings: listed.warnings ?? [],
+      };
       this.db.prepare('UPDATE mcp_servers SET tools_cache = ?, last_error = NULL, updated_at = ? WHERE id = ?')
-        .run(JSON.stringify(tools), Date.now(), id);
+        .run(JSON.stringify(cache), Date.now(), id);
     } catch (e: any) {
       this.dispose(id);
       this.db.prepare('UPDATE mcp_servers SET last_error = ?, updated_at = ? WHERE id = ?')
@@ -364,7 +384,10 @@ export class McpService {
       // failed is not retried here, or every message would stall on its
       // connection timeout; the UI offers an explicit reload instead.
       let tools = server.tools;
-      if (tools.length === 0 && !server.lastError) {
+      const cacheExpired = server.toolsCacheExpiresAt != null && server.toolsCacheExpiresAt <= Date.now();
+      // An empty list is a real answer once it has been fetched, so only the
+      // TTL brings us back here.
+      if (!server.lastError && (cacheExpired || !server.hasToolsCache)) {
         const refreshed = await this.refreshTools(server.id);
         tools = refreshed.tools;
       }
@@ -417,7 +440,10 @@ export class McpService {
       const text = await this.clientFor(server).callTool(route.toolName, args);
       return { success: true, result: text };
     } catch (e: any) {
-      this.dispose(server.id);
+      // A rejected argument or a JSON-RPC error leaves the connection healthy;
+      // tearing it down would respawn the server and re-probe its protocol era
+      // every time the model mistypes a parameter.
+      if (!isRecoverableCallError(e)) this.dispose(server.id);
       return { success: false, error: `MCP tool "${wireName}" failed: ${e?.message || e}` };
     }
   }

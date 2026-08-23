@@ -19,6 +19,7 @@ interface TerminalInstanceProps {
 export interface TerminalRef {
   fit: () => void;
   focus: () => void;
+  clear: () => void;
   write: (data: string) => void;
   send: (data: string) => void; // Write to PTY
   setFontSize: (size: number) => void;

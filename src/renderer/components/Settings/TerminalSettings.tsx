@@ -945,7 +945,7 @@ export function TerminalSettings() {
                       <button
                         onClick={async () => {
                             await invoke('shell:add-history-blacklist', h.command);
-                            const bl = await invoke<any[]>('shell:get-history-blacklist');
+                            const bl = await invoke('shell:get-history-blacklist');
                             setHistoryBlacklist(bl);
                         }}
                         className="p-1.5 text-text-muted opacity-0 group-hover:opacity-100 hover:bg-surface-hover hover:text-text-main rounded transition-all"

@@ -16,6 +16,7 @@ interface McpServer {
   enabled: boolean;
   disabledTools: string[];
   tools: McpTool[];
+  warnings: string[];
   lastError: string | null;
 }
 
@@ -224,6 +225,13 @@ export const McpPopover: React.FC<McpPopoverProps> = ({ onClose }) => {
                     <div className="px-2 pb-2 text-[10px] text-red-400 flex items-start gap-1" title={server.lastError}>
                       <AlertCircle size={11} className="mt-px shrink-0" />
                       <span className="truncate">{server.lastError}</span>
+                    </div>
+                  )}
+
+                  {!server.lastError && server.warnings?.length > 0 && (
+                    <div className="px-2 pb-2 text-[10px] text-amber-400 flex items-start gap-1" title={server.warnings.join('\n')}>
+                      <AlertCircle size={11} className="mt-px shrink-0" />
+                      <span className="truncate">{server.warnings[0]}</span>
                     </div>
                   )}
 

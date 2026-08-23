@@ -21,6 +21,7 @@ interface McpServer {
   enabled: boolean;
   disabledTools: string[];
   tools: McpTool[];
+  warnings: string[];
   lastError: string | null;
   rank: number;
 }
@@ -137,7 +138,8 @@ export function McpSettings() {
     try {
       const updated: McpServer = await invoke('mcp:refresh', id);
       setServers(prev => prev.map(s => (s.id === id ? updated : s)));
-      setNotice(updated.lastError ? null : `${updated.name}: ${updated.tools.length} tool(s)`);
+      const warnings = updated.warnings?.length ? `, ${updated.warnings.length} warning(s)` : '';
+      setNotice(updated.lastError ? null : `${updated.name}: ${updated.tools.length} tool(s)${warnings}`);
       notifyUpdated();
     } finally {
       setBusy(false);
@@ -370,6 +372,11 @@ export function McpSettings() {
                     {server.lastError && (
                       <p className="text-[11px] text-red-400 truncate mt-0.5" title={server.lastError}>
                         {server.lastError}
+                      </p>
+                    )}
+                    {!server.lastError && server.warnings?.length > 0 && (
+                      <p className="text-[11px] text-amber-400 truncate mt-0.5" title={server.warnings.join('\n')}>
+                        {server.warnings[0]}
                       </p>
                     )}
                   </button>

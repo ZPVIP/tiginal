@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { McpClient, McpServerConfig, McpTool, McpError } from './types';
+import { McpClient, McpServerConfig, McpTool, McpToolList, McpError } from './types';
 import { buildSpawnEnv } from './env';
 import { expandHome, isWithin, resolveExisting, workspaceDir } from '../../utils/paths';
 
@@ -368,8 +368,8 @@ export class BuiltinClient implements McpClient {
     this.provider = provider;
   }
 
-  async listTools(): Promise<McpTool[]> {
-    return this.provider.tools;
+  async listTools(): Promise<McpToolList> {
+    return { tools: this.provider.tools };
   }
 
   async callTool(name: string, args: any): Promise<string> {

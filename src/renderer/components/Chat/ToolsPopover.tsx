@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Search } from 'lucide-react';
 import { clsx } from 'clsx';
 
+const invoke = window.electron?.invoke || (async () => null);
+
 interface Tool {
   id: string;
   name: string;
@@ -43,9 +45,9 @@ export const ToolsPopover: React.FC<ToolsPopoverProps> = ({ onClose }) => {
   const loadSettings = async () => {
     try {
       const [enabled, allTools, allCats] = await Promise.all([
-        window.electron.invoke('tools:get-global-enabled'),
-        window.electron.invoke('tools:get-all'),
-        window.electron.invoke('categories:get-all')
+        invoke('tools:get-global-enabled'),
+        invoke('tools:get-all'),
+        invoke('categories:get-all')
       ]);
       setGlobalEnabled(enabled);
       setTools(allTools);
@@ -65,7 +67,7 @@ export const ToolsPopover: React.FC<ToolsPopoverProps> = ({ onClose }) => {
   const toggleGlobal = async () => {
     const newValue = !globalEnabled;
     setGlobalEnabled(newValue);
-    await window.electron.invoke('tools:set-global-enabled', newValue);
+    await invoke('tools:set-global-enabled', newValue);
   };
 
   const toggleCategory = async (catId: string, currentEnabled: boolean) => {
@@ -75,7 +77,7 @@ export const ToolsPopover: React.FC<ToolsPopoverProps> = ({ onClose }) => {
     const newValue = !currentEnabled;
     setCategories(prev => prev.map(c => c.id === catId ? { ...c, enabled: newValue } : c));
     
-    await window.electron.invoke('categories:toggle-enabled', catId, newValue);
+    await invoke('categories:toggle-enabled', catId, newValue);
   };
 
   const toggleTool = async (id: string, currentEnabled: boolean) => {
@@ -93,7 +95,7 @@ export const ToolsPopover: React.FC<ToolsPopoverProps> = ({ onClose }) => {
     try {
       const newValue = !currentEnabled;
       setTools(prev => prev.map(t => t.id === id ? { ...t, enabled: newValue } : t));
-      await window.electron.invoke('tools:toggle', id, newValue);
+      await invoke('tools:toggle', id, newValue);
     } catch (error) {
       console.error('Failed to toggle tool:', error);
       loadSettings();
