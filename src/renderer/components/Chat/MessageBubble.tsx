@@ -3,11 +3,16 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { clsx } from 'clsx';
-import { User, Copy, Check, ChevronDown, ChevronRight, Brain, Maximize2, Minimize2, Pencil, FileText, Monitor, Smartphone, Activity } from 'lucide-react';
+import { User, Copy, Check, ChevronDown, ChevronRight, Brain, Maximize2, Minimize2, Pencil, FileText, Monitor, Smartphone, Activity, Database, DatabaseZap, CircleHelp } from 'lucide-react';
 import { TigiCat } from '../icons/TigiCat';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import { ConsoleOutput } from './ConsoleOutput';
+import {
+  formatCacheTooltip,
+  formatTokenTooltip,
+  type CacheStatus,
+} from '../../../shared/token-tooltips';
 
 interface MessageProps {
   role: 'user' | 'assistant' | 'tool';
@@ -20,6 +25,8 @@ interface MessageProps {
   completionTokens?: number;
   reasoningTokens?: number;
   cachedTokens?: number;
+  cacheStatus?: CacheStatus;
+  titleTokens?: number;
   totalTokens?: number;
 }
 
@@ -33,27 +40,6 @@ function toImageSrc(pathOrUrl: string): string {
   if (/^(data:|blob:|tigimg:)/.test(pathOrUrl)) return pathOrUrl;
   return `tigimg://f/?p=${encodeURIComponent(pathOrUrl)}`;
 }
-
-function formatTokenTooltip(props: { promptTokens?: number; completionTokens?: number; reasoningTokens?: number; cachedTokens?: number; totalTokens?: number }): string {
-  const parts: string[] = [];
-
-  let promptPart = `Prompt: ${props.promptTokens || 0}`;
-  if (props.cachedTokens) {
-    promptPart += ` (Cached: ${props.cachedTokens})`;
-  }
-  parts.push(promptPart);
-
-  let completionPart = `Completion: ${props.completionTokens || 0}`;
-  if (props.reasoningTokens) {
-    completionPart += ` (Reasoning: ${props.reasoningTokens})`;
-  }
-  parts.push(completionPart);
-
-  parts.push(`Total: ${props.totalTokens || 0}`);
-
-  return parts.join(' | ');
-}
-
 
 /** Rendered lines of reasoning shown before the box stops growing and scrolls. */
 const REASONING_COLLAPSED_LINES = 7;
@@ -166,7 +152,7 @@ function ReasoningBlock({ content }: { content: string }) {
 }
 
 
-export function MessageBubble({ role, content, reasoning, images, onEdit, promptTokens, completionTokens, reasoningTokens, cachedTokens, totalTokens }: MessageProps) {
+export function MessageBubble({ role, content, reasoning, images, onEdit, promptTokens, completionTokens, cachedTokens, cacheStatus, titleTokens, totalTokens }: MessageProps) {
   const [copied, setCopied] = useState(false);
   const [copiedPlain, setCopiedPlain] = useState(false);
   const [copiedRendered, setCopiedRendered] = useState(false);
@@ -351,11 +337,31 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
                    <span className="text-[10px]">Rich</span>
                </button>
 
+               {!isUser && cacheStatus && (
+                   <div
+                     className={clsx(
+                       "p-1.5 transition-colors rounded hover:bg-surface flex items-center gap-1 cursor-default",
+                       cacheStatus === 'hit' && "text-accent-success",
+                       cacheStatus === 'miss' && "text-amber-400",
+                       cacheStatus === 'unknown' && "text-text-muted",
+                     )}
+                     title={formatCacheTooltip({ promptTokens, cachedTokens, cacheStatus })}
+                     aria-label={`Prompt cache ${cacheStatus}`}
+                   >
+                       {cacheStatus === 'hit' ? <DatabaseZap size={14} /> : cacheStatus === 'miss' ? <Database size={14} /> : <CircleHelp size={14} />}
+                       <span className="text-[10px]">Cache</span>
+                   </div>
+               )}
+
                {/* Token Stats */}
                {!isUser && (totalTokens ?? 0) > 0 && (
                    <div
                      className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1 cursor-default"
-                     title={formatTokenTooltip({ promptTokens, completionTokens, reasoningTokens, cachedTokens, totalTokens })}
+                     title={formatTokenTooltip({
+                       inputTokens: promptTokens,
+                       outputTokens: completionTokens,
+                       titleTokens,
+                     })}
                    >
                        <Activity size={14} />
                        <span className="text-[10px]">Token</span>

@@ -1,5 +1,6 @@
 import { getDatabase } from '../database/database';
 import { getCrypto } from '../ssh/CryptoService';
+import type { CacheStatus } from '../../shared/token-tooltips';
 
 export interface Conversation {
   id: string;
@@ -32,6 +33,7 @@ export interface TokenData {
   completionTokens?: number;
   reasoningTokens?: number;
   cachedTokens?: number;
+  cacheStatus?: CacheStatus;
   totalTokens?: number;
   /** Size of the context for the final turn (prompt + completion). */
   contextTokens?: number;
@@ -50,6 +52,8 @@ export interface Message {
   completionTokens?: number;
   reasoningTokens?: number;
   cachedTokens?: number;
+  cacheStatus?: CacheStatus;
+  titleTokens?: number;
   totalTokens?: number;
   contextTokens?: number;
   /** Absolute paths of attached images under <workspace>/pictures. */
@@ -70,6 +74,7 @@ export interface CategoryData {
  */
 export class ChatService {
   private transientConversations: Map<string, Conversation & { messages: Message[] }> = new Map();
+  private pendingTitleTokens = new Map<string, number>();
 
   /**
    * Create a new conversation
@@ -207,6 +212,7 @@ export class ChatService {
    * Delete a conversation and its messages
    */
   deleteConversation(id: string): void {
+    this.pendingTitleTokens.delete(id);
     if (this.transientConversations.has(id)) {
       this.transientConversations.delete(id);
       return;
@@ -222,6 +228,7 @@ export class ChatService {
   addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string, tokenData?: TokenData, overrideCreatedAt?: number, reasoning?: string, images?: string[]): Message {
     const id = require('crypto').randomUUID();
     const now = overrideCreatedAt || Date.now();
+    const titleTokens = role === 'assistant' ? this.pendingTitleTokens.get(conversationId) || 0 : 0;
 
     const message: Message = {
       id,
@@ -236,6 +243,8 @@ export class ChatService {
       completionTokens: tokenData?.completionTokens || 0,
       reasoningTokens: tokenData?.reasoningTokens || 0,
       cachedTokens: tokenData?.cachedTokens || 0,
+      cacheStatus: tokenData?.cacheStatus || 'unknown',
+      titleTokens,
       totalTokens: tokenData?.totalTokens || 0,
       contextTokens: tokenData?.contextTokens || 0,
       images: images && images.length ? images : undefined,
@@ -246,6 +255,7 @@ export class ChatService {
       if (conv) {
         conv.messages.push(message);
         conv.updatedAt = now;
+        if (role === 'assistant') this.pendingTitleTokens.delete(conversationId);
       }
       return message;
     }
@@ -253,8 +263,8 @@ export class ChatService {
     const db = getDatabase().getDb();
     
     db.prepare(`
-      INSERT INTO messages (id, conversation_id, role, content, reasoning, created_at, provider_id, model_id, prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, total_tokens, context_tokens, images)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, conversation_id, role, content, reasoning, created_at, provider_id, model_id, prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, cache_status, title_tokens, total_tokens, context_tokens, images)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, conversationId, role, content, reasoning || null, now,
       tokenData?.providerId || null,
       tokenData?.modelId || null,
@@ -262,6 +272,8 @@ export class ChatService {
       tokenData?.completionTokens || 0,
       tokenData?.reasoningTokens || 0,
       tokenData?.cachedTokens || 0,
+      tokenData?.cacheStatus || 'unknown',
+      titleTokens,
       tokenData?.totalTokens || 0,
       tokenData?.contextTokens || 0,
       images && images.length ? JSON.stringify(images) : null
@@ -271,8 +283,37 @@ export class ChatService {
     db.prepare(`
       UPDATE conversations SET updated_at = ? WHERE id = ?
     `).run(now, conversationId);
+    if (role === 'assistant') this.pendingTitleTokens.delete(conversationId);
 
     return message;
+  }
+
+  /** Attach the one-off title request to the first assistant reply. */
+  updateTitleTokens(conversationId: string, titleTokens: number): void {
+    const normalizedTokens = Math.max(0, Math.trunc(titleTokens));
+    const transient = this.transientConversations.get(conversationId);
+    if (transient) {
+      const firstReply = transient.messages.find(message => message.role === 'assistant');
+      if (firstReply) firstReply.titleTokens = normalizedTokens;
+      else this.pendingTitleTokens.set(conversationId, normalizedTokens);
+      return;
+    }
+
+    const db = getDatabase().getDb();
+    const result = db.prepare(`
+      UPDATE messages SET title_tokens = ?
+      WHERE id = (
+        SELECT id FROM messages
+        WHERE conversation_id = ? AND role = 'assistant'
+        ORDER BY created_at ASC
+        LIMIT 1
+      )
+    `).run(normalizedTokens, conversationId);
+
+    if (result.changes === 0) {
+      const conversationExists = db.prepare('SELECT 1 FROM conversations WHERE id = ?').get(conversationId);
+      if (conversationExists) this.pendingTitleTokens.set(conversationId, normalizedTokens);
+    }
   }
 
   /**
@@ -326,7 +367,7 @@ export class ChatService {
     const rows = db.prepare(`
       SELECT id, conversation_id, role, content, reasoning, created_at,
              provider_id, model_id, prompt_tokens, completion_tokens,
-             reasoning_tokens, cached_tokens, total_tokens, context_tokens, images
+             reasoning_tokens, cached_tokens, cache_status, title_tokens, total_tokens, context_tokens, images
       FROM messages
       WHERE conversation_id = ?
       ORDER BY created_at ASC
@@ -343,6 +384,8 @@ export class ChatService {
       completion_tokens: number;
       reasoning_tokens: number;
       cached_tokens: number;
+      cache_status: CacheStatus | null;
+      title_tokens: number;
       total_tokens: number;
       context_tokens: number;
       images: string | null;
@@ -361,6 +404,8 @@ export class ChatService {
       completionTokens: row.completion_tokens || 0,
       reasoningTokens: row.reasoning_tokens || 0,
       cachedTokens: row.cached_tokens || 0,
+      cacheStatus: row.cache_status || 'unknown',
+      titleTokens: row.title_tokens || 0,
       totalTokens: row.total_tokens || 0,
       contextTokens: row.context_tokens || 0,
       images: parseImages(row.images),

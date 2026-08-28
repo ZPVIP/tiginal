@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 21;
 
 /**
  * Database service for Tiginal
@@ -141,6 +141,14 @@ export class DatabaseService {
 
     if (currentVersion < 19) {
       this.migrateV19();
+    }
+
+    if (currentVersion < 20) {
+      this.migrateV20();
+    }
+
+    if (currentVersion < 21) {
+      this.migrateV21();
     }
 
     // Update schema version
@@ -655,6 +663,34 @@ export class DatabaseService {
       this.db.exec(`ALTER TABLE messages ADD COLUMN images TEXT`);
     } catch (e) {
       // Column might already exist
+    }
+  }
+
+  /**
+   * Migration v20: Preserve whether cache telemetry reported a hit or miss
+   *
+   * A zero cached_tokens value is ambiguous on older rows because providers
+   * often omitted cache telemetry entirely. Keep those rows unknown.
+   */
+  private migrateV20(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN cache_status TEXT DEFAULT 'unknown'`);
+    } catch (e) {
+      // Column might already exist.
+    }
+    this.db.exec(`UPDATE messages SET cache_status = 'hit' WHERE cached_tokens > 0`);
+  }
+
+  /** Migration v21: Attribute title-generation usage to the first reply. */
+  private migrateV21(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN title_tokens INTEGER DEFAULT 0`);
+    } catch (e) {
+      // Column might already exist.
     }
   }
 

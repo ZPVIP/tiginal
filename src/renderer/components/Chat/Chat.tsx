@@ -144,6 +144,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
               completionTokens: data.tokenData.completionTokens,
               reasoningTokens: data.tokenData.reasoningTokens,
               cachedTokens: data.tokenData.cachedTokens,
+              cacheStatus: data.tokenData.cacheStatus,
               totalTokens: data.tokenData.totalTokens,
               contextTokens: data.tokenData.contextTokens,
             };
@@ -160,27 +161,30 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
       }
     };
 
-    // Title message listener - insert title message before the streaming assistant message
-    const onTitleMessage = (data: { conversationId: string; message: any }) => {
+    const onTitleUsage = (data: { conversationId: string; titleTokens: number }) => {
+      const updateMessages = (prev: any[]) => {
+        const newMsgs = [...prev];
+        const firstReplyIndex = newMsgs.findIndex(message => message.role === 'assistant');
+        if (firstReplyIndex !== -1) {
+          newMsgs[firstReplyIndex] = {
+            ...newMsgs[firstReplyIndex],
+            titleTokens: data.titleTokens,
+          };
+        }
+        return newMsgs;
+      };
+
       if (currentConversationIdRef.current === data.conversationId) {
-        setMessages(prev => {
-          const newMsgs = [...prev];
-          // Insert before the last assistant message (the streaming one)
-          for (let i = newMsgs.length - 1; i >= 0; i--) {
-            if (newMsgs[i].role === 'assistant') {
-              newMsgs.splice(i, 0, data.message);
-              break;
-            }
-          }
-          return newMsgs;
-        });
+        setMessages(updateMessages);
+      } else if (isIncognitoRef.current) {
+        setIncognitoMessages(updateMessages);
       }
     };
 
     const removeToolListener = (window as any).electron?.on('chat:tool-call', onToolCall);
     const removeResultListener = (window as any).electron?.on('chat:tool-result', onToolResult);
     const removeStreamCompleteListener = (window as any).electron?.on('chat:stream-complete', onStreamComplete);
-    const removeTitleMessageListener = (window as any).electron?.on('chat:title-message', onTitleMessage);
+    const removeTitleUsageListener = (window as any).electron?.on('chat:title-usage', onTitleUsage);
 
     return () => {
         window.removeEventListener('ai-providers-updated', handleUpdate);
@@ -188,7 +192,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
         if (removeToolListener) removeToolListener();
         if (removeResultListener) removeResultListener();
         if (removeStreamCompleteListener) removeStreamCompleteListener();
-        if (removeTitleMessageListener) removeTitleMessageListener();
+        if (removeTitleUsageListener) removeTitleUsageListener();
     };
   }, []);
 

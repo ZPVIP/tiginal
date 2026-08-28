@@ -2,6 +2,10 @@ import { ipcMain, shell } from 'electron';
 import { getPathCompletions } from './shellHistory';
 import { directoryService } from './DirectoryService';
 import { commandService } from './CommandService';
+import {
+  applyCompletionTokenLimit,
+  fetchOpenAIWithCompatibility,
+} from './services/ai/openai-request';
 
 export function setupShellHandlers() {
   ipcMain.handle('shell:show-item-in-folder', async (_, path: string) => {
@@ -241,22 +245,22 @@ Return ONLY the normalized command, nothing else.
 Command: ${command}`;
 
     try {
-      const response = await fetch(`${endpoint}/chat/completions`, {
+      const bodyPayload = applyCompletionTokenLimit({
+        model: modelId,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0,
+      }, endpoint, 200);
+      const fetchResult = await fetchOpenAIWithCompatibility(fetch, `${endpoint}/chat/completions`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model: modelId,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0,
-          max_tokens: 200,
-        }),
-      });
+      }, bodyPayload);
+      const response = fetchResult.response;
 
       if (!response.ok) return command;
 
       const data = await response.json() as any;
-      const result = data.choices?.[0]?.message?.content?.trim();
-      return result || command;
+      const normalizedCommand = data.choices?.[0]?.message?.content?.trim();
+      return normalizedCommand || command;
     } catch (err) {
       console.error('Command normalize error:', err);
       return command;

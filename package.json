@@ -12,12 +12,13 @@
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "test:mcp": "npm run build:main && node --test test/mcp-protocol.test.js test/mcp-service.test.js",
+    "test:cache": "npm run build:main && node --test test/ai-cache.test.js",
     "start": "npm run build && electron .",
     "rebuild": "electron-rebuild -f -w node-pty",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "postinstall": "electron-rebuild",
-    "test": "npm run test:mcp"
+    "test": "npm run build:main && node --test test/*.test.js"
   },
   "author": "",
   "license": "MIT",

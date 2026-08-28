@@ -15,11 +15,23 @@ interface AIProvider {
 import { getCopilotToken } from './services/ai/CopilotAuthService';
 import { printRequestEndSeparator, printRequestStartSeparator, printRespondEndSeparator, printRespondStartSeparator, printVisualSeparator } from './utils/DebugUtils';
 import { fetchWithLocalhostFallback } from './utils/NetworkUtils';
-import { buildDynamicPromptsForAI } from './dynamic-prompts';
+import { buildDynamicPromptSectionsForAI } from './dynamic-prompts';
 import { getMcpService } from './services/mcp/McpService';
 import { getContextWindow, setOverride as setContextWindowOverride } from './services/context-window';
 import { toModelDataUrl, deleteImages } from './image-handlers';
 import { expandHome, normalizeForCompare, workspaceDir } from './utils/paths';
+import {
+  aggregateCacheUsage,
+  canonicalizeToolDefinitions,
+  isAnthropicEndpoint,
+  normalizeOpenAIUsage,
+  NormalizedUsage,
+} from './services/ai/cache-usage';
+import { streamAnthropicAPI } from './services/ai/anthropic-stream';
+import {
+  applyCompletionTokenLimit,
+  fetchOpenAIWithCompatibility,
+} from './services/ai/openai-request';
 
 interface LogAccumulator {
     id?: string;
@@ -434,13 +446,12 @@ async function callNonStreamingChatCompletion(
     try { const url = new URL(endpoint); headers['Origin'] = url.origin; } catch (e) {}
   }
 
-  const body = JSON.stringify({
+  const bodyPayload = applyCompletionTokenLimit({
     model: config.model,
     messages,
     temperature: options?.temperature ?? 0.3,
-    max_tokens: options?.maxTokens ?? 1000,
     stream: false
-  });
+  }, endpoint, options?.maxTokens ?? 1000);
 
   const label = options?.label || 'NON_STREAMING';
 
@@ -451,19 +462,19 @@ async function callNonStreamingChatCompletion(
     const safeHeaders = { ...headers };
     if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
     process.stdout.write('Headers: ' + JSON.stringify(safeHeaders, null, 2) + '\n');
-    process.stdout.write('Body: ' + JSON.stringify(JSON.parse(body), null, 2) + '\n');
+    process.stdout.write('Body: ' + JSON.stringify(bodyPayload, null, 2) + '\n');
   }
 
-  const response = await fetchWithLocalhostFallback(`${endpoint}/chat/completions`, {
+  const result = await fetchOpenAIWithCompatibility(fetchWithLocalhostFallback, `${endpoint}/chat/completions`, {
     method: 'POST',
     headers,
-    body
-  });
+  }, bodyPayload);
+  const response = result.response;
 
   printRequestEndSeparator();
 
   if (!response.ok) {
-    const errorText = await response.text();
+    const errorText = result.errorText ?? await response.text();
     console.error(`${label} API failed: ${response.status} - ${errorText}`);
     return { content: null, usage: undefined };
   }
@@ -575,14 +586,30 @@ async function streamAIAPI(
   endpoint: string,
   apiKey: string | null,
   model: string,
-  messages: Array<{ role: string; content: string }>,
+  messages: any[],
   customHeaders: Record<string, string> = {},
   autoCORSFix: boolean = true,
   tools: Array<{ name: string; description: string; input_schema: object }> = [],
   onChunk: (data: { content?: string; reasoning?: string }) => void,
   onToolCall?: (data: { id: string; name: string; input: any }) => void | Promise<void>,
   abortSignal?: AbortSignal
-): Promise<{ usage?: any }> {
+): Promise<{ usage: NormalizedUsage }> {
+  const stableTools = canonicalizeToolDefinitions(tools);
+
+  if (type !== 'copilot' && isAnthropicEndpoint(endpoint)) {
+    return streamAnthropicAPI({
+      endpoint,
+      apiKey,
+      model,
+      messages,
+      customHeaders,
+      tools: stableTools,
+      onChunk,
+      onToolCall,
+      abortSignal,
+    });
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...customHeaders
@@ -618,16 +645,16 @@ async function streamAIAPI(
     }
   }
 
-  const bodyPayload: any = {
+  const bodyPayload = applyCompletionTokenLimit({
     model,
     messages,
     temperature: 0.7,
-    max_tokens: 4000,
-    stream: true
-  };
+    stream: true,
+    stream_options: { include_usage: true },
+  }, endpoint, 4000);
 
-  if (tools.length > 0) {
-    bodyPayload.tools = tools.map(t => ({
+  if (stableTools.length > 0) {
+    bodyPayload.tools = stableTools.map(t => ({
       type: 'function',
       function: {
         name: t.name,
@@ -649,19 +676,21 @@ async function streamAIAPI(
   }
 
 
-  let response;
+  let response: Response;
+  let responseErrorText: string | undefined;
   try {
-    response = await fetchWithLocalhostFallback(`${endpoint}/chat/completions`, {
+    const result = await fetchOpenAIWithCompatibility(fetchWithLocalhostFallback, `${endpoint}/chat/completions`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(bodyPayload),
         signal: abortSignal,
-    });
+    }, bodyPayload);
+    response = result.response;
+    responseErrorText = result.errorText;
   } catch (error: any) {
       // Handle abort
       if (error.name === 'AbortError') {
           onChunk({ content: '\n\n*[Generation stopped]*' });
-          return { usage: undefined };
+          return { usage: normalizeOpenAIUsage(undefined) };
       }
       // Handle Network Errors (like Offline)
       console.error('Fetch Error:', error);
@@ -690,7 +719,7 @@ async function streamAIAPI(
   printRequestEndSeparator();
 
   if (!response.ok) {
-    const errorText = await response.text();
+    const errorText = responseErrorText ?? await response.text();
     console.error(`AI API Error: ${response.status} - ${errorText}`);
 
     if (type === 'copilot' && response.status === 400) {
@@ -708,7 +737,7 @@ async function streamAIAPI(
                     `Please check your settings: [https://github.com/settings/copilot/features](https://github.com/settings/copilot/features)`;
                  
                  onChunk({ content: friendlyMessage });
-                 return { usage: undefined };
+                 return { usage: normalizeOpenAIUsage(undefined) };
             }
         } catch (e) {
             // ignore JSON parse error
@@ -733,7 +762,7 @@ async function streamAIAPI(
         `> ${errorMessage}`;
 
     onChunk({ content: genericErrorMsg });
-    return { usage: undefined };
+    return { usage: normalizeOpenAIUsage(undefined) };
   }
 
   if (!response.body) {
@@ -827,7 +856,7 @@ async function streamAIAPI(
       throw err;
   }
 
-  return { usage: logAccumulator.usage };
+  return { usage: normalizeOpenAIUsage(logAccumulator.usage) };
 }
 
 async function runAgentLoop(_event: any, conversationId: string, providerId: string, content: string, specificModel?: string, options: { useSystemPrompt?: boolean, useSkills?: boolean, images?: string[] } = {}): Promise<{ response: string; error?: string }> {
@@ -849,7 +878,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     const customHeaders = provider.custom_headers ? JSON.parse(provider.custom_headers) : {};
     
     // 2. Build Initial Messages
-    const userMsg = chatService.addMessage(conversationId, 'user', content, undefined, undefined, undefined, options.images);
+    chatService.addMessage(conversationId, 'user', content, undefined, undefined, undefined, options.images);
     const dbMessages = chatService.getMessages(conversationId);
 
     // Auto-generate title for new conversations (first user message)
@@ -864,8 +893,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
         customHeaders,
         conversationId,
         chatService,
-        _event.sender,
-        userMsg.createdAt
+        _event.sender
       ).catch(err => console.error('Title generation failed:', err));
     }
     
@@ -888,7 +916,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
             const promptRows = db.prepare(`
                 SELECT title, content, is_default FROM system_prompts 
                 WHERE is_active = 1 
-                ORDER BY rank ASC
+                ORDER BY rank ASC, id ASC
             `).all() as { title: string; content: string; is_default: number }[];
             
             // Filter by category switches
@@ -914,7 +942,9 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     }
 
     // Dynamic prompts (from shared module)
-    const dynamicPrompts = useSystemPrompt ? buildDynamicPromptsForAI(dbService) : '';
+    const dynamicPrompts = useSystemPrompt
+      ? buildDynamicPromptSectionsForAI(dbService)
+      : { stable: '', volatile: '' };
     
     let skillsInfo = '';
     // Load skills info if requested (for prompt context)
@@ -922,7 +952,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
         try {
             const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='skills'").get();
             if (tableExists) {
-                const skillRows = db.prepare('SELECT name, description FROM skills WHERE enabled = 1').all() as {name:string, description:string}[];
+                const skillRows = db.prepare('SELECT name, description FROM skills WHERE enabled = 1 ORDER BY name ASC').all() as {name:string, description:string}[];
                 if (skillRows.length > 0) {
                     skillsInfo = '\n\n<available_skills>\n' + 
                         skillRows.map(s => `- "${s.name}": ${s.description}`).join('\n') +
@@ -934,12 +964,13 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
         }
     }
 
-    const systemMessage = { 
-        role: 'system', 
-        content: useSystemPrompt 
-           ? baseSystemPrompt + dynamicPrompts + skillsInfo 
-           : '' + skillsInfo
-    };
+    const stableSystemContent = useSystemPrompt
+      ? baseSystemPrompt + dynamicPrompts.stable + skillsInfo
+      : skillsInfo;
+    const systemMessages = [
+      ...(stableSystemContent ? [{ role: 'system', content: stableSystemContent }] : []),
+      ...(dynamicPrompts.volatile ? [{ role: 'system', content: dynamicPrompts.volatile }] : []),
+    ];
 
     // Current conversation context (will grow with tool calls)
     /**
@@ -960,7 +991,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     };
 
     const currentMessages: any[] = [
-        systemMessage,
+        ...systemMessages,
         ...dbMessages.map(toApiMessage)
     ];
 
@@ -982,6 +1013,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
             FROM tools t
             LEFT JOIN tool_categories tc ON t.category_id = tc.id
             WHERE t.enabled = 1 AND (tc.enabled IS NULL OR tc.enabled = 1)
+            ORDER BY t.name ASC
           `).all() as any[];
           currentTools = toolRows.map(row => ({
             name: row.name,
@@ -1004,13 +1036,14 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     } catch (e) {
         console.error('[MCP] Failed to load tools', e);
     }
+    currentTools.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
 
     let finalResponse = '';
     let finalReasoning = '';
     let turnCount = 0;
     let allowAllOverride = false; // Session-based allow all
-    let accumulatedUsage = { prompt_tokens: 0, completion_tokens: 0, reasoning_tokens: 0, cached_tokens: 0, total_tokens: 0 };
+    const turnUsages: NormalizedUsage[] = [];
     // Accumulated totals over-report how full the context is once tools trigger
     // extra turns, so keep the last turn on its own for the context indicator.
     let lastTurnContextTokens = 0;
@@ -1273,14 +1306,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
             );
 
             // Accumulate token usage from this turn
-            if (streamResult && streamResult.usage) {
-                accumulatedUsage.prompt_tokens += streamResult.usage.prompt_tokens || 0;
-                accumulatedUsage.completion_tokens += streamResult.usage.completion_tokens || 0;
-                accumulatedUsage.total_tokens += streamResult.usage.total_tokens || 0;
-                accumulatedUsage.reasoning_tokens += (streamResult.usage.completion_tokens_details?.reasoning_tokens || 0);
-                accumulatedUsage.cached_tokens += (streamResult.usage.prompt_tokens_details?.cached_tokens || 0);
-                lastTurnContextTokens = (streamResult.usage.prompt_tokens || 0) + (streamResult.usage.completion_tokens || 0);
-            }
+            turnUsages.push(streamResult.usage);
+            lastTurnContextTokens = streamResult.usage.promptTokens + streamResult.usage.completionTokens;
 
             if (!toolCallOccurred) {
                 // LLM finished without calling a tool. 
@@ -1305,14 +1332,16 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                  // Stream was stopped by user
                  activeStreamControllers.delete(conversationId);
                  if (finalResponse) {
+                     const usage = aggregateCacheUsage(turnUsages);
                      const tokenData = {
                          providerId,
                          modelId: modelToUse,
-                         promptTokens: accumulatedUsage.prompt_tokens,
-                         completionTokens: accumulatedUsage.completion_tokens,
-                         reasoningTokens: accumulatedUsage.reasoning_tokens,
-                         cachedTokens: accumulatedUsage.cached_tokens,
-                         totalTokens: accumulatedUsage.total_tokens,
+                         promptTokens: usage.promptTokens,
+                         completionTokens: usage.completionTokens,
+                         reasoningTokens: usage.reasoningTokens,
+                         cachedTokens: usage.cachedTokens,
+                         cacheStatus: usage.cacheStatus,
+                         totalTokens: usage.totalTokens,
                          contextTokens: lastTurnContextTokens,
                      };
                      chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
@@ -1331,14 +1360,16 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     activeStreamControllers.delete(conversationId);
 
     // Save final response (accumulated) to DB with token data
+    const usage = aggregateCacheUsage(turnUsages);
     const tokenData = {
         providerId,
         modelId: modelToUse,
-        promptTokens: accumulatedUsage.prompt_tokens,
-        completionTokens: accumulatedUsage.completion_tokens,
-        reasoningTokens: accumulatedUsage.reasoning_tokens,
-        cachedTokens: accumulatedUsage.cached_tokens,
-        totalTokens: accumulatedUsage.total_tokens,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        reasoningTokens: usage.reasoningTokens,
+        cachedTokens: usage.cachedTokens,
+        cacheStatus: usage.cacheStatus,
+        totalTokens: usage.totalTokens,
         contextTokens: lastTurnContextTokens,
     };
     chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
@@ -1597,8 +1628,7 @@ async function generateConversationTitle(
   customHeaders: Record<string, string>,
   conversationId: string,
   chatService: ReturnType<typeof getChatService>,
-  sender: any,
-  userMessageCreatedAt: number
+  sender: any
 ): Promise<void> {
   const TITLE_SYSTEM_PROMPT = 'You are a conversation title generator. Based on the user\'s message, create a brief, descriptive title (2-6 words). Respond with ONLY the title text. No quotes, no explanation, no extra punctuation.';
 
@@ -1647,40 +1677,25 @@ async function generateConversationTitle(
     sender.send('chat:title-updated', { conversationId, title });
 
     // Extract token data from title generation
-    const titleUsage = result.usage;
+    const titleUsage = normalizeOpenAIUsage(result.usage);
     const titleTokenData = {
       providerId: provider.id,
       modelId: model,
-      promptTokens: titleUsage?.prompt_tokens || 0,
-      completionTokens: titleUsage?.completion_tokens || 0,
-      reasoningTokens: titleUsage?.completion_tokens_details?.reasoning_tokens || 0,
-      cachedTokens: titleUsage?.prompt_tokens_details?.cached_tokens || 0,
-      totalTokens: titleUsage?.total_tokens || 0,
+      promptTokens: titleUsage.promptTokens,
+      completionTokens: titleUsage.completionTokens,
+      reasoningTokens: titleUsage.reasoningTokens,
+      cachedTokens: titleUsage.cachedTokens,
+      cacheStatus: titleUsage.cacheStatus,
+      totalTokens: titleUsage.totalTokens,
     };
 
-    // Save title message to DB with timestamp right after user message to ensure correct ordering
-    const titleMsg = chatService.addMessage(conversationId, 'assistant', `Title: ${title}`, titleTokenData, userMessageCreatedAt + 1);
-
-    // Update conversation tokens with title generation usage
+    // Account for the title request without inserting synthetic content into
+    // conversation history, which must remain append-only for prompt caching.
+    chatService.updateTitleTokens(conversationId, titleUsage.totalTokens);
     chatService.updateConversationTokens(conversationId, provider.id, model, titleTokenData);
-
-    // Notify renderer of the title message
-    sender.send('chat:title-message', {
+    sender.send('chat:title-usage', {
       conversationId,
-      message: {
-        id: titleMsg.id,
-        conversationId: titleMsg.conversationId,
-        role: titleMsg.role,
-        content: titleMsg.content,
-        createdAt: titleMsg.createdAt,
-        providerId: titleTokenData.providerId,
-        modelId: titleTokenData.modelId,
-        promptTokens: titleTokenData.promptTokens,
-        completionTokens: titleTokenData.completionTokens,
-        reasoningTokens: titleTokenData.reasoningTokens,
-        cachedTokens: titleTokenData.cachedTokens,
-        totalTokens: titleTokenData.totalTokens,
-      }
+      titleTokens: titleUsage.totalTokens,
     });
 
     if (process.env.NODE_ENV !== 'production') {
@@ -1832,7 +1847,7 @@ function updateLogAccumulator(
      if (!acc.id && data.id) acc.id = data.id;
      if (!acc.model && data.model) acc.model = data.model;
      if (!acc.created && data.created) acc.created = data.created;
-     if (!acc.usage && data.usage) acc.usage = data.usage;
+     if (data.usage && Object.keys(data.usage).length > 0) acc.usage = data.usage;
      
      const choice = data.choices?.[0];
      if (choice) {

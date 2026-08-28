@@ -14,6 +14,11 @@ export interface DynamicPromptTemplate {
   showAlways: boolean;
 }
 
+export interface DynamicPromptSections {
+  stable: string;
+  volatile: string;
+}
+
 /**
  * Get the current workspace path
  */
@@ -87,11 +92,11 @@ export function getDynamicPromptTemplates(): Record<string, DynamicPromptTemplat
 /**
  * Build dynamic prompts string for AI based on settings
  */
-export function buildDynamicPromptsForAI(dbService: ReturnType<typeof getDatabase>): string {
+export function buildDynamicPromptSectionsForAI(dbService: ReturnType<typeof getDatabase>): DynamicPromptSections {
   // Check global switch
   const globalEnabled = dbService.getSetting('dynamicPromptsGlobalEnabled');
   if (globalEnabled === 'false') {
-    return '';
+    return { stable: '', volatile: '' };
   }
 
   const dynamicDateEnabled = dbService.getSetting('dynamicPrompt_dateInfo') !== 'false';
@@ -99,29 +104,23 @@ export function buildDynamicPromptsForAI(dbService: ReturnType<typeof getDatabas
   const dynamicSystemEnabled = dbService.getSetting('dynamicPrompt_systemInfo') !== 'false';
   const dynamicAppleScriptEnabled = dbService.getSetting('dynamicPrompt_appleScriptInfo') !== 'false';
   
-  let dynamicPrompts = '';
+  let stablePrompts = '';
+  let volatilePrompts = '';
   
   // System Info (OS-specific) - placed first
   if (dynamicSystemEnabled) {
-    dynamicPrompts += `\n\n${getSystemInfoContent()}`;
-  }
-  
-  // Date Info
-  if (dynamicDateEnabled) {
-    const dateStr = new Date().toLocaleDateString('en-CA'); // ISO format for AI
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    dynamicPrompts += `\n\nIMPORTANT - Today's date is ${dateStr} (timezone: ${timezone}). This is the current date and you must use it accurately when answering time-sensitive questions. Do not confuse or misremember this date.`;
+    stablePrompts += `\n\n${getSystemInfoContent()}`;
   }
   
   // Working Directory Info
   if (dynamicWdEnabled) {
     const workspacePath = getWorkspacePath();
-    dynamicPrompts += `\n\nWORKING DIRECTORY - Your current working directory is: ${workspacePath}. All file operations and shell commands will be executed relative to this directory.`;
+    stablePrompts += `\n\nWORKING DIRECTORY - Your current working directory is: ${workspacePath}. All file operations and shell commands will be executed relative to this directory.`;
   }
   
   // AppleScript Date Handling (macOS only)
   if (dynamicAppleScriptEnabled && process.platform === 'darwin') {
-    dynamicPrompts += `\n\n${getAppleScriptContent()}`;
+    stablePrompts += `\n\n${getAppleScriptContent()}`;
   }
 
   // Web Search Guidance (Dynamic Check)
@@ -138,7 +137,7 @@ export function buildDynamicPromptsForAI(dbService: ReturnType<typeof getDatabas
                       (row.cat_enabled === null || row.cat_enabled === 1);
 
     if (isEnabled) {
-         dynamicPrompts += `\n\nWEB SEARCH - You have access to a WebSearch tool.
+         stablePrompts += `\n\nWEB SEARCH - You have access to a WebSearch tool.
 IMPORTANT: You MUST use the WebSearch tool when:
 - The user asks about current events, news, sports, or weather.
 - The user asks about topics that may have changed since your training cutoff.
@@ -148,6 +147,19 @@ Do NOT say "I don't know" or "My knowledge is limited" without using WebSearch t
   } catch (e) {
       // Ignore DB errors
   }
-  
-  return dynamicPrompts;
+
+  // Keep the day-level value in its own final system block. It is stable within
+  // a day and only invalidates content after this cache boundary at midnight.
+  if (dynamicDateEnabled) {
+    const dateStr = new Date().toLocaleDateString('en-CA');
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    volatilePrompts = `IMPORTANT - Today's date is ${dateStr} (timezone: ${timezone}). This is the current date and you must use it accurately when answering time-sensitive questions. Do not confuse or misremember this date.`;
+  }
+
+  return { stable: stablePrompts, volatile: volatilePrompts };
+}
+
+export function buildDynamicPromptsForAI(dbService: ReturnType<typeof getDatabase>): string {
+  const sections = buildDynamicPromptSectionsForAI(dbService);
+  return sections.stable + (sections.volatile ? `\n\n${sections.volatile}` : '');
 }

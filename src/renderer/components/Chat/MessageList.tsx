@@ -14,6 +14,8 @@ interface Message {
     completionTokens?: number;
     reasoningTokens?: number;
     cachedTokens?: number;
+    cacheStatus?: 'hit' | 'miss' | 'unknown';
+    titleTokens?: number;
     totalTokens?: number;
     approvalData?: {
         id: string;
@@ -153,6 +155,8 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
                    completionTokens={msg.completionTokens}
                    reasoningTokens={msg.reasoningTokens}
                    cachedTokens={msg.cachedTokens}
+                   cacheStatus={msg.cacheStatus}
+                   titleTokens={msg.titleTokens}
                    totalTokens={msg.totalTokens}
                 />
             )})}
