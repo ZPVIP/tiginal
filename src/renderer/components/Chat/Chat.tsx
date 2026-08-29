@@ -84,8 +84,6 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
 
     // Tool call listener
     const onToolCall = async (data: { conversationId: string; id: string; name: string; input: any; createdAt?: number }) => {
-      console.log('Tool call received:', data);
-      
       const analysis = (data as any).analysis;
       const needsPermission = analysis?.needsPermission;
       const shouldAutoRun = needsPermission === false || allowAllToolsRef.current;

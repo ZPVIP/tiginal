@@ -5,6 +5,7 @@ export interface SearchResult {
 }
 
 export interface SearchOptions {
-  limit?: number;
-  provider?: string;
+  maxResults?: number;
+  allowedDomains?: string[];
+  blockedDomains?: string[];
 }

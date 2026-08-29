@@ -85,3 +85,34 @@ test('retries a rejected request with max_completion_tokens', async () => {
     { model: 'gpt-5', max_completion_tokens: 4000, stream: true },
   ]);
 });
+
+test('merges leading system messages while preserving the stable prompt prefix', async () => {
+  const stablePrompt = 'Stable system prompt and tool instructions';
+  const volatilePrompt = 'Today is 2026-08-28';
+  let request;
+  const fetcher = async (_url, init) => {
+    request = JSON.parse(init.body);
+    return new Response(JSON.stringify({ choices: [] }), { status: 200 });
+  };
+
+  await fetchOpenAIWithCompatibility(
+    fetcher,
+    'http://127.0.0.1:1337/v1/chat/completions',
+    { method: 'POST' },
+    {
+      model: 'AtomicChat/Qwen3_8-27B-AD-IQ2_S',
+      messages: [
+        { role: 'system', content: stablePrompt },
+        { role: 'system', content: volatilePrompt },
+        { role: 'user', content: '你是谁' },
+      ],
+      stream: true,
+    },
+  );
+
+  assert.deepEqual(request.messages, [
+    { role: 'system', content: `${stablePrompt}\n\n${volatilePrompt}` },
+    { role: 'user', content: '你是谁' },
+  ]);
+  assert.equal(request.messages[0].content.startsWith(stablePrompt), true);
+});

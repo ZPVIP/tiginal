@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 21;
+const SCHEMA_VERSION = 22;
 
 /**
  * Database service for Tiginal
@@ -149,6 +149,10 @@ export class DatabaseService {
 
     if (currentVersion < 21) {
       this.migrateV21();
+    }
+
+    if (currentVersion < 22) {
+      this.migrateV22();
     }
 
     // Update schema version
@@ -690,6 +694,17 @@ export class DatabaseService {
     try {
       this.db.exec(`ALTER TABLE messages ADD COLUMN title_tokens INTEGER DEFAULT 0`);
     } catch (e) {
+      // Column might already exist.
+    }
+  }
+
+  /** Migration v22: Store local default arguments for tool execution. */
+  private migrateV22(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE tools ADD COLUMN default_input TEXT NOT NULL DEFAULT '{}'`);
+    } catch {
       // Column might already exist.
     }
   }

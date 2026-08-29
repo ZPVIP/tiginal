@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import defaults from './defaults.json';
 import { getDynamicPromptTemplates } from './dynamic-prompts';
 import { defaultWorkspaceDir } from './utils/paths';
+import { validateDefaultInput } from './services/tools/tool-input';
 
 interface Tool {
   id: string;
@@ -15,6 +16,7 @@ interface Tool {
   name: string;
   description?: string;
   inputSchema: object;
+  defaultInput: Record<string, unknown>;
   isSystem: boolean;
   enabled: boolean;
   createdAt: number;
@@ -27,6 +29,7 @@ interface ToolInput {
   name: string;
   description?: string;
   inputSchema: object;
+  defaultInput?: Record<string, unknown>;
   enabled?: boolean;
 }
 
@@ -251,7 +254,7 @@ export function setupToolHandlers(): void {
     const rows = db.prepare(`
       SELECT 
         t.id, t.category_id, tc.name as category_name, t.name, t.description, 
-        t.input_schema, t.is_system, t.enabled, t.created_at, t.updated_at
+        t.input_schema, t.default_input, t.is_system, t.enabled, t.created_at, t.updated_at
       FROM tools t
       LEFT JOIN tool_categories tc ON t.category_id = tc.id
       ORDER BY tc.rank ASC, t.name ASC
@@ -262,6 +265,7 @@ export function setupToolHandlers(): void {
       name: string;
       description: string | null;
       input_schema: string;
+      default_input: string;
       is_system: number;
       enabled: number;
       created_at: number;
@@ -275,6 +279,7 @@ export function setupToolHandlers(): void {
       name: row.name,
       description: row.description || undefined,
       inputSchema: JSON.parse(row.input_schema),
+      defaultInput: JSON.parse(row.default_input || '{}'),
       isSystem: row.is_system === 1,
       enabled: row.enabled === 1,
       createdAt: row.created_at,
@@ -316,17 +321,21 @@ export function setupToolHandlers(): void {
     const db = getDatabase().getDb();
     const id = crypto.randomUUID();
     const now = Date.now();
+    const defaultInput = input.defaultInput || {};
+    const defaultInputError = validateDefaultInput({ schema: input.inputSchema, defaultInput });
+    if (defaultInputError) throw new Error(defaultInputError);
 
     try {
       db.prepare(`
-        INSERT INTO tools (id, category_id, name, description, input_schema, is_system, enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+        INSERT INTO tools (id, category_id, name, description, input_schema, default_input, is_system, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
       `).run(
         id,
         input.categoryId || null,
         input.name,
         input.description || null,
         JSON.stringify(input.inputSchema),
+        JSON.stringify(defaultInput),
         input.enabled !== false ? 1 : 0,
         now,
         now
@@ -342,6 +351,7 @@ export function setupToolHandlers(): void {
         name: input.name,
         description: input.description,
         inputSchema: input.inputSchema,
+        defaultInput,
         isSystem: false,
         enabled: input.enabled !== false,
         createdAt: now,
@@ -361,18 +371,33 @@ export function setupToolHandlers(): void {
 
     const db = getDatabase().getDb();
     const now = Date.now();
+    const defaultInput = input.defaultInput || {};
 
     // Check if system tool
-    const tool = db.prepare('SELECT is_system FROM tools WHERE id = ?').get(input.id) as { is_system: number };
+    const tool = db.prepare('SELECT is_system, input_schema FROM tools WHERE id = ?').get(input.id) as {
+      is_system: number;
+      input_schema: string;
+    } | undefined;
+    const schema = tool?.is_system === 1 ? JSON.parse(tool.input_schema) : input.inputSchema;
+    const defaultInputError = validateDefaultInput({ schema, defaultInput });
+    if (defaultInputError) throw new Error(defaultInputError);
+
     if (tool && tool.is_system === 1) {
-      // Only allow updating enabled state for system tools (and maybe description logic if we allowed it, but user said system tools definition is fixed)
-      // Actually user said user can enable/disable system tools.
-      // And "Import System Preset" updates definition.
-      // So manual update should probably only touch enabled or category? 
-      // User said "Tools要按分类显示... Name 要是 uniq... 如果不是系统自带的定义... 窗口要是可以编辑的"
-      // Implies system tools are NOT editable via this endpoint for schema/name.
-      // But we might want to allow changing category?
-      // For now, let's assume system tools are locked for schema/name changes via UI edit.
+      db.prepare(`
+        UPDATE tools SET
+          category_id = ?,
+          default_input = ?,
+          enabled = ?,
+          updated_at = ?
+        WHERE id = ?
+      `).run(
+        input.categoryId || null,
+        JSON.stringify(defaultInput),
+        input.enabled !== false ? 1 : 0,
+        now,
+        input.id
+      );
+      return;
     }
 
     try {
@@ -382,6 +407,7 @@ export function setupToolHandlers(): void {
           name = ?,
           description = ?,
           input_schema = ?,
+          default_input = ?,
           enabled = ?,
           updated_at = ?
         WHERE id = ?
@@ -390,6 +416,7 @@ export function setupToolHandlers(): void {
         input.name,
         input.description || null,
         JSON.stringify(input.inputSchema),
+        JSON.stringify(defaultInput),
         input.enabled !== false ? 1 : 0,
         now,
         input.id
@@ -445,14 +472,15 @@ export function setupToolHandlers(): void {
       const id = crypto.randomUUID();
 
       db.prepare(`
-        INSERT INTO tools (id, category_id, name, description, input_schema, is_system, enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?)
+        INSERT INTO tools (id, category_id, name, description, input_schema, default_input, is_system, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?)
       `).run(
         id,
         defaultCatId,
         tool.name,
         tool.description || null,
         JSON.stringify(tool.input_schema),
+        JSON.stringify(tool.default_input || {}),
         now,
         now
       );

@@ -13,7 +13,7 @@
     "build:renderer": "vite build",
     "test:mcp": "npm run build:main && node --test test/mcp-protocol.test.js test/mcp-service.test.js",
     "test:cache": "npm run build:main && node --test test/ai-cache.test.js",
-    "start": "npm run build && electron .",
+    "start": "npm run build && ELECTRON_ENABLE_LOGGING=true electron .",
     "rebuild": "electron-rebuild -f -w node-pty",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
@@ -43,6 +43,7 @@
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
+    "ajv": "^6.12.6",
     "argon2": "^0.44.0",
     "better-sqlite3": "^12.6.0",
     "cheerio": "^1.1.2",

@@ -26,6 +26,47 @@ function withoutKeys(
   }, {});
 }
 
+function isTextSystemMessage(
+  value: unknown,
+): value is Record<string, unknown> & { role: 'system'; content: string } {
+  return typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+    && 'role' in value
+    && value.role === 'system'
+    && 'content' in value
+    && typeof value.content === 'string';
+}
+
+function mergeLeadingSystemMessages(messages: unknown): unknown {
+  if (!Array.isArray(messages)) return messages;
+
+  const systemMessages = [];
+  for (const message of messages) {
+    if (!isTextSystemMessage(message)) break;
+    systemMessages.push(message);
+  }
+
+  if (systemMessages.length < 2) return messages;
+
+  // Preserve content order so stable system text remains the cacheable prefix.
+  const mergedSystemMessage = {
+    ...systemMessages[0],
+    content: systemMessages.map(message => message.content).join('\n\n'),
+  };
+  return [mergedSystemMessage, ...messages.slice(systemMessages.length)];
+}
+
+function normalizeOpenAIPayload(
+  payload: Readonly<OpenAIRequestPayload>,
+): OpenAIRequestPayload {
+  if (!('messages' in payload)) return { ...payload };
+  return {
+    ...payload,
+    messages: mergeLeadingSystemMessages(payload.messages),
+  };
+}
+
 export function applyCompletionTokenLimit(
   payload: Readonly<OpenAIRequestPayload>,
   endpoint: string,
@@ -80,7 +121,7 @@ export async function fetchOpenAIWithCompatibility(
   init: Omit<RequestInit, 'body'>,
   payload: Readonly<OpenAIRequestPayload>,
 ): Promise<OpenAIFetchResult> {
-  let currentPayload = { ...payload };
+  let currentPayload = normalizeOpenAIPayload(payload);
 
   for (let attempt = 0; attempt < 3; attempt++) {
     const response = await fetcher(url, {

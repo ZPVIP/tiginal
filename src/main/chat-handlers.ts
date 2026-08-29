@@ -32,6 +32,17 @@ import {
   applyCompletionTokenLimit,
   fetchOpenAIWithCompatibility,
 } from './services/ai/openai-request';
+import {
+  JsonObject,
+  parseStoredJsonObject,
+  prepareToolInput,
+} from './services/tools/tool-input';
+import {
+  analyzeNonShellTool,
+  isToolRiskLevel,
+  ToolApprovalAnalysis,
+} from './services/tools/tool-approval';
+import { performSearch } from './services/search';
 
 interface LogAccumulator {
     id?: string;
@@ -96,6 +107,18 @@ const ATTEMPT_COMPLETION_DEF = {
     additionalProperties: false
   }
 };
+
+const LOCAL_EXECUTABLE_TOOLS = new Set([
+  'Bash',
+  'WebSearch',
+  'WebFetch',
+  'Skill',
+  'ExecuteSkill',
+]);
+
+function hasToolExecutor(toolName: string): boolean {
+  return LOCAL_EXECUTABLE_TOOLS.has(toolName) || getMcpService().isMcpTool(toolName);
+}
 
 function buildToolSearchPrompt(db: any): string {
   try {
@@ -503,7 +526,7 @@ async function analyzeCommand(
       apiKey: string | null,
       model: string
   }
-): Promise<{ needsPermission: boolean; description: string; riskLevel: string }> {
+): Promise<ToolApprovalAnalysis> {
     const prompt = `You are a security analyzer for shell commands. Your task is to analyze a bash command and determine:
 1. Whether it needs user permission before execution
 2. A brief description of what the command does (IMPORTANT: write the description in Chinese (Simplified))
@@ -562,9 +585,9 @@ Risk levels:
             try {
                 const result = JSON.parse(jsonStr);
                 return {
-                    needsPermission: result.needsPermission,
+                    needsPermission: result.needsPermission === true,
                     description: result.description || `Execute: ${command}`,
-                    riskLevel: result.riskLevel || 'medium'
+                    riskLevel: isToolRiskLevel(result.riskLevel) ? result.riskLevel : 'medium'
                 };
             } catch (e) {
                 console.warn('Failed to parse analyzer response', analyzerResult.content);
@@ -1111,9 +1134,22 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                     // HANDLE TOOL EXECUTION
                     let resultStr = '';
 
-                    if (toolCall.name === 'AttemptCompletion') {
+                    const definition = currentTools.find(tool => tool.name === toolCall.name);
+                    const storedDefaults = db.prepare(
+                        'SELECT default_input FROM tools WHERE name = ?'
+                    ).get(toolCall.name) as { default_input: string | null } | undefined;
+                    const preparedInput = prepareToolInput({
+                        schema: definition?.input_schema || { type: 'object' },
+                        defaultInput: parseStoredJsonObject(storedDefaults?.default_input),
+                        input: toolCall.input,
+                    });
+                    const toolInput: JsonObject = preparedInput.kind === 'valid' ? preparedInput.input : {};
+
+                    if (preparedInput.kind === 'invalid') {
+                        resultStr = `Invalid arguments for ${toolCall.name}: ${preparedInput.error}`;
+                    } else if (toolCall.name === 'AttemptCompletion') {
                         completionOccurred = true;
-                        resultStr = toolCall.input.result || 'Task completed.';
+                        resultStr = typeof toolInput.result === 'string' ? toolInput.result : 'Task completed.';
                         if (process.env.NODE_ENV !== 'production') console.log('>>> COMPLETION ATTEMPTED:', resultStr);
                         
                         // Send as chunk so it appears in UI
@@ -1122,9 +1158,10 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         
                     } else if (toolCall.name === 'ToolSearch') {
                         // Execute Tool Search
-                         _event.sender.send('chat:chunk', { conversationId, content: `\n\n> 🔍 Searching tools for: "${toolCall.input.query}"...\n` });
-                        if (process.env.NODE_ENV !== 'production') console.log(`>>> Executing ToolSearch: ${toolCall.input.query}`);
-                        const foundTools = await callToolsModel(toolCall.input.query, dbService);
+                        const searchQuery = typeof toolInput.query === 'string' ? toolInput.query : '';
+                        _event.sender.send('chat:chunk', { conversationId, content: `\n\n> 🔍 Searching tools for: "${searchQuery}"...\n` });
+                        if (process.env.NODE_ENV !== 'production') console.log(`>>> Executing ToolSearch: ${searchQuery}`);
+                        const foundTools = await callToolsModel(searchQuery, dbService);
                         if (process.env.NODE_ENV !== 'production') console.log('>>> ToolSearch Results:', JSON.stringify(foundTools, null, 2));
                         
                         // Add found tools to currentTools if not exists
@@ -1143,45 +1180,47 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         // Respond to LLM
                         const foundNames = foundTools.map(t => t.name).join(', ');
                         resultStr = JSON.stringify({
-                            query: toolCall.input.query,
+                            query: searchQuery,
                             found: foundTools.length,
                             tools: foundTools,
                             reasoning: `Found ${foundTools.length} tools. Added to available tools: ${foundNames}`
                         });
                         
+                    } else if (!hasToolExecutor(toolCall.name)) {
+                        resultStr = `Tool "${toolCall.name}" has a definition but no executor. Add a matching MCP tool or implement a built-in executor before enabling this definition.`;
                     } else {
-                        // Bash, Skill, or other Tools -> REQUIRE PERMISSION
+                        // Executable tools use a tool-aware approval policy.
                         
                         // 1. Analyze Safety
-                        if (process.env.NODE_ENV !== 'production') console.log(`>>> Analyzing command safety for ${toolCall.name}...`);
-                        const analysis = await analyzeCommand(
-                            toolCall.name === 'Bash' ? toolCall.input.command : JSON.stringify(toolCall.input),
+                        if (process.env.NODE_ENV !== 'production') console.log(`>>> Analyzing tool safety for ${toolCall.name}...`);
+                        const analysis = toolCall.name === 'Bash'
+                          ? await analyzeCommand(
+                            typeof toolInput.command === 'string' ? toolInput.command : '',
                             {
                                 type: provider.type,
                                 endpoint: provider.endpoint || 'https://api.openai.com/v1',
                                 apiKey,
-                                model: modelToUse // Use same model for analysis or toolModel? 
-                                // Plan said "Use Tools Model for safety". 
-                                // Let's try to use toolModel for safety if available, else current.
+                                model: modelToUse,
                             }
-                        );
+                          )
+                          : analyzeNonShellTool(toolCall.name, toolInput);
                         if (process.env.NODE_ENV !== 'production') console.log('>>> Safety Analysis:', JSON.stringify(analysis, null, 2));
 
                         // Quick override check
                         // If tool is explicitly safe (needsPermission=false) OR allowAllOverride is true
-                        const isSafe = (toolCall.name === 'Bash' && analysis.needsPermission === false);
-                        const isSkill = toolCall.name.toLowerCase().includes('skill'); // Skills might be safe? Let's default to confirm.
+                        const isSafe = analysis.needsPermission === false;
+                        const isSkill = toolCall.name.toLowerCase().includes('skill');
                         
 
                         if (allowAllOverride || isSafe) {
                              if (process.env.NODE_ENV !== 'production') console.log('>>> Auto-approving tool execution');
                              // Execute immediately
-                             const res = await invokeToolExecution(toolCall.name, toolCall.input);
+                             const res = await invokeToolExecution(toolCall.name, toolInput);
                              
                              let displayResult = res.result || res.error || 'Done';
                              // For Bash, prepend the command so it shows in the console window
                              if (toolCall.name === 'Bash') {
-                                 displayResult = `> ${toolCall.input.command}\n\n${displayResult}`;
+                                 displayResult = `> ${String(toolInput.command || '')}\n\n${displayResult}`;
                              }
 
                              // Send result to UI for display (Console Output) -- Skip for Skills
@@ -1209,11 +1248,11 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                     const path = require('path');
                                     const os = require('os');
                                     
-                                    const skillNameInput = toolCall.input.skill || toolCall.input.name;
+                                    const skillNameInput = toolInput.skill || toolInput.name;
                                     if (skillNameInput) {
                                          const allSkills = db.prepare('SELECT * FROM skills').all() as any[];
                                          const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-                                         const target = normalize(skillNameInput);
+                                         const target = normalize(String(skillNameInput));
                                          const skill = allSkills.find(s => normalize(s.name) === target || normalize(s.skill_folder) === target);
                                          
                                          if (skill) {
@@ -1234,6 +1273,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                             _event.sender.send('chat:tool-call', { 
                                 conversationId, 
                                 ...toolCall,
+                                input: toolInput,
                                 analysis,
                                 skillPath,
                                 createdAt: Date.now(),
@@ -1245,11 +1285,11 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                             
                             if (approval.approved) {
                                 if (approval.approvedAll) allowAllOverride = true;
-                                const res = await invokeToolExecution(toolCall.name, toolCall.input);
+                                const res = await invokeToolExecution(toolCall.name, toolInput);
                                 
                                 let displayResult = res.result || res.error || 'Done';
                                 if (toolCall.name === 'Bash') {
-                                    displayResult = `> ${toolCall.input.command}\n\n${displayResult}`;
+                                    displayResult = `> ${String(toolInput.command || '')}\n\n${displayResult}`;
                                 }
                                 
                                 resultStr = res.result || res.error || 'Done'; // Keep raw result for context
@@ -1527,14 +1567,7 @@ function collectRemovableImages(conversationId: string): string[] {
     return [...own].filter(file => !usedElsewhere.has(normalizeForCompare(file)));
 }
 
-// Helper: Local execution of tools (reused logic from chat:execute-tool)
-async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ success: boolean; result?: string; error?: string }> {
-    // We can reuse the existing IPC handler logic by extracting it or calling it.
-    // Since we are in main process, let's extract the logic from the existing handler (lines 255-325)
-    // refactoring would be better but for now let's duplicate or call the registered handler if possible?
-    // We can't easily call other handlers. I'll copy the logic for now or move it to a function.
-    
-    // ... Copy of logic ...
+async function invokeToolExecution(toolName: string, toolInput: JsonObject): Promise<{ success: boolean; result?: string; error?: string }> {
       try {
       // MCP tools are namespaced (mcp__<server>__<tool>) and routed to their server
       if (getMcpService().isMcpTool(toolName)) {
@@ -1544,9 +1577,10 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
       if (toolName === 'Bash') {
         const { exec } = require('child_process');
         const workspacePath = workspaceDir();
+        const command = typeof toolInput.command === 'string' ? toolInput.command : '';
         
         return new Promise((resolve) => {
-          exec(toolInput.command, { cwd: workspacePath, timeout: 60000 }, (error: any, stdout: string, stderr: string) => {
+          exec(command, { cwd: workspacePath, timeout: 60000 }, (error: any, stdout: string, stderr: string) => {
             if (error) {
               resolve({ success: false, error: error.message, result: stderr });
             } else {
@@ -1557,26 +1591,38 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
       }
 
       if (toolName === 'WebSearch') {
-        const { performSearch } = require('./services/search/index');
         const db = getDatabase();
         const provider = db.getSetting('search_provider') || 'duckduckgo';
         
-        const query = toolInput.query;
+        const query = typeof toolInput.query === 'string' ? toolInput.query.trim() : '';
         if (!query) return { success: false, error: 'Query is required for WebSearch' };
+        const maxResults = typeof toolInput.max_results === 'number' ? toolInput.max_results : undefined;
+        const allowedDomains = Array.isArray(toolInput.allowed_domains)
+          ? toolInput.allowed_domains.filter((domain): domain is string => typeof domain === 'string')
+          : undefined;
+        const blockedDomains = Array.isArray(toolInput.blocked_domains)
+          ? toolInput.blocked_domains.filter((domain): domain is string => typeof domain === 'string')
+          : undefined;
         
         try {
-            const results = await performSearch(query, provider);
+            const results = await performSearch(query, provider, {
+              maxResults,
+              allowedDomains,
+              blockedDomains,
+            });
             // Format results
-            const formatted = results.map((r: any, i: number) => `[${i+1}] ${r.title}\nURL: ${r.url}\n${r.content}`).join('\n\n');
-            return { success: true, result: `Web Search Results for "${query}" (via ${provider}):\n\n${formatted}` };
-        } catch (e: any) {
-             return { success: false, error: `WebSearch failed: ${e.message}` };
+            const formatted = results.map((result, index) => `[${index + 1}] ${result.title}\nURL: ${result.url}\n${result.content}`).join('\n\n');
+            const body = formatted || 'No results matched the query and domain filters.';
+            return { success: true, result: `Web Search Results for "${query}" (via ${provider}):\n\n${body}` };
+        } catch (error) {
+             const message = error instanceof Error ? error.message : String(error);
+             return { success: false, error: `WebSearch failed: ${message}` };
         }
       }
 
       if (toolName === 'WebFetch') {
         const { performWebFetch } = require('./utils/BrowserUtils');
-        const url = toolInput.url;
+        const url = typeof toolInput.url === 'string' ? toolInput.url : '';
         if (!url) return { success: false, error: 'URL is required for WebFetch' };
         
         try {
@@ -1584,8 +1630,9 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
             new URL(url); 
             const content = await performWebFetch(url);
             return { success: true, result: content };
-        } catch (e: any) {
-            return { success: false, error: `WebFetch failed: ${e.message}` };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            return { success: false, error: `WebFetch failed: ${message}` };
         }
       }
 
@@ -1600,7 +1647,7 @@ async function invokeToolExecution(toolName: string, toolInput: any): Promise<{ 
 
           const allSkills = db.prepare('SELECT * FROM skills').all() as any[];
           const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const target = normalize(skillNameInput);
+          const target = normalize(String(skillNameInput));
           const skill = allSkills.find(s => normalize(s.name) === target || normalize(s.skill_folder) === target);
           
           if (!skill) return { success: false, error: `Skill not found: ${skillNameInput}` };

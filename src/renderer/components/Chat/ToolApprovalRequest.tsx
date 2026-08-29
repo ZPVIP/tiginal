@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal, Check, CheckCheck, X, AlertTriangle, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Check, CheckCheck, X, AlertTriangle, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface ToolApprovalRequestProps {
@@ -30,8 +30,6 @@ export function ToolApprovalRequest({
   };
 
   const colors = riskColors[riskLevel] || riskColors.medium;
-
-  console.log('ToolApprovalRequest mounting', { name, riskLevel });
 
   return (
         <div className={clsx("rounded-lg border overflow-hidden shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300", colors.bg, colors.border)}>

@@ -32,6 +32,7 @@ interface Tool {
   name: string;
   description?: string;
   inputSchema: object;
+  defaultInput: Record<string, unknown>;
   isSystem: boolean;
   enabled: boolean;
   createdAt: number;
@@ -71,6 +72,7 @@ export function ToolsSettings() {
   const [toolDesc, setToolDesc] = useState('');
   const [toolCategory, setToolCategory] = useState('');
   const [toolSchema, setToolSchema] = useState('');
+  const [toolDefaults, setToolDefaults] = useState('');
   const [toolError, setToolError] = useState('');
   const [isEditingTool, setIsEditingTool] = useState(false);
 
@@ -271,7 +273,8 @@ export function ToolsSettings() {
     setToolName('');
     setToolDesc('');
     setToolCategory(categories[0]?.id || '');
-    setToolSchema('{\n  "type": "object",\n  "properties": {\n    "command": {\n      "type": "string",\n      "description": "Command to execute"\n    }\n  },\n  "required": ["command"]\n}');
+    setToolSchema('{\n  "type": "object",\n  "properties": {\n    "input": {\n      "type": "string",\n      "description": "Input passed to the tool"\n    }\n  },\n  "required": ["input"],\n  "additionalProperties": false\n}');
+    setToolDefaults('{}');
     setToolError('');
     setIsEditingTool(false);
     setShowAddToolModal(true);
@@ -282,6 +285,7 @@ export function ToolsSettings() {
     setToolDesc(tool.description || '');
     setToolCategory(tool.categoryId || '');
     setToolSchema(JSON.stringify(tool.inputSchema, null, 2));
+    setToolDefaults(JSON.stringify(tool.defaultInput || {}, null, 2));
     setToolError('');
     setIsEditingTool(true); // Technically "viewing/editing details"
     setShowToolDetailModal(tool);
@@ -290,11 +294,20 @@ export function ToolsSettings() {
   const handleSaveTool = async () => {
     if (!toolName.trim()) return setToolError('Name required');
     
-    let schemaObj;
+    let schemaObj: unknown;
+    let defaultInput: unknown;
     try {
       schemaObj = JSON.parse(toolSchema);
     } catch (e) {
       return setToolError('Invalid JSON format');
+    }
+    try {
+      defaultInput = JSON.parse(toolDefaults);
+    } catch {
+      return setToolError('Default arguments must be valid JSON');
+    }
+    if (typeof defaultInput !== 'object' || defaultInput === null || Array.isArray(defaultInput)) {
+      return setToolError('Default arguments must be a JSON object');
     }
 
     try {
@@ -305,32 +318,20 @@ export function ToolsSettings() {
           name: toolName.trim(),
           description: toolDesc.trim(),
           inputSchema: schemaObj,
+          defaultInput,
           enabled: true,
         });
         setTools(prev => [...prev, tool]);
         setShowAddToolModal(false);
         notifyToolsUpdated();
       } else if (showToolDetailModal) {
-        // Edit Mode (Existing tool)
-        // Check system constraints
-        if (showToolDetailModal.isSystem) {
-          // If system, usage of this save usually implies only category might allow change? 
-          // But UI requirement says "if user defined... window editable". 
-          // If system, we likely blocked edits to schema/name in input props.
-          // So this Save might just be for Category? 
-          // But let's assume fully editable for user tools.
-          // System tools should probably not have a SAVE toggle if they strictly can't be edited.
-          // OR we allow editing only unlocked fields.
-          // Backend `tools:update` updates all fields.
-          // We will rely on UI state to disable inputs for system tools.
-        }
-
         await invoke('tools:update', {
           id: showToolDetailModal.id,
           categoryId: toolCategory || undefined,
           name: toolName.trim(),
           description: toolDesc.trim(),
           inputSchema: schemaObj,
+          defaultInput,
           enabled: showToolDetailModal.enabled
         });
         refreshData();
@@ -521,7 +522,7 @@ export function ToolsSettings() {
                   onClick={openAddToolModal}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary hover:opacity-90 text-primary-foreground rounded-lg transition-colors"
                 >
-                  <Plus size={16} /> Add Tool
+                  <Plus size={16} /> Add Tool Definition
                 </button>
               </div>
             </div>
@@ -645,7 +646,7 @@ export function ToolsSettings() {
               <div className="flex items-center gap-2">
                 <FileJson className="text-primary" size={20} />
                 <h3 className="text-lg font-semibold text-text-main">
-                  {showAddToolModal ? 'Add New Tool' : (showToolDetailModal?.name)}
+                  {showAddToolModal ? 'Add Tool Definition' : (showToolDetailModal?.name)}
                 </h3>
                 {showToolDetailModal?.isSystem && (
                    <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20">System-defined</span>
@@ -662,6 +663,12 @@ export function ToolsSettings() {
                   <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm flex items-center gap-2">
                     <AlertTriangle size={16}/> {toolError}
                   </div>
+               )}
+
+               {showAddToolModal && (
+                 <div className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-lg text-yellow-200 text-xs">
+                   A definition tells the model how to call a tool. It still needs a matching built-in or MCP executor to run.
+                 </div>
                )}
 
                <div className="grid grid-cols-2 gap-4">
@@ -689,6 +696,7 @@ export function ToolsSettings() {
                <div>
                   <label className="block text-xs font-medium text-text-sec mb-1.5">Description</label>
                   <input 
+                    disabled={!!showToolDetailModal?.isSystem}
                     className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-text-main"
                     value={toolDesc}
                     onChange={e => setToolDesc(e.target.value)}
@@ -708,28 +716,49 @@ export function ToolsSettings() {
                     spellCheck={false}
                   />
 
+                  <p className="mt-2 text-xs text-text-muted">
+                    The schema is sent to the model as the tool signature. It does not contain credentials or execution settings.
+                  </p>
+
+               </div>
+
+               <div className="flex flex-col min-h-[140px]">
+                  <label className="block text-xs font-medium text-text-sec mb-1.5">
+                    Default arguments (local)
+                  </label>
+                  <textarea
+                    className="flex-1 w-full bg-background border border-border rounded-lg p-4 text-sm font-mono text-text-main focus:ring-primary focus:border-primary resize-none leading-relaxed"
+                    value={toolDefaults}
+                    onChange={e => setToolDefaults(e.target.value)}
+                    spellCheck={false}
+                  />
+                  <p className="mt-2 text-xs text-text-muted">
+                    These values are merged before validation and execution, but are not sent in the model's tool definition. Model arguments override them.
+                  </p>
+                  {toolName === 'WebSearch' && (
+                    <p className="mt-1 text-xs text-text-muted font-mono">
+                      Example: {`{"blocked_domains":["bing.com"],"max_results":8}`}
+                    </p>
+                  )}
                </div>
             </div>
 
             {/* Footer */}
             <div className="px-6 py-4 border-t border-border flex justify-end gap-3 shrink-0">
-               <button 
+               <button
                  onClick={() => {setShowAddToolModal(false); setShowToolDetailModal(null);}} 
                  className="px-4 py-2 text-sm bg-background hover:bg-surface-light border border-border rounded-lg transition-colors"
                >
                  Close
                </button>
                
-               {/* Only show Save for non-system tools (or new tools) */}
-               {(!showToolDetailModal?.isSystem) && (
-                 <button 
-                   onClick={handleSaveTool}
-                   className="flex items-center gap-1.5 px-4 py-2 text-sm bg-primary hover:opacity-90 text-primary-foreground rounded-lg transition-colors"
-                 >
-                   <Save size={16} />
-                   Save Changes
-                 </button>
-               )}
+               <button
+                 onClick={handleSaveTool}
+                 className="flex items-center gap-1.5 px-4 py-2 text-sm bg-primary hover:opacity-90 text-primary-foreground rounded-lg transition-colors"
+               >
+                 <Save size={16} />
+                 {showToolDetailModal?.isSystem ? 'Save Defaults' : 'Save Changes'}
+               </button>
             </div>
           </div>
         </div>
