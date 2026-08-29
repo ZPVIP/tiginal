@@ -1,8 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Lock, Unlock, Globe, KeyRound, Calendar, ArrowUpDown, FolderOpen } from 'lucide-react';
+import { Lock, Unlock, Globe, KeyRound, Calendar, Clock3, ArrowUpDown, FolderOpen } from 'lucide-react';
 import { FancySelect } from '../ui/FancySelect';
 import { Modal } from '../ui/Modal';
 import { InfoIcon } from '../Shared/InfoIcon';
+import {
+  getSupportedTimeZones,
+  parseDateFormat,
+  parseTimeZonePreference,
+  resolveTimeZone,
+  serializeTimeZonePreference,
+  type DateFormat,
+  type TimeZonePreference,
+} from '../../../shared/date-time';
 
 // Interface for IPC calls
 // Interface for IPC calls
@@ -22,6 +31,9 @@ const SORT_OPTIONS = [
   { value: 'createdAt', label: 'Created Date' },
 ];
 
+const SYSTEM_TIME_ZONE = resolveTimeZone({ kind: 'system' });
+const TIME_ZONE_OPTIONS = getSupportedTimeZones();
+
 export function GeneralSettings() {
   // Crypto State
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -39,7 +51,8 @@ export function GeneralSettings() {
   const [searchProvider, setSearchProvider] = useState('duckduckgo');
   
   // Date/Sort State
-  const [dateFormat, setDateFormat] = useState('iso');
+  const [dateFormat, setDateFormat] = useState<DateFormat>('iso');
+  const [timeZone, setTimeZone] = useState<TimeZonePreference>({ kind: 'system' });
   const [historySort, setHistorySort] = useState('updatedAt');
   
   // Workspace State
@@ -58,6 +71,7 @@ export function GeneralSettings() {
       
       // Load settings from database
       const savedDateFormat = await invoke('settings:get', 'dateFormat');
+      const savedTimeZone = await invoke('settings:get', 'timeZone');
       const savedHistorySort = await invoke('settings:get', 'historySort');
       const savedSearchProvider = await invoke('settings:get', 'searchProvider');
       const savedWorkspace = await invoke('workspace:get-path');
@@ -66,7 +80,8 @@ export function GeneralSettings() {
       setHasMasterPassword(hasPwd);
       setHasSavedKey(hasKey);
       
-      if (savedDateFormat) setDateFormat(savedDateFormat);
+      setDateFormat(parseDateFormat(savedDateFormat));
+      setTimeZone(parseTimeZonePreference(savedTimeZone));
       if (savedHistorySort) setHistorySort(savedHistorySort);
       if (savedSearchProvider) setSearchProvider(savedSearchProvider);
       if (savedWorkspace) setWorkspacePath(savedWorkspace);
@@ -147,9 +162,18 @@ export function GeneralSettings() {
   };
 
   const handleDateFormatChange = async (val: string) => {
-    setDateFormat(val);
-    await invoke('settings:set', 'dateFormat', val);
-    window.dispatchEvent(new CustomEvent('settings-general-updated', { detail: { key: 'dateFormat', value: val } }));
+    const format = parseDateFormat(val);
+    setDateFormat(format);
+    await invoke('settings:set', 'dateFormat', format);
+    window.dispatchEvent(new CustomEvent('settings-general-updated', { detail: { key: 'dateFormat', value: format } }));
+  };
+
+  const handleTimeZoneChange = async (val: string) => {
+    const preference = parseTimeZonePreference(val);
+    const storedValue = serializeTimeZonePreference(preference);
+    setTimeZone(preference);
+    await invoke('settings:set', 'timeZone', storedValue);
+    window.dispatchEvent(new CustomEvent('settings-general-updated', { detail: { key: 'timeZone', value: storedValue } }));
   };
 
   const handleHistorySortChange = async (val: string) => {
@@ -275,6 +299,27 @@ export function GeneralSettings() {
             onChange={handleDateFormatChange}
             options={DATE_FORMATS.map(fmt => ({ value: fmt.value, label: fmt.label }))}
           />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium text-text-main flex items-center gap-2">
+          <Clock3 className="w-4 h-4 text-cyan-400" />
+          Time Zone
+          <InfoIcon title={`Timestamps are stored as UTC and displayed in this time zone.\nSystem time zone: ${SYSTEM_TIME_ZONE}`} />
+        </label>
+        <div className="w-[60%]">
+          <select
+            value={serializeTimeZonePreference(timeZone)}
+            onChange={(event) => handleTimeZoneChange(event.target.value)}
+            className="w-full h-9 bg-surface text-text-main text-sm rounded-lg px-3 border border-border outline-none focus:border-primary"
+            aria-label="Time Zone"
+          >
+            <option value="system">System default ({SYSTEM_TIME_ZONE})</option>
+            {TIME_ZONE_OPTIONS.map(zone => (
+              <option key={zone} value={zone}>{zone}</option>
+            ))}
+          </select>
         </div>
       </div>
 

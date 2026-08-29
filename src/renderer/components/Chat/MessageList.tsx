@@ -1,12 +1,22 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { ToolApprovalRequest } from './ToolApprovalRequest';
 import { Folder } from 'lucide-react';
+import {
+    formatMessageTimestamp,
+    parseDateFormat,
+    parseTimeZonePreference,
+    type DateFormat,
+    type TimeZonePreference,
+} from '../../../shared/date-time';
+
+const invoke = window.electron?.invoke || (async () => {});
 
 interface Message {
     id: string;
     role: 'user' | 'assistant' | 'tool' | 'tool-request';
     content: string;
+    createdAt?: number;
     reasoning?: string;
     images?: string[];
     tool_call_id?: string;
@@ -37,6 +47,8 @@ interface MessageListProps {
 
 export function MessageList({ messages, isStreaming, onEdit, onApproval }: MessageListProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
+    const [dateFormat, setDateFormat] = useState<DateFormat>('iso');
+    const [timeZone, setTimeZone] = useState<TimeZonePreference>({ kind: 'system' });
     // Helper to open folder
     const handleOpenFolder = (path: string) => {
         (window as any).electron?.invoke('shell:show-item-in-folder', path);
@@ -44,6 +56,40 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
 
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const isAtBottomRef = useRef(true);
+
+    useEffect(() => {
+        let active = true;
+        const loadDateTimeSettings = async () => {
+            try {
+                const [savedDateFormat, savedTimeZone] = await Promise.all([
+                    invoke('settings:get', 'dateFormat'),
+                    invoke('settings:get', 'timeZone'),
+                ]);
+                if (!active) return;
+                setDateFormat(parseDateFormat(savedDateFormat));
+                setTimeZone(parseTimeZonePreference(savedTimeZone));
+            } catch (error) {
+                console.error('Failed to load message timestamp settings', error);
+            }
+        };
+
+        const handleSettingsUpdate = () => {
+            void loadDateTimeSettings();
+        };
+
+        void loadDateTimeSettings();
+        window.addEventListener('settings-general-updated', handleSettingsUpdate);
+        return () => {
+            active = false;
+            window.removeEventListener('settings-general-updated', handleSettingsUpdate);
+        };
+    }, []);
+
+    const getMessageTimestamp = (message: Message): string => (
+        message.createdAt === undefined
+            ? ''
+            : formatMessageTimestamp(message.createdAt, dateFormat, timeZone)
+    );
 
     // Initial scroll to bottom
     useEffect(() => {
@@ -77,6 +123,7 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
             className="flex-1 overflow-y-auto custom-scrollbar"
         >
             {messages.map(msg => {
+                const timestamp = getMessageTimestamp(msg);
                 if (msg.role === 'tool-request' && msg.approvalData) {
                     if (msg.approvalData.status === 'pending') {
                         return (
@@ -92,6 +139,11 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
                                         onAllowAll={() => onApproval?.(msg.id, 'always')}
                                         onDeny={() => onApproval?.(msg.id, 'denied')}
                                     />
+                                    {timestamp && (
+                                        <time className="block mt-1 text-right text-[10px] font-mono text-text-muted">
+                                            {timestamp}
+                                        </time>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -107,13 +159,16 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
                                                 <span>Tool Execution:</span>
                                                 <span className="font-mono font-medium text-accent-tool">{msg.approvalData.name}</span>
                                             </div>
-                                            <span className={`font-bold uppercase text-[10px] tracking-wider px-2 py-0.5 rounded ${
-                                                msg.approvalData.status.includes('approved')
-                                                    ? "bg-accent-success/15 text-accent-success"
-                                                    : "bg-accent-danger/15 text-accent-danger"
-                                            }`}>
-                                                {msg.approvalData.status}
-                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                {timestamp && <time className="font-mono text-[10px] text-text-muted">{timestamp}</time>}
+                                                <span className={`font-bold uppercase text-[10px] tracking-wider px-2 py-0.5 rounded ${
+                                                    msg.approvalData.status.includes('approved')
+                                                        ? "bg-accent-success/15 text-accent-success"
+                                                        : "bg-accent-danger/15 text-accent-danger"
+                                                }`}>
+                                                    {msg.approvalData.status}
+                                                </span>
+                                            </div>
                                         </div>
                                         
                                         {/* Skill Path (if available) */}
@@ -148,6 +203,7 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
                    key={msg.id}
                    role={msg.role as any}
                    content={msg.content}
+                   timestamp={timestamp}
                    reasoning={msg.reasoning}
                    images={msg.images}
                    onEdit={onEdit}

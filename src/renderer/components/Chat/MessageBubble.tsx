@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { clsx } from 'clsx';
-import { User, Copy, Check, ChevronDown, ChevronRight, Brain, Maximize2, Minimize2, Pencil, FileText, Monitor, Smartphone, Activity, Database, DatabaseZap, CircleHelp } from 'lucide-react';
+import { Copy, Check, ChevronDown, ChevronRight, Brain, Maximize2, Minimize2, Pencil, FileText, Monitor, Smartphone, Activity, Database, DatabaseZap, CircleHelp } from 'lucide-react';
 import { TigiCat } from '../icons/TigiCat';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 
@@ -17,6 +17,7 @@ import {
 interface MessageProps {
   role: 'user' | 'assistant' | 'tool';
   content: string;
+  timestamp?: string;
   reasoning?: string;
   images?: string[];
   tool_call_id?: string; // Optional: to link back to call
@@ -152,7 +153,7 @@ function ReasoningBlock({ content }: { content: string }) {
 }
 
 
-export function MessageBubble({ role, content, reasoning, images, onEdit, promptTokens, completionTokens, cachedTokens, cacheStatus, titleTokens, totalTokens }: MessageProps) {
+export function MessageBubble({ role, content, timestamp, reasoning, images, onEdit, promptTokens, completionTokens, cachedTokens, cacheStatus, titleTokens, totalTokens }: MessageProps) {
   const [copied, setCopied] = useState(false);
   const [copiedPlain, setCopiedPlain] = useState(false);
   const [copiedRendered, setCopiedRendered] = useState(false);
@@ -199,23 +200,17 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
 
   return (
     <div className={clsx(
-       "group flex gap-4 max-w-3xl mx-auto py-6 px-4",
-       isUser ? "flex-row-reverse" : "flex-row"
+       "group w-full max-w-3xl mx-auto py-3 px-4",
+       isUser && "flex flex-col items-end"
     )}>
-       {/* Avatar */}
-       <div className={clsx(
-           "w-8 h-8 flex items-center justify-center shrink-0 mt-1",
-           isUser ? "bg-primary/20 text-primary rounded-full" : ""
-       )}>
-           {isUser ? <User size={16} /> : <TigiCat size={32} />}
-       </div>
+       {!isUser && (
+           <div className="w-8 h-8 flex items-center justify-center mb-1">
+               <TigiCat size={32} />
+           </div>
+       )}
 
        {/* Content */}
-       <div className={clsx("flex-1 min-w-0 space-y-2", isUser && "flex flex-col items-end")}>
-           <div className={clsx("font-medium text-sm text-text-sec flex items-center gap-2", isUser && "flex-row-reverse text-right")}>
-               <span>{isUser ? 'You' : 'Tigi'}</span>
-           </div>
-
+       <div className={clsx("w-full min-w-0 space-y-2 flex flex-col", isUser ? "items-end" : "items-start")}>
            {/* Images */}
            {images && images.length > 0 && (
                <div className={clsx("flex flex-wrap gap-2", isUser && "justify-end")}>
@@ -231,9 +226,9 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
            )}
 
            <div ref={contentRef} className={clsx(
-               "prose prose-invert max-w-none text-sm leading-relaxed break-words text-text-main",
+               "prose prose-invert w-fit max-w-[90%] text-sm leading-relaxed break-words text-text-main",
                 isUser 
-                  ? "bg-surface/50 px-4 py-3 rounded-2xl rounded-tr-sm border border-border" 
+                  ? "bg-primary/10 px-4 py-3 rounded-2xl rounded-tr-sm border border-primary/20"
                   : "bg-transparent pl-0"
            )}>
                 {/* Tool Output (Console Style) */}
@@ -301,7 +296,7 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
                 </>
                )}
            </div>
-           
+
            {/* Actions */}
            <div className={clsx(
                "flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity",
@@ -366,6 +361,12 @@ export function MessageBubble({ role, content, reasoning, images, onEdit, prompt
                        <Activity size={14} />
                        <span className="text-[10px]">Token</span>
                    </div>
+               )}
+
+               {timestamp && (
+                   <time className="p-1.5 font-mono text-[10px] text-text-muted whitespace-nowrap">
+                       {timestamp}
+                   </time>
                )}
 
                {/* Edit Button */}

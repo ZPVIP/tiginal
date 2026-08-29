@@ -7,6 +7,11 @@ import * as os from 'os';
 import { defaultWorkspaceDir, expandHome } from './utils/paths';
 import * as path from 'path';
 import { getDatabase } from '../services/database/database';
+import {
+  formatDateInTimeZone,
+  parseTimeZonePreference,
+  resolveTimeZone,
+} from '../shared/date-time';
 
 export interface DynamicPromptTemplate {
   title: string;
@@ -17,6 +22,14 @@ export interface DynamicPromptTemplate {
 export interface DynamicPromptSections {
   stable: string;
   volatile: string;
+}
+
+function getCurrentDateInfo(dbService: ReturnType<typeof getDatabase>): { date: string; timeZone: string } {
+  const preference = parseTimeZonePreference(dbService.getSetting('timeZone'));
+  return {
+    date: formatDateInTimeZone(Date.now(), preference),
+    timeZone: resolveTimeZone(preference),
+  };
 }
 
 /**
@@ -61,14 +74,13 @@ export function getAppleScriptContent(): string {
  */
 export function getDynamicPromptTemplates(): Record<string, DynamicPromptTemplate> {
   const isMacOS = process.platform === 'darwin';
-  const dateStr = new Date().toLocaleDateString();
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const currentDate = getCurrentDateInfo(getDatabase());
   const workspacePath = getWorkspacePath();
 
   return {
     dateInfo: {
       title: 'Date & Time Information',
-      content: `IMPORTANT - Today's date is ${dateStr} (timezone: ${timezone}). This is the current date and you must use it accurately when answering time-sensitive questions.`,
+      content: `IMPORTANT - Today's date is ${currentDate.date} (timezone: ${currentDate.timeZone}). This is the current date and you must use it accurately when answering time-sensitive questions.`,
       showAlways: true,
     },
     wdInfo: {
@@ -151,9 +163,8 @@ Do NOT say "I don't know" or "My knowledge is limited" without using WebSearch t
   // Keep the day-level value in its own final system block. It is stable within
   // a day and only invalidates content after this cache boundary at midnight.
   if (dynamicDateEnabled) {
-    const dateStr = new Date().toLocaleDateString('en-CA');
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    volatilePrompts = `IMPORTANT - Today's date is ${dateStr} (timezone: ${timezone}). This is the current date and you must use it accurately when answering time-sensitive questions. Do not confuse or misremember this date.`;
+    const currentDate = getCurrentDateInfo(dbService);
+    volatilePrompts = `IMPORTANT - Today's date is ${currentDate.date} (timezone: ${currentDate.timeZone}). This is the current date and you must use it accurately when answering time-sensitive questions. Do not confuse or misremember this date.`;
   }
 
   return { stable: stablePrompts, volatile: volatilePrompts };

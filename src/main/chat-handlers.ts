@@ -1189,7 +1189,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                  _event.sender.send('chat:tool-result', { 
                                      conversationId, 
                                      toolName: toolCall.name, 
-                                     result: displayResult 
+                                     result: displayResult,
+                                     createdAt: Date.now(),
                                  });
                              }
                              resultStr = res.result || res.error || 'Done';
@@ -1234,7 +1235,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                 conversationId, 
                                 ...toolCall,
                                 analysis,
-                                skillPath 
+                                skillPath,
+                                createdAt: Date.now(),
                             });
                             
                             // Wait for UI
@@ -1256,8 +1258,9 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                 if (!isSkill) {
                                     _event.sender.send('chat:tool-result', { 
                                         conversationId, 
-                                        toolName: toolCall.name, 
-                                        result: displayResult 
+                                        toolName: toolCall.name,
+                                        result: displayResult,
+                                        createdAt: Date.now(),
                                     });
                                 }
                             } else {
@@ -1344,9 +1347,13 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                          totalTokens: usage.totalTokens,
                          contextTokens: lastTurnContextTokens,
                      };
-                     chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
+                     const assistantMessage = chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
                      chatService.updateConversationTokens(conversationId, providerId, modelToUse, tokenData);
-                     _event.sender.send('chat:stream-complete', { conversationId, tokenData });
+                     _event.sender.send('chat:stream-complete', {
+                         conversationId,
+                         tokenData,
+                         message: { id: assistantMessage.id, createdAt: assistantMessage.createdAt },
+                     });
                  }
                  return { response: finalResponse };
             }
@@ -1372,13 +1379,17 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
         totalTokens: usage.totalTokens,
         contextTokens: lastTurnContextTokens,
     };
-    chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
+    const assistantMessage = chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
 
     // Update conversation tokens JSON
     chatService.updateConversationTokens(conversationId, providerId, modelToUse, tokenData);
 
     // Notify renderer of stream completion with token data
-    _event.sender.send('chat:stream-complete', { conversationId, tokenData });
+    _event.sender.send('chat:stream-complete', {
+        conversationId,
+        tokenData,
+        message: { id: assistantMessage.id, createdAt: assistantMessage.createdAt },
+    });
     
     return { response: finalResponse };
 }

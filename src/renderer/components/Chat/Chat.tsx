@@ -65,7 +65,8 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
                      id: Date.now().toString(), 
                      role: 'assistant', 
                      content: data.content || '',
-                     reasoning: data.reasoning || ''
+                     reasoning: data.reasoning || '',
+                     createdAt: Date.now(),
                  }];
             }
         };
@@ -82,7 +83,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
     const removeListener = (window as any).electron?.on('chat:chunk', onChunk);
 
     // Tool call listener
-    const onToolCall = async (data: { conversationId: string; id: string; name: string; input: any }) => {
+    const onToolCall = async (data: { conversationId: string; id: string; name: string; input: any; createdAt?: number }) => {
       console.log('Tool call received:', data);
       
       const analysis = (data as any).analysis;
@@ -94,6 +95,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
           id: `req_${data.id}`,
           role: 'tool-request',
           content: '',
+          createdAt: data.createdAt ?? Date.now(),
           approvalData: {
               id: data.id,
               name: data.name,
@@ -122,22 +124,25 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
     };
     
     // Tool Result listener
-    const onToolResult = (data: { conversationId: string; toolName: string; result: string }) => {
+    const onToolResult = (data: { conversationId: string; toolName: string; result: string; createdAt?: number }) => {
         setMessages(prev => [...prev, {
             id: Date.now().toString(),
             role: 'tool',
-            content: data.result
+            content: data.result,
+            createdAt: data.createdAt ?? Date.now(),
         }]);
     };
 
     // Stream complete listener - update last assistant message with token data
-    const onStreamComplete = (data: { conversationId: string; tokenData: any }) => {
+    const onStreamComplete = (data: { conversationId: string; tokenData: any; message?: { id: string; createdAt: number } }) => {
       const updateMessages = (prev: any[]) => {
         const newMsgs = [...prev];
         for (let i = newMsgs.length - 1; i >= 0; i--) {
           if (newMsgs[i].role === 'assistant') {
             newMsgs[i] = {
               ...newMsgs[i],
+              id: data.message?.id ?? newMsgs[i].id,
+              createdAt: data.message?.createdAt ?? newMsgs[i].createdAt,
               providerId: data.tokenData.providerId,
               modelId: data.tokenData.modelId,
               promptTokens: data.tokenData.promptTokens,
@@ -322,11 +327,13 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
           }
       }
 
+      const sentAt = Date.now();
+
       // Add User Message
-      const userMsg = { id: Date.now().toString(), role: 'user', content: text, images: imagePaths };
+      const userMsg = { id: sentAt.toString(), role: 'user', content: text, images: imagePaths, createdAt: sentAt };
       
       // Add Placeholder Assistant Message
-      const placeholderMsg = { id: (Date.now() + 1).toString(), role: 'assistant', content: '' };
+      const placeholderMsg = { id: (sentAt + 1).toString(), role: 'assistant', content: '', createdAt: sentAt };
 
       if (isIncognito) {
           setIncognitoMessages(prev => [...prev, userMsg, placeholderMsg]);

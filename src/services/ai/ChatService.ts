@@ -45,6 +45,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   reasoning?: string;
+  /** UTC Unix epoch milliseconds. */
   createdAt: number;
   providerId?: string;
   modelId?: string;
@@ -227,7 +228,7 @@ export class ChatService {
    */
   addMessage(conversationId: string, role: 'user' | 'assistant' | 'system', content: string, tokenData?: TokenData, overrideCreatedAt?: number, reasoning?: string, images?: string[]): Message {
     const id = require('crypto').randomUUID();
-    const now = overrideCreatedAt || Date.now();
+    const now = overrideCreatedAt ?? Date.now();
     const titleTokens = role === 'assistant' ? this.pendingTitleTokens.get(conversationId) || 0 : 0;
 
     const message: Message = {
