@@ -102,7 +102,7 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
           setFlatDirSuggestions(flat);
           setShowSuggestions(flat.length > 0);
           
-          // 不默认选中：cd/cd + 空格 或 以 / 结尾时
+          // Do not select by default for cd, cd followed by a space, or paths ending in /.
           if (!partial || partial.endsWith('/')) {
             setSelectedIndex(-1);
           } else if (flat.length > 0) {
@@ -323,11 +323,11 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
         return;
       }
       if (e.key === 'Tab') {
-        // 目录模式：如果 local 列表只有一项，直接补全（忽略 frequent）
+        // In directory mode, complete the only local match and ignore frequent matches.
         if (suggestionMode === 'directory' && dirSuggestions.local.length === 1) {
           applyDirSuggestion(dirSuggestions.local[0], false);
         } else if (currentSuggestions.length === 1) {
-          // 其他情况：总共只有一个选项时直接补全
+          // Otherwise, complete when there is only one suggestion in total.
           if (suggestionMode === 'directory') {
             applyDirSuggestion(currentSuggestions[0], false);
           } else {

@@ -25,7 +25,6 @@ test('supports every General date and time format', () => {
   assert.equal(formatTimestamp(UTC_INSTANT, 'us', timeZone), '01/16/2026 3:30 PM');
   assert.equal(formatTimestamp(UTC_INSTANT, 'uk', timeZone), '16/01/2026 15:30');
   assert.equal(formatTimestamp(UTC_INSTANT, 'de', timeZone), '16.01.2026 15:30');
-  assert.equal(formatTimestamp(UTC_INSTANT, 'cn', timeZone), '2026年01月16日 15:30');
 });
 
 test('labels message timestamps from today in the selected time zone', () => {

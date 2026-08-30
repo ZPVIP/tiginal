@@ -104,7 +104,7 @@ test('merges leading system messages while preserving the stable prompt prefix',
       messages: [
         { role: 'system', content: stablePrompt },
         { role: 'system', content: volatilePrompt },
-        { role: 'user', content: '你是谁' },
+        { role: 'user', content: 'Who are you?' },
       ],
       stream: true,
     },
@@ -112,7 +112,7 @@ test('merges leading system messages while preserving the stable prompt prefix',
 
   assert.deepEqual(request.messages, [
     { role: 'system', content: `${stablePrompt}\n\n${volatilePrompt}` },
-    { role: 'user', content: '你是谁' },
+    { role: 'user', content: 'Who are you?' },
   ]);
   assert.equal(request.messages[0].content.startsWith(stablePrompt), true);
 });

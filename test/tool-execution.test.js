@@ -104,7 +104,7 @@ test('uses tool-aware approval descriptions instead of treating JSON as Bash', (
 
   assert.deepEqual(analysis, {
     needsPermission: true,
-    description: '使用当前搜索服务在网络上搜索“2026 World Cup final”，最多返回 8 条结果。搜索词会发送给所选搜索服务。',
+    description: 'Search the web for "2026 World Cup final" using the current search service and return up to 8 results. The query will be sent to the selected search service.',
     riskLevel: 'low',
   });
   assert.equal(analysis.description.includes('Bash'), false);

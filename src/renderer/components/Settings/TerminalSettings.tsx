@@ -402,7 +402,6 @@ export function TerminalSettings() {
       case 'us': return date.toLocaleString('en-US'); 
       case 'uk': return date.toLocaleString('en-GB');
       case 'de': return date.toLocaleString('de-DE');
-      case 'cn': return date.toLocaleString('zh-CN', { hour12: false });
       default: return date.toLocaleString();
     }
   };

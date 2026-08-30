@@ -69,7 +69,7 @@ export function SplitLayout({
     // So resizing columns is expected.
     // However, to keep it simple for step 1, let's use equal columns (flex-1) 
     // and focus on PANE resizing first.
-    // Wait, requirement: "拉动边界线可以调节窗口大小 (vertical & horizontal)"
+    // The divider must resize the window vertically and horizontally.
     // Okay, we need column resizing too. But let's start with Pane (Vertical Split) resizing.
 
     // --- Drag Handlers ---
@@ -304,4 +304,3 @@ export function SplitLayout({
         </div>
     );
 }
-

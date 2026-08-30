@@ -21,10 +21,10 @@ export function analyzeNonShellTool(toolName: string, input: JsonObject): ToolAp
   switch (toolName) {
     case 'WebSearch': {
       const query = stringArgument(input, 'query');
-      const count = typeof input.max_results === 'number' ? `，最多返回 ${input.max_results} 条结果` : '';
+      const count = typeof input.max_results === 'number' ? ` and return up to ${input.max_results} results` : '';
       return {
         needsPermission: true,
-        description: `使用当前搜索服务在网络上搜索“${query}”${count}。搜索词会发送给所选搜索服务。`,
+        description: `Search the web for "${query}" using the current search service${count}. The query will be sent to the selected search service.`,
         riskLevel: 'low',
       };
     }
@@ -32,7 +32,7 @@ export function analyzeNonShellTool(toolName: string, input: JsonObject): ToolAp
       const url = stringArgument(input, 'url');
       return {
         needsPermission: true,
-        description: `读取网页 ${url} 并将页面内容返回给模型。`,
+        description: `Read ${url} and return the page content to the model.`,
         riskLevel: 'low',
       };
     }
@@ -40,13 +40,13 @@ export function analyzeNonShellTool(toolName: string, input: JsonObject): ToolAp
     case 'ExecuteSkill':
       return {
         needsPermission: false,
-        description: '读取本地 Skill 说明，不执行其中的命令。',
+        description: 'Read the local skill instructions without running any commands from them.',
         riskLevel: 'safe',
       };
     default:
       return {
         needsPermission: true,
-        description: `运行工具 ${toolName}，参数见下方。`,
+        description: `Run the ${toolName} tool with the arguments shown below.`,
         riskLevel: 'medium',
       };
   }

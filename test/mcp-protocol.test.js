@@ -54,7 +54,7 @@ test('x-mcp-header validation accepts nullable primitives and ignores instance d
 
 test('header encoding follows the Base64 sentinel rules', () => {
   assert.equal(encodeHeaderValue('us-west1'), 'us-west1');
-  assert.equal(encodeHeaderValue('Hello, 世界'), '=?base64?SGVsbG8sIOS4lueVjA==?=');
+  assert.equal(encodeHeaderValue('Hello, café'), '=?base64?SGVsbG8sIGNhZsOp?=');
   assert.equal(encodeHeaderValue(' padded '), '=?base64?IHBhZGRlZCA=?=');
   assert.equal(encodeHeaderValue('line1\nline2'), '=?base64?bGluZTEKbGluZTI=?=');
   assert.equal(encodeHeaderValue('=?base64?literal?='), '=?base64?PT9iYXNlNjQ/bGl0ZXJhbD89?=');
@@ -341,7 +341,7 @@ test('a non-ASCII tool name is carried as a Base64 sentinel', async () => {
     if (message.method === 'tools/list') {
       return response.end(JSON.stringify({
         jsonrpc: '2.0', id: message.id,
-        result: { resultType: 'complete', ttlMs: 1000, tools: [{ name: '天气', inputSchema: { type: 'object' } }] },
+        result: { resultType: 'complete', ttlMs: 1000, tools: [{ name: 'météo', inputSchema: { type: 'object' } }] },
       }));
     }
     callHeaders = request.headers;
@@ -354,8 +354,8 @@ test('a non-ASCII tool name is carried as a Base64 sentinel', async () => {
   const client = connect(mock.url);
   try {
     await client.listTools();
-    assert.equal(await client.callTool('天气', {}), 'ok');
-    assert.equal(callHeaders['mcp-name'], `=?base64?${Buffer.from('天气', 'utf8').toString('base64')}?=`);
+    assert.equal(await client.callTool('météo', {}), 'ok');
+    assert.equal(callHeaders['mcp-name'], `=?base64?${Buffer.from('météo', 'utf8').toString('base64')}?=`);
   } finally {
     await client.close();
     await new Promise(resolve => mock.server.close(resolve));

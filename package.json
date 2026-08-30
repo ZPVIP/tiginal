@@ -13,7 +13,7 @@
     "build:renderer": "vite build",
     "test:mcp": "npm run build:main && node --test test/mcp-protocol.test.js test/mcp-service.test.js",
     "test:cache": "npm run build:main && node --test test/ai-cache.test.js",
-    "start": "npm run build && ELECTRON_ENABLE_LOGGING=true electron .",
+    "start": "npm run build && node scripts/start-electron.cjs",
     "rebuild": "electron-rebuild -f -w node-pty",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",

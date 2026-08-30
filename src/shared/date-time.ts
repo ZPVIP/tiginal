@@ -1,4 +1,4 @@
-export const DATE_FORMAT_VALUES = ['iso', 'us', 'uk', 'de', 'cn'] as const;
+export const DATE_FORMAT_VALUES = ['iso', 'us', 'uk', 'de'] as const;
 
 export type DateFormat = typeof DATE_FORMAT_VALUES[number];
 
@@ -87,8 +87,6 @@ export function formatTimestamp(
       return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
     case 'de':
       return `${parts.day}.${parts.month}.${parts.year} ${parts.hour}:${parts.minute}`;
-    case 'cn':
-      return `${parts.year}年${parts.month}月${parts.day}日 ${parts.hour}:${parts.minute}`;
     case 'iso':
       return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
   }

@@ -19,7 +19,7 @@ export function CommandSuggestion({ suggestions, selectedIndex, onSelect, onIgno
   const hasFrequent = frequent.length > 0;
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   
-  // 选中项变化时滚动到可视区域
+  // Keep the selected item in view.
   useEffect(() => {
       if (selectedIndex >= 0 && itemRefs.current[selectedIndex]) {
           itemRefs.current[selectedIndex]?.scrollIntoView({

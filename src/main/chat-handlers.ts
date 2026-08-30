@@ -529,7 +529,7 @@ async function analyzeCommand(
 ): Promise<ToolApprovalAnalysis> {
     const prompt = `You are a security analyzer for shell commands. Your task is to analyze a bash command and determine:
 1. Whether it needs user permission before execution
-2. A brief description of what the command does (IMPORTANT: write the description in Chinese (Simplified))
+2. A brief description of what the command does, written in English
 3. The risk level of the command
 
 Commands that are SAFE and do NOT need permission (return needsPermission: false):
@@ -557,7 +557,7 @@ Commands that NEED permission (return needsPermission: true):
 Respond with JSON only:
 {
   "needsPermission": boolean,
-  "description": "Brief description of what this command does in Chinese (Simplified)",
+  "description": "Brief description of what this command does in English",
   "riskLevel": "safe" | "low" | "medium" | "high"
 }
 

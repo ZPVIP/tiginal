@@ -23,7 +23,6 @@ const DATE_FORMATS = [
   { value: 'us', label: 'US (MM/DD/YYYY h:mm A)', example: '01/16/2026 2:30 PM' },
   { value: 'uk', label: 'UK (DD/MM/YYYY HH:mm)', example: '16/01/2026 14:30' },
   { value: 'de', label: 'German (DD.MM.YYYY HH:mm)', example: '16.01.2026 14:30' },
-  { value: 'cn', label: 'Chinese (YYYY年MM月DD日 HH:mm)', example: '2026年01月16日 14:30' },
 ];
 
 const SORT_OPTIONS = [
