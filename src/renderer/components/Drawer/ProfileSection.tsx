@@ -13,6 +13,7 @@ interface ChatProfile {
   system_prompts: string;
   tools: string;
   skills: string;
+  mcp: string | null;
 }
 
 interface ProfileSectionProps {

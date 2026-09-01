@@ -1,6 +1,8 @@
 import { ipcMain } from 'electron';
 import { getDatabase } from '../services/database/database';
 import * as crypto from 'crypto';
+import { getMcpService } from './services/mcp/McpService';
+import { parseStoredMcpProfile } from '../shared/profile-mcp';
 
 interface ChatProfile {
   id: string;
@@ -11,6 +13,7 @@ interface ChatProfile {
   system_prompts: string;
   tools: string;
   skills: string;
+  mcp: string | null;
   rank: number;
   created_at: number;
   updated_at: number;
@@ -37,6 +40,11 @@ const DYNAMIC_PROMPT_KEYS = ['dateInfo', 'wdInfo', 'systemInfo', 'appleScriptInf
  */
 function readBool(key: string): boolean {
   return getDatabase().getSetting(key) !== 'false';
+}
+
+function serializeMcpProfile(value: unknown): string | null {
+  const parsed = parseStoredMcpProfile(value);
+  return parsed.kind === 'managed' ? JSON.stringify(parsed.snapshot) : null;
 }
 
 /**
@@ -77,6 +85,7 @@ export function setupProfileHandlers(): void {
     system_prompts?: object;
     tools?: object;
     skills?: object;
+    mcp?: object | null;
   }): Promise<ChatProfile> => {
     const name = data.name?.trim();
     if (!name) throw new Error('Profile name is required');
@@ -90,8 +99,8 @@ export function setupProfileHandlers(): void {
     const rank = (maxRank.max ?? -1) + 1;
 
     db.prepare(`
-      INSERT INTO chat_profiles (id, name, enabled, ai_provider_id, ai_model_id, system_prompts, tools, skills, rank, created_at, updated_at)
-      VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO chat_profiles (id, name, enabled, ai_provider_id, ai_model_id, system_prompts, tools, skills, mcp, rank, created_at, updated_at)
+      VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       name,
@@ -100,6 +109,7 @@ export function setupProfileHandlers(): void {
       JSON.stringify(data.system_prompts || {}),
       JSON.stringify(data.tools || {}),
       JSON.stringify(data.skills || {}),
+      data.mcp === undefined ? null : serializeMcpProfile(data.mcp),
       rank,
       now,
       now
@@ -116,6 +126,7 @@ export function setupProfileHandlers(): void {
     system_prompts?: object;
     tools?: object;
     skills?: object;
+    mcp?: object | null;
   }): Promise<ChatProfile> => {
     const now = Date.now();
     const existing = db.prepare('SELECT * FROM chat_profiles WHERE id = ?').get(id) as ChatProfile | undefined;
@@ -127,7 +138,7 @@ export function setupProfileHandlers(): void {
 
     db.prepare(`
       UPDATE chat_profiles
-      SET name = ?, ai_provider_id = ?, ai_model_id = ?, system_prompts = ?, tools = ?, skills = ?, updated_at = ?
+      SET name = ?, ai_provider_id = ?, ai_model_id = ?, system_prompts = ?, tools = ?, skills = ?, mcp = ?, updated_at = ?
       WHERE id = ?
     `).run(
       name,
@@ -136,6 +147,7 @@ export function setupProfileHandlers(): void {
       data.system_prompts ? JSON.stringify(data.system_prompts) : existing.system_prompts,
       data.tools ? JSON.stringify(data.tools) : existing.tools,
       data.skills ? JSON.stringify(data.skills) : existing.skills,
+      data.mcp !== undefined ? serializeMcpProfile(data.mcp) : existing.mcp,
       now,
       id
     );
@@ -174,6 +186,10 @@ export function setupProfileHandlers(): void {
   ipcMain.handle('profiles:apply', async (_event, profileId: string): Promise<ChatProfile | null> => {
     const profile = db.prepare('SELECT * FROM chat_profiles WHERE id = ?').get(profileId) as ChatProfile | undefined;
     if (!profile) return null;
+
+    // Validate MCP before applying any part of the profile. A corrupt snapshot
+    // must not leave the other settings half-applied.
+    const storedMcp = parseStoredMcpProfile(profile.mcp);
 
     const dbService = getDatabase();
 
@@ -303,6 +319,11 @@ export function setupProfileHandlers(): void {
       console.error('Failed to apply skills config:', e);
     }
 
+    // 5. Apply MCP config. NULL means this older profile does not manage MCP.
+    if (storedMcp.kind === 'managed') {
+      await getMcpService().applyProfileSnapshot(storedMcp.snapshot);
+    }
+
     return profile;
   });
 
@@ -313,6 +334,7 @@ export function setupProfileHandlers(): void {
     system_prompts: object;
     tools: object;
     skills: object;
+    mcp: object;
   }> => {
     const dbService = getDatabase();
 
@@ -357,6 +379,7 @@ export function setupProfileHandlers(): void {
         enabled_directory_ids: enabledDirs.map(d => d.id),
         enabled_skill_ids: enabledSkills.map(s => s.id),
       },
+      mcp: getMcpService().captureProfileSnapshot(),
     };
   });
 

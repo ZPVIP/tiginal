@@ -11,11 +11,11 @@ const invoke = window.electron?.invoke || (async () => {});
 // can tell them apart from a user manually editing settings.
 const PROFILE_EVENT_SOURCE = 'profile';
 
-// Applying a profile rewrites model / prompts / tools / skills in the DB. Fire the
+// Applying a profile rewrites model / prompts / tools / skills / MCP in the DB. Fire the
 // events the rest of the app already listens to so every popover re-reads them.
 function notifySettingsChanged(detail: Record<string, unknown>): void {
   const payload = { ...detail, source: PROFILE_EVENT_SOURCE };
-  for (const name of ['profile-applied', 'model-changed', 'system-prompts-updated', 'tools-updated', 'skills-updated']) {
+  for (const name of ['profile-applied', 'model-changed', 'system-prompts-updated', 'tools-updated', 'skills-updated', 'mcp-updated']) {
     window.dispatchEvent(new CustomEvent(name, { detail: payload }));
   }
 }
@@ -219,11 +219,13 @@ export function Drawer({ isOpen, currentConversationId, onSelectConversation, on
     window.addEventListener('tools-updated', handleSettingsChange);
     window.addEventListener('system-prompts-updated', handleSettingsChange);
     window.addEventListener('skills-updated', handleSettingsChange);
+    window.addEventListener('mcp-updated', handleSettingsChange);
     return () => {
       window.removeEventListener('model-changed', handleSettingsChange);
       window.removeEventListener('tools-updated', handleSettingsChange);
       window.removeEventListener('system-prompts-updated', handleSettingsChange);
       window.removeEventListener('skills-updated', handleSettingsChange);
+      window.removeEventListener('mcp-updated', handleSettingsChange);
     };
   }, []);
 

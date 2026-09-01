@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { ProfileEditDialog } from './ProfileEditDialog';
+import { parseStoredMcpProfile } from '../../../shared/profile-mcp';
 
 const invoke = window.electron?.invoke || (async () => {});
 
@@ -22,6 +23,7 @@ interface ChatProfile {
   system_prompts: string;
   tools: string;
   skills: string;
+  mcp: string | null;
   rank: number;
   created_at: number;
   updated_at: number;
@@ -114,6 +116,14 @@ export function ChatProfilesSettings() {
     try {
       const s = JSON.parse(profile.skills);
       if (s.enabled_skill_ids?.length) parts.push(`${s.enabled_skill_ids.length} skills`);
+    } catch {}
+    try {
+      const mcp = parseStoredMcpProfile(profile.mcp);
+      if (mcp.kind === 'managed') {
+        parts.push(mcp.snapshot.global_enabled
+          ? `${mcp.snapshot.servers.length} MCP server${mcp.snapshot.servers.length === 1 ? '' : 's'}`
+          : 'MCP off');
+      }
     } catch {}
     return parts.join(' · ') || 'No configuration';
   };
@@ -264,6 +274,7 @@ export function ChatProfilesSettings() {
                         system_prompts: JSON.parse(profile.system_prompts || '{}'),
                         tools: JSON.parse(profile.tools || '{}'),
                         skills: JSON.parse(profile.skills || '{}'),
+                        mcp: profile.mcp ? JSON.parse(profile.mcp) : null,
                       },
                       null,
                       2

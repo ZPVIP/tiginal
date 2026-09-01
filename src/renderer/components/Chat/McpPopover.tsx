@@ -70,8 +70,13 @@ export const McpPopover: React.FC<McpPopoverProps> = ({ onClose }) => {
   const toggleGlobal = async () => {
     const next = !globalEnabled;
     setGlobalEnabled(next);
-    await invoke('mcp:set-global-enabled', next);
-    notifyUpdated();
+    try {
+      await invoke('mcp:set-global-enabled', next);
+      notifyUpdated();
+    } catch (error) {
+      console.error('Failed to update global MCP state:', error);
+      await load();
+    }
   };
 
   const toggleServer = async (server: McpServer) => {
@@ -83,6 +88,10 @@ export const McpPopover: React.FC<McpPopoverProps> = ({ onClose }) => {
       // Enabling connects to the server, so the reply carries the fresh tool list.
       setServers(await invoke('mcp:toggle-server', server.id, next));
       if (next) setExpanded(prev => new Set(prev).add(server.id));
+      notifyUpdated();
+    } catch (error) {
+      console.error('Failed to update MCP server:', error);
+      await load();
     } finally {
       setBusyId(null);
     }
@@ -97,7 +106,13 @@ export const McpPopover: React.FC<McpPopoverProps> = ({ onClose }) => {
         ? s.disabledTools.filter(t => t !== toolName)
         : [...s.disabledTools, toolName],
     }));
-    await invoke('mcp:toggle-tool', server.id, toolName, enabled);
+    try {
+      await invoke('mcp:toggle-tool', server.id, toolName, enabled);
+      notifyUpdated();
+    } catch (error) {
+      console.error('Failed to update MCP tool:', error);
+      await load();
+    }
   };
 
   const toggleExpand = (id: string) => {

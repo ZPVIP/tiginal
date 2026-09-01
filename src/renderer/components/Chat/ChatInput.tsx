@@ -22,6 +22,7 @@ import {
   validateImageAttachmentBytes,
   validateImageAttachmentMimeType,
 } from '../../../shared/image-attachments';
+import { isMcpStatusActive, McpStatus } from '../../../shared/profile-mcp';
 
 export interface ChatInputHandle {
     setText: (text: string) => void;
@@ -70,7 +71,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [showSystemPrompts, setShowSystemPrompts] = useState(false);
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [globalToolsEnabled, setGlobalToolsEnabled] = useState(false);
-  const [globalMcpEnabled, setGlobalMcpEnabled] = useState(false);
+  const [mcpActive, setMcpActive] = useState(false);
   const [globalSystemPromptsEnabled, setGlobalSystemPromptsEnabled] = useState(true);
   const [images, setImages] = useState<string[]>([]);
   const [imageError, setImageError] = useState('');
@@ -94,13 +95,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const checkGlobalSettings = async () => {
     try {
       if ((window as any).electron?.invoke) {
-        const [toolsEnabled, mcpEnabled, promptsEnabled] = await Promise.all([
+        const [toolsEnabled, mcpStatus, promptsEnabled] = await Promise.all([
           (window as any).electron.invoke('tools:get-global-enabled'),
-          (window as any).electron.invoke('mcp:get-global-enabled'),
+          (window as any).electron.invoke('mcp:get-status'),
           (window as any).electron.invoke('system-prompts:get-global-enabled')
         ]);
         setGlobalToolsEnabled(toolsEnabled);
-        setGlobalMcpEnabled(mcpEnabled);
+        setMcpActive(isMcpStatusActive(mcpStatus as McpStatus));
         setGlobalSystemPromptsEnabled(promptsEnabled);
       }
     } catch (e) {
@@ -302,9 +303,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                    onClick={() => setShowMcp(!showMcp)}
                    className={clsx(
                        "p-2 rounded-lg transition-colors",
-                       (showMcp || globalMcpEnabled) ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                       mcpActive ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
                    )}
                    title="MCP Servers"
+                   aria-expanded={showMcp}
                 >
                     <McpIcon size={18} />
                 </button>

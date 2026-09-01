@@ -76,6 +76,8 @@ export function setupMcpHandlers(): void {
 
   ipcMain.handle('mcp:get-global-enabled', async (): Promise<boolean> => mcp.isGlobalEnabled());
 
+  ipcMain.handle('mcp:get-status', async () => mcp.getStatus());
+
   ipcMain.handle('mcp:set-global-enabled', async (_event, enabled: boolean): Promise<void> => {
     mcp.setGlobalEnabled(enabled);
   });

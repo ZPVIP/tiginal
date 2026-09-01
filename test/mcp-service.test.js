@@ -8,6 +8,17 @@ const { DatabaseSync } = require('node:sqlite');
 // app paths. Swap in an in-memory database before the module is loaded.
 const databaseModule = require.resolve('../dist/main/services/database/database.js');
 const db = new DatabaseSync(':memory:');
+db.transaction = fn => (...args) => {
+  db.exec('BEGIN');
+  try {
+    const result = fn(...args);
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+};
 db.exec(`
   CREATE TABLE mcp_servers (
     id TEXT PRIMARY KEY,
@@ -51,6 +62,22 @@ function addServer(id, toolsCache = null) {
     INSERT INTO mcp_servers (id, name, type, description, config, is_builtin, enabled, disabled_tools, tools_cache, rank, created_at, updated_at)
     VALUES (?, ?, 'streamableHttp', '', '{"type":"streamableHttp","url":"http://example.invalid/mcp"}', 0, 1, '[]', ?, 0, ?, ?)
   `).run(id, id, toolsCache, now, now);
+}
+
+function insertServer({ id, enabled, disabledTools = [], tools = [TOOL] }) {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO mcp_servers (id, name, type, description, config, is_builtin, enabled, disabled_tools, tools_cache, rank, created_at, updated_at)
+    VALUES (?, ?, 'streamableHttp', '', '{"type":"streamableHttp","url":"http://example.invalid/mcp"}', 0, ?, ?, ?, 0, ?, ?)
+  `).run(
+    id,
+    id,
+    enabled ? 1 : 0,
+    JSON.stringify(disabledTools),
+    JSON.stringify({ tools, expiresAt: null, warnings: [] }),
+    now,
+    now,
+  );
 }
 
 /**
@@ -188,4 +215,59 @@ test('only a broken connection is torn down after a failed tool call', async () 
   failure = new McpTimeoutError('MCP request "tools/call" timed out after 60s');
   assert.equal((await service.callTool(tool.name, {})).success, false);
   assert.equal(calls.disposed, 1, 'a dead connection has to be rebuilt');
+});
+
+test('captures and applies an MCP profile snapshot without connecting servers', async () => {
+  db.prepare('DELETE FROM mcp_servers').run();
+  settings.clear();
+  insertServer({ id: 'selected', enabled: true, disabledTools: ['write'] });
+  insertServer({ id: 'other', enabled: false });
+  const service = new McpService();
+
+  assert.deepEqual(service.captureProfileSnapshot(), {
+    version: 1,
+    global_enabled: true,
+    servers: [{ id: 'selected', disabled_tools: ['write'] }],
+  });
+
+  const disposed = [];
+  service.dispose = id => disposed.push(id);
+  await service.applyProfileSnapshot({
+    version: 1,
+    global_enabled: false,
+    servers: [{ id: 'other', disabled_tools: ['read'] }],
+  });
+
+  assert.equal(settings.get('mcpGlobalEnabled'), 'false');
+  assert.equal(service.getServer('selected').enabled, false);
+  assert.equal(service.getServer('other').enabled, true);
+  assert.deepEqual(service.getServer('other').disabledTools, ['read']);
+  assert.deepEqual(disposed.sort(), ['other', 'selected']);
+});
+
+test('reports MCP active state from global and server selection', () => {
+  db.prepare('DELETE FROM mcp_servers').run();
+  settings.clear();
+  insertServer({ id: 'enabled', enabled: true });
+  const service = new McpService();
+
+  assert.deepEqual(service.getStatus(), { globalEnabled: true, enabledServerCount: 1 });
+  settings.set('mcpGlobalEnabled', 'false');
+  assert.deepEqual(service.getStatus(), { globalEnabled: false, enabledServerCount: 1 });
+});
+
+test('rejects a disabled MCP tool even when a stale route exists', async () => {
+  db.prepare('DELETE FROM mcp_servers').run();
+  settings.clear();
+  insertServer({ id: 'guarded', enabled: true, disabledTools: ['echo'] });
+  const { service } = serviceWith({
+    listTools: async () => ({ tools: [TOOL] }),
+    callTool: async () => 'should not run',
+  });
+  service.routes.set('mcp__guarded__echo', { serverId: 'guarded', toolName: 'echo' });
+
+  assert.deepEqual(await service.callTool('mcp__guarded__echo', {}), {
+    success: false,
+    error: 'MCP tool "echo" is disabled',
+  });
 });

@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 23;
+const SCHEMA_VERSION = 24;
 
 /**
  * Database service for Tiginal
@@ -157,6 +157,10 @@ export class DatabaseService {
 
     if (currentVersion < 23) {
       this.migrateV23();
+    }
+
+    if (currentVersion < 24) {
+      this.migrateV24();
     }
 
     // Update schema version
@@ -730,6 +734,17 @@ export class DatabaseService {
       } catch {
         // Column might already exist.
       }
+    }
+  }
+
+  /** Migration v24: Let chat profiles optionally manage MCP selection. */
+  private migrateV24(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE chat_profiles ADD COLUMN mcp TEXT DEFAULT NULL`);
+    } catch {
+      // Column might already exist.
     }
   }
 

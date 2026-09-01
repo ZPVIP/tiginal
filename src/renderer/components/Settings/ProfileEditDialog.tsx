@@ -12,6 +12,12 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { McpIcon } from '../icons/McpIcon';
+import {
+  createMcpProfileSnapshot,
+  McpProfileSnapshotV1,
+  parseStoredMcpProfile,
+} from '../../../shared/profile-mcp';
 
 const invoke = window.electron?.invoke || (async () => {});
 
@@ -24,6 +30,7 @@ interface ChatProfile {
   system_prompts: string;
   tools: string;
   skills: string;
+  mcp: string | null;
   rank: number;
 }
 
@@ -72,7 +79,21 @@ interface Skill {
   enabled: number;
 }
 
-type TabId = 'providers' | 'prompts' | 'tools' | 'skills';
+interface McpTool {
+  name: string;
+  description: string;
+}
+
+interface McpServer {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  disabledTools: string[];
+  tools: McpTool[];
+}
+
+type TabId = 'providers' | 'prompts' | 'tools' | 'skills' | 'mcp';
 
 interface ProfileEditDialogProps {
   profile: ChatProfile | null; // null = creating new
@@ -118,6 +139,13 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
   const [enabledSkillIds, setEnabledSkillIds] = useState<Set<number>>(new Set());
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
 
+  // MCP state
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [mcpGlobalEnabled, setMcpGlobalEnabled] = useState(true);
+  const [enabledMcpServerIds, setEnabledMcpServerIds] = useState<Set<string>>(new Set());
+  const [disabledMcpTools, setDisabledMcpTools] = useState<Record<string, string[]>>({});
+  const [expandedMcpServers, setExpandedMcpServers] = useState<Set<string>>(new Set());
+
   // Load all data on mount
   useEffect(() => {
     loadAll();
@@ -148,6 +176,19 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
       setSkills(skillList || []);
       setExpandedDirs(new Set((dirList || []).map((d: SkillDirectory) => d.id)));
 
+      // Seed the MCP draft from the live settings. An older profile with no
+      // stored snapshot starts here and becomes managed once it is saved.
+      const [mcpList, currentMcpGlobal] = await Promise.all([
+        invoke('mcp:get-servers'),
+        invoke('mcp:get-global-enabled'),
+      ]);
+      const currentMcpServers = (mcpList || []) as McpServer[];
+      setMcpServers(currentMcpServers);
+      setMcpGlobalEnabled(currentMcpGlobal ?? true);
+      setEnabledMcpServerIds(new Set(currentMcpServers.filter(server => server.enabled).map(server => server.id)));
+      setDisabledMcpTools(Object.fromEntries(currentMcpServers.map(server => [server.id, server.disabledTools])));
+      setExpandedMcpServers(new Set(currentMcpServers.filter(server => server.enabled).map(server => server.id)));
+
       // If editing, parse existing config
       if (profile) {
         setSelectedProviderId(profile.ai_provider_id);
@@ -176,6 +217,15 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
           if (Array.isArray(s.enabled_directory_ids)) setEnabledDirIds(new Set(s.enabled_directory_ids));
           if (Array.isArray(s.enabled_skill_ids)) setEnabledSkillIds(new Set(s.enabled_skill_ids));
         } catch {}
+
+        try {
+          const storedMcp = parseStoredMcpProfile(profile.mcp);
+          if (storedMcp.kind === 'managed') {
+            applyMcpSnapshotToDraft(storedMcp.snapshot);
+          }
+        } catch (e) {
+          console.error('Failed to parse profile MCP settings:', e);
+        }
       } else {
         // For new profile, snapshot current settings as defaults
         try {
@@ -201,6 +251,8 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
             setSkillsGlobalEnabled(s.global_enabled ?? true);
             setEnabledDirIds(new Set(s.enabled_directory_ids || []));
             setEnabledSkillIds(new Set(s.enabled_skill_ids || []));
+
+            if (snapshot.mcp) applyMcpSnapshotToDraft(snapshot.mcp as McpProfileSnapshotV1);
           }
         } catch (e) {
           console.error('Failed to snapshot current settings:', e);
@@ -241,6 +293,11 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
         enabled_directory_ids: Array.from(enabledDirIds),
         enabled_skill_ids: Array.from(enabledSkillIds),
       },
+      mcp: createMcpProfileSnapshot({
+        globalEnabled: mcpGlobalEnabled,
+        enabledServerIds: enabledMcpServerIds,
+        disabledToolsByServer: disabledMcpTools,
+      }),
     };
 
     try {
@@ -299,6 +356,7 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
     { id: 'prompts', label: 'System Prompts', icon: <FileText size={14} /> },
     { id: 'tools', label: 'Tools', icon: <Wrench size={14} /> },
     { id: 'skills', label: 'Skills', icon: <Wand2 size={14} /> },
+    { id: 'mcp', label: 'MCP', icon: <McpIcon size={14} /> },
   ];
 
   // Toggle helpers
@@ -358,6 +416,42 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
 
   const toggleExpandDir = (id: string) => {
     setExpandedDirs(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  function applyMcpSnapshotToDraft(snapshot: McpProfileSnapshotV1): void {
+    setMcpGlobalEnabled(snapshot.global_enabled);
+    setEnabledMcpServerIds(new Set(snapshot.servers.map(server => server.id)));
+    setDisabledMcpTools(Object.fromEntries(
+      snapshot.servers.map(server => [server.id, server.disabled_tools])
+    ));
+    setExpandedMcpServers(new Set(snapshot.servers.map(server => server.id)));
+  }
+
+  const toggleMcpServer = (id: string) => {
+    setEnabledMcpServerIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleMcpTool = (serverId: string, toolName: string) => {
+    setDisabledMcpTools(prev => {
+      const disabled = new Set(prev[serverId] || []);
+      if (disabled.has(toolName)) disabled.delete(toolName);
+      else disabled.add(toolName);
+      return { ...prev, [serverId]: Array.from(disabled) };
+    });
+  };
+
+  const toggleExpandMcpServer = (id: string) => {
+    setExpandedMcpServers(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -674,6 +768,84 @@ export function ProfileEditDialog({ profile, onClose, onSave }: ProfileEditDialo
               {skillsGlobalEnabled && directories.length === 0 && (
                 <p className="text-xs text-text-muted">No skill directories configured</p>
               )}
+              </div>
+            </div>
+          )}
+
+          {/* MCP Tab */}
+          {activeTab === 'mcp' && (
+            <div className="flex-1 min-h-0 flex flex-col gap-3">
+              <div className="flex items-center justify-between shrink-0">
+                <div>
+                  <span className="text-sm font-medium block">MCP Servers</span>
+                  <span className="text-xs text-text-muted">
+                    Apply these server and tool selections with the profile
+                  </span>
+                </div>
+                <ToggleSwitch checked={mcpGlobalEnabled} onChange={setMcpGlobalEnabled} />
+              </div>
+
+              <div className={clsx(
+                'flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 -mr-1',
+                !mcpGlobalEnabled && 'opacity-50 pointer-events-none'
+              )}>
+                {mcpServers.map(server => {
+                  const isEnabled = enabledMcpServerIds.has(server.id);
+                  const isExpanded = expandedMcpServers.has(server.id);
+                  return (
+                    <div key={server.id} className="border border-border/50 rounded-md overflow-hidden">
+                      <div className="flex items-center gap-2 px-3 py-2 bg-background/50 hover:bg-surface-hover transition-colors">
+                        <button
+                          onClick={() => toggleExpandMcpServer(server.id)}
+                          className="text-text-muted hover:text-text-main"
+                        >
+                          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium block truncate">{server.name}</span>
+                          {server.description && (
+                            <span className="text-xs text-text-muted block truncate">{server.description}</span>
+                          )}
+                        </div>
+                        <span className="text-xs text-text-muted mr-2">{server.tools.length}</span>
+                        <ToggleSwitch
+                          checked={isEnabled}
+                          onChange={() => toggleMcpServer(server.id)}
+                          size="sm"
+                        />
+                      </div>
+
+                      {isExpanded && server.tools.length > 0 && (
+                        <div className={clsx(
+                          'border-t border-border/30 py-0.5',
+                          !isEnabled && 'opacity-50 pointer-events-none'
+                        )}>
+                          {server.tools.map(tool => (
+                            <CheckRow
+                              key={tool.name}
+                              label={tool.name}
+                              checked={!(disabledMcpTools[server.id] || []).includes(tool.name)}
+                              onChange={() => toggleMcpTool(server.id, tool.name)}
+                              indent
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {isExpanded && server.tools.length === 0 && (
+                        <div className="border-t border-border/30 px-3 py-2">
+                          <p className="text-xs text-text-muted">
+                            No cached tools. Refresh this server in MCP Settings first.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {mcpServers.length === 0 && (
+                  <p className="text-xs text-text-muted">No MCP servers configured</p>
+                )}
               </div>
             </div>
           )}

@@ -5,6 +5,11 @@ import { StdioClient } from './StdioClient';
 import { HttpClient } from './HttpClient';
 import { BuiltinClient, BUILTIN_PROVIDERS } from './builtin';
 import { isRecoverableCallError } from './protocol';
+import {
+  McpProfileSnapshotV1,
+  McpStatus,
+  normalizeMcpProfileSnapshot,
+} from '../../../shared/profile-mcp';
 
 const GLOBAL_ENABLED_KEY = 'mcpGlobalEnabled';
 const TOOL_PREFIX = 'mcp__';
@@ -100,6 +105,60 @@ export class McpService {
 
   setGlobalEnabled(enabled: boolean): void {
     getDatabase().setSetting(GLOBAL_ENABLED_KEY, String(!!enabled));
+  }
+
+  getStatus(): McpStatus {
+    const row = this.db.prepare('SELECT COUNT(*) AS count FROM mcp_servers WHERE enabled = 1').get() as { count: number };
+    return {
+      globalEnabled: this.isGlobalEnabled(),
+      enabledServerCount: row.count,
+    };
+  }
+
+  captureProfileSnapshot(): McpProfileSnapshotV1 {
+    return {
+      version: 1,
+      global_enabled: this.isGlobalEnabled(),
+      servers: this.listServers()
+        .filter(server => server.enabled)
+        .map(server => ({
+          id: server.id,
+          disabled_tools: [...new Set(server.disabledTools)],
+        })),
+    };
+  }
+
+  async applyProfileSnapshot(value: unknown): Promise<{ missingServerIds: string[] }> {
+    const snapshot = normalizeMcpProfileSnapshot(value);
+    const currentServers = this.listServers();
+    const knownIds = new Set(currentServers.map(server => server.id));
+    const selectedIds = new Set(snapshot.servers.map(server => server.id));
+    const missingServerIds = snapshot.servers
+      .map(server => server.id)
+      .filter(id => !knownIds.has(id));
+    const now = Date.now();
+    const dbService = getDatabase();
+
+    const apply = this.db.transaction(() => {
+      dbService.setSetting(GLOBAL_ENABLED_KEY, String(snapshot.global_enabled));
+      this.db.prepare('UPDATE mcp_servers SET enabled = 0, updated_at = ?').run(now);
+      const enable = this.db.prepare(`
+        UPDATE mcp_servers
+        SET enabled = 1, disabled_tools = ?, updated_at = ?
+        WHERE id = ?
+      `);
+      for (const server of snapshot.servers) {
+        enable.run(JSON.stringify(server.disabled_tools), now, server.id);
+      }
+    });
+    apply();
+
+    this.routes.clear();
+    for (const server of currentServers) {
+      if (!snapshot.global_enabled || !selectedIds.has(server.id)) this.dispose(server.id);
+    }
+
+    return { missingServerIds };
   }
 
   // --------------------------------------------------------------------- rows
@@ -446,8 +505,12 @@ export class McpService {
   /** Rebuild the wire-name routing table without touching the network. */
   private rebuildRoutes(): void {
     this.routes.clear();
+    if (!this.isGlobalEnabled()) return;
     for (const server of this.listServers()) {
+      if (!server.enabled) continue;
+      const disabled = new Set(server.disabledTools);
       for (const tool of server.tools) {
+        if (disabled.has(tool.name)) continue;
         this.routes.set(qualify(server.name, tool.name), { serverId: server.id, toolName: tool.name });
       }
     }
@@ -466,6 +529,9 @@ export class McpService {
     const server = this.getServer(route.serverId);
     if (!server) return { success: false, error: 'MCP server no longer exists' };
     if (!server.enabled) return { success: false, error: `MCP server "${server.name}" is disabled` };
+    if (server.disabledTools.includes(route.toolName)) {
+      return { success: false, error: `MCP tool "${route.toolName}" is disabled` };
+    }
 
     try {
       const text = await this.clientFor(server).callTool(route.toolName, args);
