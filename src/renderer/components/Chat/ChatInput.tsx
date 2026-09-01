@@ -35,6 +35,8 @@ interface ChatInputProps {
   isStreaming?: boolean;
   autoApprove?: boolean;
   onAutoApproveChange?: (enabled: boolean) => void;
+  useSkills: boolean;
+  onUseSkillsChange: (enabled: boolean) => void;
   
   // Model Selection Props
   models?: { providerId: string; modelId: string; label: string }[];
@@ -53,6 +55,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     isStreaming,
     autoApprove = false,
     onAutoApproveChange = () => {},
+    useSkills,
+    onUseSkillsChange,
     models = [],
     selectedProviderId = '',
     selectedModel = '',
@@ -61,7 +65,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 }, ref) => {
   const [text, setText] = useState('');
   const [useSearch, setUseSearch] = useState(false);
-  const [useSkills, setUseSkills] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const [showMcp, setShowMcp] = useState(false);
   const [showSystemPrompts, setShowSystemPrompts] = useState(false);
@@ -306,7 +309,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                     <McpIcon size={18} />
                 </button>
                 <button 
-                   onClick={() => setUseSkills(!useSkills)}
+                   onClick={() => onUseSkillsChange(!useSkills)}
                    className={clsx(
                        "p-2 rounded-lg transition-colors",
                        useSkills ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"

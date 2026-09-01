@@ -36,6 +36,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
   // Tool call state
   // Tool call state
   const [autoApprove, setAutoApprove] = useState(false);
+  const [useSkills, setUseSkills] = useState(false);
 
   useEffect(() => {
     loadProviders();
@@ -230,7 +231,12 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
 
   // Applying a chat profile rewrites the default provider/model in the DB
   useEffect(() => {
-      const handleProfileApplied = () => { loadProviders(); };
+      const handleProfileApplied = (event: Event) => {
+          loadProviders();
+          if (event instanceof CustomEvent && typeof event.detail?.useSkills === 'boolean') {
+              setUseSkills(event.detail.useSkills);
+          }
+      };
       window.addEventListener('profile-applied', handleProfileApplied);
       return () => window.removeEventListener('profile-applied', handleProfileApplied);
   }, []);
@@ -702,6 +708,8 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
         isStreaming={isLoading}
         autoApprove={autoApprove}
         onAutoApproveChange={setAutoApprove}
+        useSkills={useSkills}
+        onUseSkillsChange={setUseSkills}
         models={allModels}
         selectedProviderId={selectedProviderId}
         selectedModel={selectedModel}

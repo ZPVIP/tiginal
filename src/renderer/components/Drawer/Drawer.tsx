@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FavoriteSection } from './FavoriteSection';
 import { CategoryList } from './CategoryList';
 import { ProfileSection } from './ProfileSection';
+import { shouldUseSkillsForProfile } from '../../../shared/profile-skills';
 
 const invoke = window.electron?.invoke || (async () => {});
 
@@ -152,7 +153,11 @@ export function Drawer({ isOpen, currentConversationId, onSelectConversation, on
         if (currentConversationId) {
           await invoke('profiles:set-conversation-profile', currentConversationId, profileId);
         }
-        notifySettingsChanged({ profileId, profile });
+        notifySettingsChanged({
+          profileId,
+          profile,
+          useSkills: shouldUseSkillsForProfile(profile.skills),
+        });
       }
     } catch (e) {
       console.error('Failed to apply profile:', e);
