@@ -5,6 +5,7 @@ import { EmptyState } from './EmptyState';
 
 import { AIProvider, ModelConfig } from '../../settings/ai-constants';
 import { EyeOff, Trash2 } from 'lucide-react';
+import { IMAGE_ATTACHMENT_FORMAT_MESSAGE } from '../../../shared/image-attachments';
 
 const invoke = (window as any).electron?.invoke || (async () => {});
 
@@ -329,6 +330,9 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
               imagePaths = await invoke('images:save', images) || [];
           } catch (e) {
               console.error('Failed to save attachments', e);
+              alert(`The image could not be attached. ${IMAGE_ATTACHMENT_FORMAT_MESSAGE}`);
+              setIsLoading(false);
+              return;
           }
       }
 

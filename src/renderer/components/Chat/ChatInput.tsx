@@ -18,6 +18,10 @@ import { SystemPromptsPopover } from './SystemPromptsPopover';
 import { ModelSelectorPopover } from './ModelSelectorPopover';
 import { Bot, ChevronUp } from 'lucide-react';
 import { McpIcon } from '../icons/McpIcon';
+import {
+  validateImageAttachmentBytes,
+  validateImageAttachmentMimeType,
+} from '../../../shared/image-attachments';
 
 export interface ChatInputHandle {
     setText: (text: string) => void;
@@ -66,6 +70,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [globalMcpEnabled, setGlobalMcpEnabled] = useState(false);
   const [globalSystemPromptsEnabled, setGlobalSystemPromptsEnabled] = useState(true);
   const [images, setImages] = useState<string[]>([]);
+  const [imageError, setImageError] = useState('');
 
   useEffect(() => {
     checkGlobalSettings();
@@ -137,14 +142,33 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     onSend(text, images, useSkills);
     setText('');
     setImages([]);
+    setImageError('');
     // Reset height
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
      const files = e.target.files;
+     setImageError('');
      if (files) {
-         Array.from(files).forEach(file => {
+         for (const file of Array.from(files)) {
+             const validation = validateImageAttachmentMimeType(file.type, file.name);
+             if (!validation.ok) {
+                 setImageError(validation.message);
+                 continue;
+             }
+
+             const header = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+             const bytesValidation = validateImageAttachmentBytes(
+                 validation.mimeType,
+                 header,
+                 file.name,
+             );
+             if (!bytesValidation.ok) {
+                 setImageError(bytesValidation.message);
+                 continue;
+             }
+
              const reader = new FileReader();
              reader.onload = (e) => {
                  if (e.target?.result) {
@@ -152,8 +176,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                  }
              };
              reader.readAsDataURL(file);
-         });
+         }
      }
+     e.target.value = '';
   };
 
   return (
@@ -226,6 +251,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                         </button>
                     </div>
                 ))}
+            </div>
+        )}
+
+        {imageError && (
+            <div role="alert" className="px-3 pt-2 text-xs text-red-400">
+                {imageError}
             </div>
         )}
 

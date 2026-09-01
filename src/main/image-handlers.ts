@@ -1,6 +1,11 @@
 import { ipcMain, protocol, nativeImage } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  parseImageAttachmentDataUrl,
+  SupportedImageMimeType,
+  validateImageAttachmentBytes,
+} from '../shared/image-attachments';
 import { isWithin, picturesDir, resolveExisting } from './utils/paths';
 
 /**
@@ -29,13 +34,9 @@ const MIME_BY_EXT: Record<string, string> = {
   '.bmp': 'image/bmp',
 };
 
-const EXT_BY_MIME: Record<string, string> = {
+const EXT_BY_MIME: Record<SupportedImageMimeType, string> = {
   'image/png': '.png',
   'image/jpeg': '.jpg',
-  'image/jpg': '.jpg',
-  'image/gif': '.gif',
-  'image/webp': '.webp',
-  'image/bmp': '.bmp',
 };
 
 export function picturesRoot(): string {
@@ -61,17 +62,17 @@ export function toImageUrl(absolutePath: string): string {
 /**
  * Persist a data: URL and return the absolute path it was written to.
  */
-export function saveDataUrl(dataUrl: string, originalName?: string): string {
-  const match = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(dataUrl);
-  if (!match) throw new Error('Not a data URL');
+export function saveDataUrl(dataUrl: string): string {
+  const validation = parseImageAttachmentDataUrl(dataUrl);
+  if (!validation.ok) throw new Error(validation.message);
 
-  const mime = match[1].toLowerCase();
-  const ext = EXT_BY_MIME[mime]
-    || (originalName ? path.extname(originalName).toLowerCase() : '')
-    || '.png';
-  const buffer = match[2]
-    ? Buffer.from(match[3], 'base64')
-    : Buffer.from(decodeURIComponent(match[3]), 'utf-8');
+  const { attachment } = validation;
+  const ext = EXT_BY_MIME[attachment.mimeType];
+  const buffer = attachment.encoding === 'base64'
+    ? Buffer.from(attachment.data, 'base64')
+    : Buffer.from(decodeURIComponent(attachment.data), 'utf-8');
+  const bytesValidation = validateImageAttachmentBytes(attachment.mimeType, buffer);
+  if (!bytesValidation.ok) throw new Error(bytesValidation.message);
 
   const dir = path.join(picturesRoot(), monthFolder());
   fs.mkdirSync(dir, { recursive: true });
@@ -166,15 +167,7 @@ export function setupImageHandlers(): void {
 
   // Save one or more data URLs, answering with the paths to store on the message
   ipcMain.handle('images:save', async (_event, dataUrls: string[]): Promise<string[]> => {
-    const saved: string[] = [];
-    for (const dataUrl of dataUrls || []) {
-      try {
-        saved.push(saveDataUrl(dataUrl));
-      } catch (e) {
-        console.error('[Images] Failed to save an attachment', e);
-      }
-    }
-    return saved;
+    return (dataUrls || []).map(saveDataUrl);
   });
 
   ipcMain.handle('images:get-url', async (_event, absolutePath: string): Promise<string | null> => {
