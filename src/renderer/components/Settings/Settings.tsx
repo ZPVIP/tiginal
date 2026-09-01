@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Tabs } from '../ui/Tabs';
-import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench, FileText, BarChart3, UserCircle, Server } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench, FileText, BarChart3, UserCircle } from 'lucide-react';
+import { McpIcon } from '../icons/McpIcon';
 import { GeneralSettings } from './GeneralSettings';
 import { AIProviders } from './AIProviders';
 import { ThemeSettings } from './ThemeSettings';
@@ -21,7 +22,7 @@ export function Settings() {
     { id: 'providers', label: 'AI Providers', icon: <Database size={16} /> },
     { id: 'system-prompt', label: 'System Prompts', icon: <FileText size={16} /> },
     { id: 'tools', label: 'Tools', icon: <Wrench size={16} /> },
-    { id: 'mcp', label: 'MCP Servers', icon: <Server size={16} /> },
+    { id: 'mcp', label: 'MCP Servers', icon: <McpIcon size={16} /> },
     { id: 'skills', label: 'Skills', icon: <Wand2 size={16} /> },
     { id: 'profiles', label: 'Chat Profiles', icon: <UserCircle size={16} /> },
     { id: 'terminal', label: 'Terminal', icon: <Terminal size={16} /> },

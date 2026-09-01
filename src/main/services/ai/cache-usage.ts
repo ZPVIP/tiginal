@@ -113,6 +113,18 @@ export function aggregateCacheUsage(usages: NormalizedUsage[]): NormalizedUsage 
   return totals;
 }
 
+export function summarizeAgentUsage(usages: NormalizedUsage[]): {
+  currentRequest: NormalizedUsage;
+  consumed: NormalizedUsage;
+} {
+  const consumed = aggregateCacheUsage(usages);
+  const currentRequest = usages.length > 0
+    ? usages[usages.length - 1]
+    : aggregateCacheUsage([]);
+
+  return { currentRequest, consumed };
+}
+
 export function isAnthropicEndpoint(endpoint: string): boolean {
   try {
     return new URL(endpoint).hostname.toLowerCase() === 'api.anthropic.com';

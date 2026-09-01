@@ -8,6 +8,32 @@ export interface OpenAIFetchResult {
   errorText?: string;
 }
 
+export interface ParsedOpenAIChatCompletion {
+  content: string | null;
+  usage: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function parseOpenAIChatCompletion(response: unknown): ParsedOpenAIChatCompletion {
+  if (!isRecord(response)) return { content: null, usage: undefined };
+
+  const payload = isRecord(response.data) ? response.data : response;
+  const firstChoice = Array.isArray(payload.choices) ? payload.choices[0] : undefined;
+  const message = isRecord(firstChoice) && isRecord(firstChoice.message)
+    ? firstChoice.message
+    : undefined;
+
+  return {
+    content: typeof message?.content === 'string' && message.content.length > 0
+      ? message.content
+      : null,
+    usage: payload.usage,
+  };
+}
+
 function isOfficialOpenAIEndpoint(endpoint: string): boolean {
   try {
     return new URL(endpoint).hostname.toLowerCase() === 'api.openai.com';
@@ -38,32 +64,26 @@ function isTextSystemMessage(
     && typeof value.content === 'string';
 }
 
-function mergeLeadingSystemMessages(messages: unknown): unknown {
+function mergeSystemMessages(messages: unknown): unknown {
   if (!Array.isArray(messages)) return messages;
 
-  const systemMessages = [];
-  for (const message of messages) {
-    if (!isTextSystemMessage(message)) break;
-    systemMessages.push(message);
-  }
+  const systemMessages = messages.filter(isTextSystemMessage);
+  if (systemMessages.length === 0) return messages;
 
-  if (systemMessages.length < 2) return messages;
-
-  // Preserve content order so stable system text remains the cacheable prefix.
   const mergedSystemMessage = {
     ...systemMessages[0],
     content: systemMessages.map(message => message.content).join('\n\n'),
   };
-  return [mergedSystemMessage, ...messages.slice(systemMessages.length)];
+  return [mergedSystemMessage, ...messages.filter(message => !isTextSystemMessage(message))];
 }
 
-function normalizeOpenAIPayload(
+export function prepareOpenAIRequestPayload(
   payload: Readonly<OpenAIRequestPayload>,
 ): OpenAIRequestPayload {
   if (!('messages' in payload)) return { ...payload };
   return {
     ...payload,
-    messages: mergeLeadingSystemMessages(payload.messages),
+    messages: mergeSystemMessages(payload.messages),
   };
 }
 
@@ -121,7 +141,7 @@ export async function fetchOpenAIWithCompatibility(
   init: Omit<RequestInit, 'body'>,
   payload: Readonly<OpenAIRequestPayload>,
 ): Promise<OpenAIFetchResult> {
-  let currentPayload = normalizeOpenAIPayload(payload);
+  let currentPayload = prepareOpenAIRequestPayload(payload);
 
   for (let attempt = 0; attempt < 3; attempt++) {
     const response = await fetcher(url, {

@@ -8,6 +8,7 @@ const {
   isAnthropicEndpoint,
   normalizeAnthropicUsage,
   normalizeOpenAIUsage,
+  summarizeAgentUsage,
 } = require('../dist/main/main/services/ai/cache-usage.js');
 const {
   anthropicMessagesUrl,
@@ -82,6 +83,35 @@ test('keeps an aggregate unknown if any internal model turn lacks telemetry', ()
     cacheWriteTokens: 0,
     totalTokens: 2320,
     cacheStatus: 'unknown',
+  });
+});
+
+test('separates the final model request from total agent-loop consumption', () => {
+  const firstRequest = normalizeOpenAIUsage({
+    prompt_tokens: 1571,
+    completion_tokens: 94,
+    total_tokens: 1665,
+    prompt_tokens_details: { cached_tokens: 1408 },
+  });
+  const finalRequest = normalizeOpenAIUsage({
+    prompt_tokens: 1611,
+    completion_tokens: 89,
+    total_tokens: 1700,
+    prompt_tokens_details: { cached_tokens: 1472 },
+    completion_tokens_details: { reasoning_tokens: 29 },
+  });
+
+  assert.deepEqual(summarizeAgentUsage([firstRequest, finalRequest]), {
+    currentRequest: finalRequest,
+    consumed: {
+      promptTokens: 3182,
+      completionTokens: 183,
+      reasoningTokens: 29,
+      cachedTokens: 2880,
+      cacheWriteTokens: 0,
+      totalTokens: 3365,
+      cacheStatus: 'hit',
+    },
   });
 });
 

@@ -35,6 +35,12 @@ export interface TokenData {
   cachedTokens?: number;
   cacheStatus?: CacheStatus;
   totalTokens?: number;
+  /** Usage reported by the final LLM request that produced this reply. */
+  requestPromptTokens?: number;
+  requestCompletionTokens?: number;
+  requestCachedTokens?: number;
+  requestCacheStatus?: CacheStatus;
+  requestTotalTokens?: number;
   /** Size of the context for the final turn (prompt + completion). */
   contextTokens?: number;
 }
@@ -56,6 +62,11 @@ export interface Message {
   cacheStatus?: CacheStatus;
   titleTokens?: number;
   totalTokens?: number;
+  requestPromptTokens?: number;
+  requestCompletionTokens?: number;
+  requestCachedTokens?: number;
+  requestCacheStatus?: CacheStatus;
+  requestTotalTokens?: number;
   contextTokens?: number;
   /** Absolute paths of attached images under <workspace>/pictures. */
   images?: string[];
@@ -247,6 +258,11 @@ export class ChatService {
       cacheStatus: tokenData?.cacheStatus || 'unknown',
       titleTokens,
       totalTokens: tokenData?.totalTokens || 0,
+      requestPromptTokens: tokenData?.requestPromptTokens,
+      requestCompletionTokens: tokenData?.requestCompletionTokens,
+      requestCachedTokens: tokenData?.requestCachedTokens,
+      requestCacheStatus: tokenData?.requestCacheStatus,
+      requestTotalTokens: tokenData?.requestTotalTokens,
       contextTokens: tokenData?.contextTokens || 0,
       images: images && images.length ? images : undefined,
     };
@@ -264,8 +280,8 @@ export class ChatService {
     const db = getDatabase().getDb();
     
     db.prepare(`
-      INSERT INTO messages (id, conversation_id, role, content, reasoning, created_at, provider_id, model_id, prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, cache_status, title_tokens, total_tokens, context_tokens, images)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, conversation_id, role, content, reasoning, created_at, provider_id, model_id, prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, cache_status, title_tokens, total_tokens, request_prompt_tokens, request_completion_tokens, request_cached_tokens, request_cache_status, request_total_tokens, context_tokens, images)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, conversationId, role, content, reasoning || null, now,
       tokenData?.providerId || null,
       tokenData?.modelId || null,
@@ -276,6 +292,11 @@ export class ChatService {
       tokenData?.cacheStatus || 'unknown',
       titleTokens,
       tokenData?.totalTokens || 0,
+      tokenData?.requestPromptTokens ?? null,
+      tokenData?.requestCompletionTokens ?? null,
+      tokenData?.requestCachedTokens ?? null,
+      tokenData?.requestCacheStatus ?? null,
+      tokenData?.requestTotalTokens ?? null,
       tokenData?.contextTokens || 0,
       images && images.length ? JSON.stringify(images) : null
     );
@@ -368,7 +389,9 @@ export class ChatService {
     const rows = db.prepare(`
       SELECT id, conversation_id, role, content, reasoning, created_at,
              provider_id, model_id, prompt_tokens, completion_tokens,
-             reasoning_tokens, cached_tokens, cache_status, title_tokens, total_tokens, context_tokens, images
+             reasoning_tokens, cached_tokens, cache_status, title_tokens, total_tokens,
+             request_prompt_tokens, request_completion_tokens, request_cached_tokens,
+             request_cache_status, request_total_tokens, context_tokens, images
       FROM messages
       WHERE conversation_id = ?
       ORDER BY created_at ASC
@@ -388,6 +411,11 @@ export class ChatService {
       cache_status: CacheStatus | null;
       title_tokens: number;
       total_tokens: number;
+      request_prompt_tokens: number | null;
+      request_completion_tokens: number | null;
+      request_cached_tokens: number | null;
+      request_cache_status: CacheStatus | null;
+      request_total_tokens: number | null;
       context_tokens: number;
       images: string | null;
     }>;
@@ -408,6 +436,11 @@ export class ChatService {
       cacheStatus: row.cache_status || 'unknown',
       titleTokens: row.title_tokens || 0,
       totalTokens: row.total_tokens || 0,
+      requestPromptTokens: row.request_prompt_tokens ?? undefined,
+      requestCompletionTokens: row.request_completion_tokens ?? undefined,
+      requestCachedTokens: row.request_cached_tokens ?? undefined,
+      requestCacheStatus: row.request_cache_status ?? undefined,
+      requestTotalTokens: row.request_total_tokens ?? undefined,
       contextTokens: row.context_tokens || 0,
       images: parseImages(row.images),
     }));
@@ -424,7 +457,7 @@ export class ChatService {
     if (!firstUserMessage) return 'New Conversation';
 
     try {
-      const prompt = `Generate a very short title (3-5 words max) for a conversation that starts with: "${firstUserMessage.content.slice(0, 200)}"`;
+      const prompt = `Generate a concise, descriptive title of 4 to 8 words for a conversation that starts with: "${firstUserMessage.content.slice(0, 200)}"`;
       const title = await aiService.generateTitle(prompt);
       
       if (title) {
@@ -436,8 +469,7 @@ export class ChatService {
     }
 
     // Fallback: use first few words of user message
-    const words = firstUserMessage.content.split(/\s+/).slice(0, 5).join(' ');
-    const fallbackTitle = words.length > 30 ? words.slice(0, 30) + '...' : words;
+    const fallbackTitle = firstUserMessage.content.split(/\s+/).slice(0, 8).join(' ');
     this.updateTitle(conversationId, fallbackTitle);
     return fallbackTitle;
   }

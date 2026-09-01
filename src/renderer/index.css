@@ -126,6 +126,37 @@
   color: var(--text-primary);
 }
 
+.prose .markdown-table-scroll,
+.prose-invert .markdown-table-scroll {
+  width: 100%;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+
+.prose .markdown-table-scroll table,
+.prose-invert .markdown-table-scroll table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.prose .markdown-table-scroll th,
+.prose .markdown-table-scroll td,
+.prose-invert .markdown-table-scroll th,
+.prose-invert .markdown-table-scroll td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose .markdown-table-scroll th,
+.prose-invert .markdown-table-scroll th {
+  background-color: var(--bg-elevated);
+  font-weight: 600;
+}
+
 /* Custom scrollbar to match terminal aesthetic */
 ::-webkit-scrollbar {
   width: 8px;

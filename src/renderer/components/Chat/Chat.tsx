@@ -34,7 +34,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
 
   // Tool call state
   // Tool call state
-  const [allowAllTools, setAllowAllTools] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(false);
 
   useEffect(() => {
     loadProviders();
@@ -86,7 +86,10 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
     const onToolCall = async (data: { conversationId: string; id: string; name: string; input: any; createdAt?: number }) => {
       const analysis = (data as any).analysis;
       const needsPermission = analysis?.needsPermission;
-      const shouldAutoRun = needsPermission === false || allowAllToolsRef.current;
+      const riskLevel = analysis?.riskLevel;
+      const autoApproveRisk = riskLevel === 'low' || riskLevel === 'medium';
+      const shouldAutoRun = needsPermission === false
+        || (autoApproveRef.current && autoApproveRisk);
       
       // Add persistent request message
       const requestMsg = {
@@ -112,8 +115,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
         try {
            await invoke('chat:submit-tool-approval', { 
                toolCallId: data.id, 
-               approved: true, 
-               approvedAll: allowAllToolsRef.current 
+               approved: true
            });
         } catch (err) {
            console.error('Auto-approval failed', err);
@@ -149,6 +151,11 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
               cachedTokens: data.tokenData.cachedTokens,
               cacheStatus: data.tokenData.cacheStatus,
               totalTokens: data.tokenData.totalTokens,
+              requestPromptTokens: data.tokenData.requestPromptTokens,
+              requestCompletionTokens: data.tokenData.requestCompletionTokens,
+              requestCachedTokens: data.tokenData.requestCachedTokens,
+              requestCacheStatus: data.tokenData.requestCacheStatus,
+              requestTotalTokens: data.tokenData.requestTotalTokens,
               contextTokens: data.tokenData.contextTokens,
             };
             break;
@@ -202,13 +209,13 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
   // Refs for event listeners to access current state
   const currentConversationIdRef = React.useRef(currentConversationId);
   const isIncognitoRef = React.useRef(isIncognito);
-  const allowAllToolsRef = React.useRef(allowAllTools);
+  const autoApproveRef = React.useRef(autoApprove);
 
   useEffect(() => {
       currentConversationIdRef.current = currentConversationId;
       isIncognitoRef.current = isIncognito;
-      allowAllToolsRef.current = allowAllTools;
-  }, [currentConversationId, isIncognito, allowAllTools]);
+      autoApproveRef.current = autoApprove;
+  }, [currentConversationId, isIncognito, autoApprove]);
 
   // Notify parent when incognito state changes
   useEffect(() => {
@@ -624,15 +631,14 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
       
       // 3. Handle Allow All
       if (decision === 'always') {
-          setAllowAllTools(true);
+          setAutoApprove(true);
       }
 
       // 4. Call Backend
       try {
           await invoke('chat:submit-tool-approval', { 
               toolCallId, 
-              approved: decision === 'approved' || decision === 'always', 
-              approvedAll: decision === 'always' 
+              approved: decision === 'approved' || decision === 'always'
           });
       } catch (err) {
           console.error('Tool approval submission failed', err);
@@ -690,6 +696,8 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
         onStop={handleStopStream}
         disabled={isLoading}
         isStreaming={isLoading}
+        autoApprove={autoApprove}
+        onAutoApproveChange={setAutoApprove}
         models={allModels}
         selectedProviderId={selectedProviderId}
         selectedModel={selectedModel}

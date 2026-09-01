@@ -5,7 +5,32 @@ const {
   applyCompletionTokenLimit,
   fetchOpenAIWithCompatibility,
   getOpenAIRequestFallback,
+  parseOpenAIChatCompletion,
+  prepareOpenAIRequestPayload,
 } = require('../dist/main/main/services/ai/openai-request.js');
+
+test('parses a standard OpenAI chat completion response', () => {
+  assert.deepEqual(parseOpenAIChatCompletion({
+    choices: [{ message: { content: 'Standard title' } }],
+    usage: { total_tokens: 12 },
+  }), {
+    content: 'Standard title',
+    usage: { total_tokens: 12 },
+  });
+});
+
+test('parses a chat completion wrapped in a data envelope', () => {
+  assert.deepEqual(parseOpenAIChatCompletion({
+    data: {
+      choices: [{ message: { content: '2026 FIFA World Cup Winner' } }],
+      usage: { total_tokens: 258 },
+    },
+    success: true,
+  }), {
+    content: '2026 FIFA World Cup Winner',
+    usage: { total_tokens: 258 },
+  });
+});
 
 test('uses max_completion_tokens for the official OpenAI API', () => {
   assert.deepEqual(
@@ -86,7 +111,7 @@ test('retries a rejected request with max_completion_tokens', async () => {
   ]);
 });
 
-test('merges leading system messages while preserving the stable prompt prefix', async () => {
+test('merges every system message into one leading message', async () => {
   const stablePrompt = 'Stable system prompt and tool instructions';
   const volatilePrompt = 'Today is 2026-08-28';
   let request;
@@ -103,8 +128,8 @@ test('merges leading system messages while preserving the stable prompt prefix',
       model: 'AtomicChat/Qwen3_8-27B-AD-IQ2_S',
       messages: [
         { role: 'system', content: stablePrompt },
-        { role: 'system', content: volatilePrompt },
         { role: 'user', content: 'Who are you?' },
+        { role: 'system', content: volatilePrompt },
       ],
       stream: true,
     },
@@ -115,4 +140,23 @@ test('merges leading system messages while preserving the stable prompt prefix',
     { role: 'user', content: 'Who are you?' },
   ]);
   assert.equal(request.messages[0].content.startsWith(stablePrompt), true);
+});
+
+test('prepares the same single-system payload used by request logging', () => {
+  assert.deepEqual(prepareOpenAIRequestPayload({
+    model: 'gpt-5',
+    messages: [
+      { role: 'system', content: 'Web search instructions' },
+      { role: 'user', content: 'Current question' },
+      { role: 'assistant', content: 'Earlier answer' },
+      { role: 'system', content: 'Today is 2026-08-30' },
+    ],
+  }), {
+    model: 'gpt-5',
+    messages: [
+      { role: 'system', content: 'Web search instructions\n\nToday is 2026-08-30' },
+      { role: 'user', content: 'Current question' },
+      { role: 'assistant', content: 'Earlier answer' },
+    ],
+  });
 });

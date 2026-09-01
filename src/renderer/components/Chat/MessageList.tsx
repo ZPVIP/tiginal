@@ -9,6 +9,7 @@ import {
     type DateFormat,
     type TimeZonePreference,
 } from '../../../shared/date-time';
+import { calculateSessionTokenTotals } from '../../../shared/token-tooltips';
 
 const invoke = window.electron?.invoke || (async () => {});
 
@@ -27,6 +28,12 @@ interface Message {
     cacheStatus?: 'hit' | 'miss' | 'unknown';
     titleTokens?: number;
     totalTokens?: number;
+    requestPromptTokens?: number;
+    requestCompletionTokens?: number;
+    requestCachedTokens?: number;
+    requestCacheStatus?: 'hit' | 'miss' | 'unknown';
+    requestTotalTokens?: number;
+    contextTokens?: number;
     approvalData?: {
         id: string;
         name: string;
@@ -116,13 +123,15 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
 
     if (messages.length === 0) return null;
 
+    const sessionTokensByMessage = calculateSessionTokenTotals(messages);
+
     return (
         <div 
             ref={scrollContainerRef}
             onScroll={handleScroll}
             className="flex-1 overflow-y-auto custom-scrollbar"
         >
-            {messages.map(msg => {
+            {messages.map((msg, index) => {
                 const timestamp = getMessageTimestamp(msg);
                 if (msg.role === 'tool-request' && msg.approvalData) {
                     if (msg.approvalData.status === 'pending') {
@@ -214,6 +223,12 @@ export function MessageList({ messages, isStreaming, onEdit, onApproval }: Messa
                    cacheStatus={msg.cacheStatus}
                    titleTokens={msg.titleTokens}
                    totalTokens={msg.totalTokens}
+                   requestPromptTokens={msg.requestPromptTokens}
+                   requestCompletionTokens={msg.requestCompletionTokens}
+                   requestCachedTokens={msg.requestCachedTokens}
+                   requestCacheStatus={msg.requestCacheStatus}
+                   requestTotalTokens={msg.requestTotalTokens}
+                   sessionTokens={sessionTokensByMessage[index]}
                 />
             )})}
             

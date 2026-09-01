@@ -12,6 +12,12 @@ export function isToolRiskLevel(value: unknown): value is ToolRiskLevel {
   return value === 'safe' || value === 'low' || value === 'medium' || value === 'high';
 }
 
+export function shouldAutoApproveTool(
+  analysis: ToolApprovalAnalysis,
+): boolean {
+  return analysis.needsPermission === false;
+}
+
 function stringArgument(input: JsonObject, name: string): string {
   const value = input[name];
   return typeof value === 'string' ? value : '';

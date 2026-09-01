@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import { getDatabase } from '../../../services/database/database';
-import { McpClient, McpServer, McpServerConfig, McpServerType, McpTool, McpError } from './types';
+import { McpClient, McpServer, McpServerConfig, McpServerInputConfig, McpServerType, McpTool, McpError } from './types';
 import { StdioClient } from './StdioClient';
 import { HttpClient } from './HttpClient';
 import { BuiltinClient, BUILTIN_PROVIDERS } from './builtin';
@@ -23,6 +23,36 @@ interface Row {
   tools_cache: string | null;
   last_error: string | null;
   rank: number;
+}
+
+function isServerInputConfig(value: unknown): value is McpServerInputConfig {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeServerInput(name: string, rawConfig: unknown): { name: string; config: McpServerConfig } {
+  if (!isServerInputConfig(rawConfig)) throw new McpError('The config must be a JSON object');
+  let normalizedName = name.trim();
+  let config = rawConfig;
+  const wrapper = isServerInputConfig(rawConfig.mcpServers)
+    ? rawConfig.mcpServers
+    : isServerInputConfig(rawConfig.servers)
+      ? rawConfig.servers
+      : null;
+
+  if (wrapper) {
+    const entries = Object.entries(wrapper);
+    if (entries.length !== 1) {
+      throw new McpError('The single-server editor accepts exactly one server in "mcpServers" or "servers"');
+    }
+    const [wrappedName, wrappedConfig] = entries[0];
+    if (!isServerInputConfig(wrappedConfig)) throw new McpError(`The MCP server "${wrappedName}" must be a JSON object`);
+    if (!normalizedName) normalizedName = wrappedName.trim();
+    config = wrappedConfig;
+  }
+
+  const type = config.type === 'http' ? 'streamableHttp' : config.type;
+  const normalizedConfig: McpServerConfig = { ...config, type };
+  return { name: normalizedName, config: normalizedConfig };
 }
 
 function parseJson<T>(text: string | null, fallback: T): T {
@@ -172,8 +202,9 @@ export class McpService {
     return type;
   }
 
-  saveServer(input: { id?: string; name: string; config: McpServerConfig }): McpServer {
-    const name = String(input.name || '').trim();
+  saveServer(input: { id?: string; name: string; config: unknown }): McpServer {
+    const normalized = normalizeServerInput(String(input.name || ''), input.config);
+    const { name, config: inputConfig } = normalized;
     const existing = input.id ? this.getServer(input.id) : null;
     if (input.id && !existing) throw new McpError('Server not found');
 
@@ -182,11 +213,11 @@ export class McpService {
       throw new McpError('A built-in server cannot be renamed');
     }
 
-    const type = this.validate(name, input.config, !!existing?.isBuiltin);
+    const type = this.validate(name, inputConfig, !!existing?.isBuiltin);
     this.assertNameAvailable(name, input.id);
 
     const now = Date.now();
-    const config = { ...input.config, type };
+    const config = { ...inputConfig, type };
     const json = JSON.stringify(config, null, 2);
     const description = config.description || existing?.description || '';
 

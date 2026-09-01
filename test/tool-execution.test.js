@@ -7,6 +7,7 @@ const {
 } = require('../dist/main/main/services/tools/tool-input.js');
 const {
   analyzeNonShellTool,
+  shouldAutoApproveTool,
 } = require('../dist/main/main/services/tools/tool-approval.js');
 const {
   filterSearchResults,
@@ -108,4 +109,18 @@ test('uses tool-aware approval descriptions instead of treating JSON as Bash', (
     riskLevel: 'low',
   });
   assert.equal(analysis.description.includes('Bash'), false);
+});
+
+test('only auto-approves operations marked safe', () => {
+  assert.equal(shouldAutoApproveTool({
+    needsPermission: true,
+    description: 'Run a destructive command.',
+    riskLevel: 'high',
+  }), false);
+
+  assert.equal(shouldAutoApproveTool({
+    needsPermission: false,
+    description: 'Read local instructions.',
+    riskLevel: 'safe',
+  }), true);
 });

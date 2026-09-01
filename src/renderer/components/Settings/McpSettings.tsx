@@ -37,10 +37,10 @@ const STDIO_TEMPLATE = {
 
 const IMPORT_PLACEHOLDER = `{
   "mcpServers": {
-    "context7": {
+    "myMCPServer": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"]
+      "args": ["-y", "@modelcontextprotocol/server-everything"]
     }
   }
 }`;

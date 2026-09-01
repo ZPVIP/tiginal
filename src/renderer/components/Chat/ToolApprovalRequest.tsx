@@ -65,7 +65,7 @@ export function ToolApprovalRequest({
                 <button
                     onClick={onAllowAll}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 rounded transition-colors"
-                    title="Allow all future commands in this session"
+                    title="Auto-approve future low and medium risk operations"
                 >
                     <CheckCheck size={14} />
                     Allow All

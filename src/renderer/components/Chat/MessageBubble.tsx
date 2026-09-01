@@ -29,6 +29,12 @@ interface MessageProps {
   cacheStatus?: CacheStatus;
   titleTokens?: number;
   totalTokens?: number;
+  requestPromptTokens?: number;
+  requestCompletionTokens?: number;
+  requestCachedTokens?: number;
+  requestCacheStatus?: CacheStatus;
+  requestTotalTokens?: number;
+  sessionTokens?: number;
 }
 
 /**
@@ -153,7 +159,7 @@ function ReasoningBlock({ content }: { content: string }) {
 }
 
 
-export function MessageBubble({ role, content, timestamp, reasoning, images, onEdit, promptTokens, completionTokens, cachedTokens, cacheStatus, titleTokens, totalTokens }: MessageProps) {
+export function MessageBubble({ role, content, timestamp, reasoning, images, onEdit, promptTokens, completionTokens, cachedTokens, cacheStatus, titleTokens, totalTokens, requestPromptTokens, requestCompletionTokens, requestCachedTokens, requestCacheStatus, requestTotalTokens, sessionTokens }: MessageProps) {
   const [copied, setCopied] = useState(false);
   const [copiedPlain, setCopiedPlain] = useState(false);
   const [copiedRendered, setCopiedRendered] = useState(false);
@@ -197,6 +203,12 @@ export function MessageBubble({ role, content, timestamp, reasoning, images, onE
   };
 
   const isUser = role === 'user';
+  const currentInputTokens = requestPromptTokens ?? promptTokens;
+  const currentOutputTokens = requestCompletionTokens ?? completionTokens;
+  const currentCachedTokens = requestCachedTokens ?? cachedTokens;
+  const currentCacheStatus = requestCacheStatus ?? cacheStatus;
+  const currentTotalTokens = requestTotalTokens
+    ?? (currentInputTokens || 0) + (currentOutputTokens || 0);
 
   return (
     <div className={clsx(
@@ -246,6 +258,13 @@ export function MessageBubble({ role, content, timestamp, reasoning, images, onE
                     <ReactMarkdown 
                        remarkPlugins={[remarkGfm, remarkBreaks]}
                        components={{
+                       table({node, children, ...props}: any) {
+                         return (
+                           <div className="markdown-table-scroll">
+                             <table {...props}>{children}</table>
+                           </div>
+                         )
+                       },
                        code({node, inline, className, children, ...props}: any) {
                          const match = /language-(\w+)/.exec(className || '')
                          return !inline && match ? (
@@ -332,30 +351,35 @@ export function MessageBubble({ role, content, timestamp, reasoning, images, onE
                    <span className="text-[10px]">Rich</span>
                </button>
 
-               {!isUser && cacheStatus && (
+               {!isUser && currentCacheStatus && (
                    <div
                      className={clsx(
                        "p-1.5 transition-colors rounded hover:bg-surface flex items-center gap-1 cursor-default",
-                       cacheStatus === 'hit' && "text-accent-success",
-                       cacheStatus === 'miss' && "text-amber-400",
-                       cacheStatus === 'unknown' && "text-text-muted",
+                       currentCacheStatus === 'hit' && "text-accent-success",
+                       currentCacheStatus === 'miss' && "text-amber-400",
+                       currentCacheStatus === 'unknown' && "text-text-muted",
                      )}
-                     title={formatCacheTooltip({ promptTokens, cachedTokens, cacheStatus })}
-                     aria-label={`Prompt cache ${cacheStatus}`}
+                     title={formatCacheTooltip({
+                       promptTokens: currentInputTokens,
+                       cachedTokens: currentCachedTokens,
+                       cacheStatus: currentCacheStatus,
+                     })}
+                     aria-label={`Prompt cache ${currentCacheStatus}`}
                    >
-                       {cacheStatus === 'hit' ? <DatabaseZap size={14} /> : cacheStatus === 'miss' ? <Database size={14} /> : <CircleHelp size={14} />}
+                       {currentCacheStatus === 'hit' ? <DatabaseZap size={14} /> : currentCacheStatus === 'miss' ? <Database size={14} /> : <CircleHelp size={14} />}
                        <span className="text-[10px]">Cache</span>
                    </div>
                )}
 
                {/* Token Stats */}
-               {!isUser && (totalTokens ?? 0) > 0 && (
+               {!isUser && ((totalTokens ?? 0) > 0 || currentTotalTokens > 0) && (
                    <div
                      className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1 cursor-default"
                      title={formatTokenTooltip({
-                       inputTokens: promptTokens,
-                       outputTokens: completionTokens,
+                       inputTokens: currentInputTokens,
+                       outputTokens: currentOutputTokens,
                        titleTokens,
+                       sessionTokens,
                      })}
                    >
                        <Activity size={14} />

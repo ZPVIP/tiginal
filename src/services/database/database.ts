@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 22;
+const SCHEMA_VERSION = 23;
 
 /**
  * Database service for Tiginal
@@ -153,6 +153,10 @@ export class DatabaseService {
 
     if (currentVersion < 22) {
       this.migrateV22();
+    }
+
+    if (currentVersion < 23) {
+      this.migrateV23();
     }
 
     // Update schema version
@@ -706,6 +710,26 @@ export class DatabaseService {
       this.db.exec(`ALTER TABLE tools ADD COLUMN default_input TEXT NOT NULL DEFAULT '{}'`);
     } catch {
       // Column might already exist.
+    }
+  }
+
+  /** Migration v23: Store the final LLM request separately from total consumption. */
+  private migrateV23(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const columns = [
+      'request_prompt_tokens INTEGER',
+      'request_completion_tokens INTEGER',
+      'request_cached_tokens INTEGER',
+      'request_cache_status TEXT',
+      'request_total_tokens INTEGER',
+    ];
+    for (const column of columns) {
+      try {
+        this.db.exec(`ALTER TABLE messages ADD COLUMN ${column}`);
+      } catch {
+        // Column might already exist.
+      }
     }
   }
 

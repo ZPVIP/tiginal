@@ -4,6 +4,7 @@ import { clsx } from 'clsx';
 import { RenameConversationDialog } from './dialogs/RenameConversationDialog';
 import { MoveToCategoryDialog } from './dialogs/MoveToCategoryDialog';
 import { ConversationData, useDrawerContext } from './Drawer';
+import { formatConversationTitle } from '../../../shared/conversation-title';
 
 const invoke = window.electron?.invoke || (async () => {});
 
@@ -28,6 +29,8 @@ export function ConversationItem({
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [liveTokens, setLiveTokens] = useState<{ prompt: number; completion: number; total: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const fullTitle = conversation.title || 'Untitled';
+  const displayTitle = formatConversationTitle(fullTitle);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -117,8 +120,11 @@ export function ConversationItem({
       )}
 
       {/* Title */}
-      <span className="text-xs truncate flex-1">
-        {conversation.title || 'Untitled'}
+      <span
+        className="text-xs truncate flex-1"
+        title={displayTitle === fullTitle ? undefined : fullTitle}
+      >
+        {displayTitle}
       </span>
 
       {/* Context Menu Trigger - always present but invisible unless hovered */}

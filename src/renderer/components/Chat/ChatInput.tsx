@@ -7,7 +7,7 @@ import {
   Wand2,
   MessageSquareText,
   Wrench,
-  Server,
+  ShieldCheck,
   Square
 } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -17,6 +17,7 @@ import { ContextRing } from './ContextRing';
 import { SystemPromptsPopover } from './SystemPromptsPopover';
 import { ModelSelectorPopover } from './ModelSelectorPopover';
 import { Bot, ChevronUp } from 'lucide-react';
+import { McpIcon } from '../icons/McpIcon';
 
 export interface ChatInputHandle {
     setText: (text: string) => void;
@@ -28,6 +29,8 @@ interface ChatInputProps {
   onStop?: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
+  autoApprove?: boolean;
+  onAutoApproveChange?: (enabled: boolean) => void;
   
   // Model Selection Props
   models?: { providerId: string; modelId: string; label: string }[];
@@ -44,6 +47,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     onStop, 
     disabled, 
     isStreaming,
+    autoApprove = false,
+    onAutoApproveChange = () => {},
     models = [],
     selectedProviderId = '',
     selectedModel = '',
@@ -267,7 +272,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                    )}
                    title="MCP Servers"
                 >
-                    <Server size={18} />
+                    <McpIcon size={18} />
                 </button>
                 <button 
                    onClick={() => setUseSkills(!useSkills)}
@@ -278,6 +283,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                    title="Skills"
                 >
                     <Wand2 size={18} />
+                </button>
+                <button
+                   onClick={() => onAutoApproveChange(!autoApprove)}
+                   className={clsx(
+                       "p-2 rounded-lg transition-colors",
+                       autoApprove ? "bg-primary/10 text-primary" : "text-text-muted hover:text-text-main hover:bg-surface-light"
+                   )}
+                   title={autoApprove
+                       ? "AUTO-APPROVE enabled for low and medium risk operations"
+                       : "AUTO-APPROVE low and medium risk operations"}
+                   aria-label="Toggle AUTO-APPROVE for low and medium risk operations"
+                   aria-pressed={autoApprove}
+                >
+                    <ShieldCheck size={18} />
                 </button>
                 <div className="h-4 w-[1px] bg-border mx-1" />
                 <button 

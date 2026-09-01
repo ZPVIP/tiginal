@@ -46,6 +46,11 @@ export interface McpServerConfig {
   [key: string]: any;
 }
 
+/** User-entered config before transport aliases and wrappers are normalized. */
+export type McpServerInputConfig = Omit<McpServerConfig, 'type'> & {
+  type?: McpServerType | 'http';
+};
+
 /** A server row as handed to the renderer. */
 export interface McpServer {
   id: string;

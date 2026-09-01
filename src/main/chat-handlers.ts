@@ -21,16 +21,18 @@ import { getContextWindow, setOverride as setContextWindowOverride } from './ser
 import { toModelDataUrl, deleteImages } from './image-handlers';
 import { expandHome, normalizeForCompare, workspaceDir } from './utils/paths';
 import {
-  aggregateCacheUsage,
   canonicalizeToolDefinitions,
   isAnthropicEndpoint,
   normalizeOpenAIUsage,
   NormalizedUsage,
+  summarizeAgentUsage,
 } from './services/ai/cache-usage';
 import { streamAnthropicAPI } from './services/ai/anthropic-stream';
 import {
   applyCompletionTokenLimit,
   fetchOpenAIWithCompatibility,
+  parseOpenAIChatCompletion,
+  prepareOpenAIRequestPayload,
 } from './services/ai/openai-request';
 import {
   JsonObject,
@@ -40,6 +42,7 @@ import {
 import {
   analyzeNonShellTool,
   isToolRiskLevel,
+  shouldAutoApproveTool,
   ToolApprovalAnalysis,
 } from './services/tools/tool-approval';
 import { performSearch } from './services/search';
@@ -56,7 +59,7 @@ interface LogAccumulator {
 }
 
 // Module-level state for tool approvals
-const pendingToolApprovals = new Map<string, (result: { approved: boolean; approvedAll: boolean }) => void>();
+const pendingToolApprovals = new Map<string, (result: { approved: boolean }) => void>();
 
 // Module-level state for stream abort controllers
 const activeStreamControllers = new Map<string, AbortController>();
@@ -318,10 +321,10 @@ export function setupChatHandlers(): void {
     return getChatService().getCurrentCategoryId();
   });
   // Submit tool approval (User clicked Allow/Deny)
-  ipcMain.handle('chat:submit-tool-approval', async (_event, { toolCallId, approved, approvedAll }: { toolCallId: string; approved: boolean; approvedAll: boolean }): Promise<void> => {
+  ipcMain.handle('chat:submit-tool-approval', async (_event, { toolCallId, approved }: { toolCallId: string; approved: boolean }): Promise<void> => {
       const resolver = pendingToolApprovals.get(toolCallId);
       if (resolver) {
-          resolver({ approved, approvedAll });
+          resolver({ approved });
           pendingToolApprovals.delete(toolCallId);
       }
   });
@@ -469,12 +472,12 @@ async function callNonStreamingChatCompletion(
     try { const url = new URL(endpoint); headers['Origin'] = url.origin; } catch (e) {}
   }
 
-  const bodyPayload = applyCompletionTokenLimit({
+  const bodyPayload = prepareOpenAIRequestPayload(applyCompletionTokenLimit({
     model: config.model,
     messages,
     temperature: options?.temperature ?? 0.3,
     stream: false
-  }, endpoint, options?.maxTokens ?? 1000);
+  }, endpoint, options?.maxTokens ?? 1000));
 
   const label = options?.label || 'NON_STREAMING';
 
@@ -502,7 +505,7 @@ async function callNonStreamingChatCompletion(
     return { content: null, usage: undefined };
   }
 
-  const data = await response.json() as any;
+  const data: unknown = await response.json();
 
   if (process.env.NODE_ENV !== 'production') {
     printRespondStartSeparator();
@@ -512,7 +515,7 @@ async function callNonStreamingChatCompletion(
     printRespondEndSeparator();
   }
 
-  return { content: data.choices?.[0]?.message?.content || null, usage: data.usage };
+  return parseOpenAIChatCompletion(data);
 }
 
 /**
@@ -668,7 +671,7 @@ async function streamAIAPI(
     }
   }
 
-  const bodyPayload = applyCompletionTokenLimit({
+  let bodyPayload = applyCompletionTokenLimit({
     model,
     messages,
     temperature: 0.7,
@@ -687,6 +690,8 @@ async function streamAIAPI(
     }));
     bodyPayload.tool_choice = 'auto';
   }
+
+  bodyPayload = prepareOpenAIRequestPayload(bodyPayload);
 
   if (process.env.NODE_ENV !== 'production') {
       printRequestStartSeparator();
@@ -1065,11 +1070,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     let finalResponse = '';
     let finalReasoning = '';
     let turnCount = 0;
-    let allowAllOverride = false; // Session-based allow all
     const turnUsages: NormalizedUsage[] = [];
-    // Accumulated totals over-report how full the context is once tools trigger
-    // extra turns, so keep the last turn on its own for the context indicator.
-    let lastTurnContextTokens = 0;
 
     // Create AbortController for this conversation
     const abortController = new AbortController();
@@ -1206,13 +1207,11 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                           : analyzeNonShellTool(toolCall.name, toolInput);
                         if (process.env.NODE_ENV !== 'production') console.log('>>> Safety Analysis:', JSON.stringify(analysis, null, 2));
 
-                        // Quick override check
-                        // If tool is explicitly safe (needsPermission=false) OR allowAllOverride is true
-                        const isSafe = analysis.needsPermission === false;
+                        // Only explicitly safe tools bypass the approval event.
                         const isSkill = toolCall.name.toLowerCase().includes('skill');
                         
 
-                        if (allowAllOverride || isSafe) {
+                        if (shouldAutoApproveTool(analysis)) {
                              if (process.env.NODE_ENV !== 'production') console.log('>>> Auto-approving tool execution');
                              // Execute immediately
                              const res = await invokeToolExecution(toolCall.name, toolInput);
@@ -1236,7 +1235,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         } else {
                             // Ask User
                             if (process.env.NODE_ENV !== 'production') console.log('>>> Waiting for user approval...');
-                            const approvalPromise = new Promise<{ approved: boolean; approvedAll: boolean }>((resolve) => {
+                            const approvalPromise = new Promise<{ approved: boolean }>((resolve) => {
                                 pendingToolApprovals.set(toolCall.id, resolve);
                             });
                             
@@ -1284,7 +1283,6 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                             if (process.env.NODE_ENV !== 'production') console.log('>>> User approval result:', approval);
                             
                             if (approval.approved) {
-                                if (approval.approvedAll) allowAllOverride = true;
                                 const res = await invokeToolExecution(toolCall.name, toolInput);
                                 
                                 let displayResult = res.result || res.error || 'Done';
@@ -1350,7 +1348,6 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
 
             // Accumulate token usage from this turn
             turnUsages.push(streamResult.usage);
-            lastTurnContextTokens = streamResult.usage.promptTokens + streamResult.usage.completionTokens;
 
             if (!toolCallOccurred) {
                 // LLM finished without calling a tool. 
@@ -1375,17 +1372,22 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                  // Stream was stopped by user
                  activeStreamControllers.delete(conversationId);
                  if (finalResponse) {
-                     const usage = aggregateCacheUsage(turnUsages);
+                     const { consumed, currentRequest } = summarizeAgentUsage(turnUsages);
                      const tokenData = {
                          providerId,
                          modelId: modelToUse,
-                         promptTokens: usage.promptTokens,
-                         completionTokens: usage.completionTokens,
-                         reasoningTokens: usage.reasoningTokens,
-                         cachedTokens: usage.cachedTokens,
-                         cacheStatus: usage.cacheStatus,
-                         totalTokens: usage.totalTokens,
-                         contextTokens: lastTurnContextTokens,
+                         promptTokens: consumed.promptTokens,
+                         completionTokens: consumed.completionTokens,
+                         reasoningTokens: consumed.reasoningTokens,
+                         cachedTokens: consumed.cachedTokens,
+                         cacheStatus: consumed.cacheStatus,
+                         totalTokens: consumed.totalTokens,
+                         requestPromptTokens: currentRequest.promptTokens,
+                         requestCompletionTokens: currentRequest.completionTokens,
+                         requestCachedTokens: currentRequest.cachedTokens,
+                         requestCacheStatus: currentRequest.cacheStatus,
+                         requestTotalTokens: currentRequest.totalTokens,
+                         contextTokens: currentRequest.promptTokens + currentRequest.completionTokens,
                      };
                      const assistantMessage = chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
                      chatService.updateConversationTokens(conversationId, providerId, modelToUse, tokenData);
@@ -1407,17 +1409,22 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     activeStreamControllers.delete(conversationId);
 
     // Save final response (accumulated) to DB with token data
-    const usage = aggregateCacheUsage(turnUsages);
+    const { consumed, currentRequest } = summarizeAgentUsage(turnUsages);
     const tokenData = {
         providerId,
         modelId: modelToUse,
-        promptTokens: usage.promptTokens,
-        completionTokens: usage.completionTokens,
-        reasoningTokens: usage.reasoningTokens,
-        cachedTokens: usage.cachedTokens,
-        cacheStatus: usage.cacheStatus,
-        totalTokens: usage.totalTokens,
-        contextTokens: lastTurnContextTokens,
+        promptTokens: consumed.promptTokens,
+        completionTokens: consumed.completionTokens,
+        reasoningTokens: consumed.reasoningTokens,
+        cachedTokens: consumed.cachedTokens,
+        cacheStatus: consumed.cacheStatus,
+        totalTokens: consumed.totalTokens,
+        requestPromptTokens: currentRequest.promptTokens,
+        requestCompletionTokens: currentRequest.completionTokens,
+        requestCachedTokens: currentRequest.cachedTokens,
+        requestCacheStatus: currentRequest.cacheStatus,
+        requestTotalTokens: currentRequest.totalTokens,
+        contextTokens: currentRequest.promptTokens + currentRequest.completionTokens,
     };
     const assistantMessage = chatService.addMessage(conversationId, 'assistant', finalResponse, tokenData, undefined, finalReasoning);
 
@@ -1688,7 +1695,7 @@ async function generateConversationTitle(
   chatService: ReturnType<typeof getChatService>,
   sender: any
 ): Promise<void> {
-  const TITLE_SYSTEM_PROMPT = 'You are a conversation title generator. Based on the user\'s message, create a brief, descriptive title (2-6 words). Respond with ONLY the title text. No quotes, no explanation, no extra punctuation.';
+  const TITLE_SYSTEM_PROMPT = 'You are a conversation title generator. Based on the user\'s message, create a concise, descriptive title of 4 to 8 words. Respond with ONLY the title text. No quotes, no explanation, no extra punctuation.';
 
   const messages = [
     { role: 'system', content: TITLE_SYSTEM_PROMPT },
@@ -1697,8 +1704,7 @@ async function generateConversationTitle(
 
   // Helper: save fallback title
   const saveFallback = () => {
-    const fallback = userMessage.split(/\s+/).slice(0, 5).join(' ');
-    const fallbackTitle = fallback.length > 30 ? fallback.slice(0, 30) + '...' : fallback;
+    const fallbackTitle = userMessage.split(/\s+/).slice(0, 8).join(' ');
     chatService.updateTitle(conversationId, fallbackTitle);
     sender.send('chat:title-updated', { conversationId, title: fallbackTitle });
   };
@@ -1714,7 +1720,7 @@ async function generateConversationTitle(
         customHeaders
       },
       messages,
-      { temperature: 0.3, maxTokens: 30, label: 'TITLE GENERATION' }
+      { temperature: 0.3, maxTokens: 1000, label: 'TITLE GENERATION' }
     );
 
     if (!result.content) {
@@ -1726,11 +1732,6 @@ async function generateConversationTitle(
 
     // Clean up: remove surrounding quotes if present
     title = title.replace(/^["']+|["']+$/g, '').trim();
-    // Limit length
-    if (title.length > 60) {
-      title = title.slice(0, 57) + '...';
-    }
-
     chatService.updateTitle(conversationId, title);
     sender.send('chat:title-updated', { conversationId, title });
 

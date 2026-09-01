@@ -70,6 +70,60 @@ function serviceWith(client) {
   return { service, calls };
 }
 
+test('http configs are stored as streamableHttp', () => {
+  db.prepare('DELETE FROM mcp_servers').run();
+  const service = new McpService();
+
+  const server = service.saveServer({
+    name: 'remote',
+    config: { type: 'http', url: 'http://localhost:3000/mcp' },
+  });
+
+  assert.equal(server.type, 'streamableHttp');
+  assert.equal(server.config.type, 'streamableHttp');
+});
+
+test('the single-server editor accepts a full mcpServers wrapper', () => {
+  db.prepare('DELETE FROM mcp_servers').run();
+  const service = new McpService();
+
+  const server = service.saveServer({
+    name: '',
+    config: {
+      mcpServers: {
+        pelco: {
+          type: 'http',
+          url: 'http://localhost:3000/mcp',
+          headers: { Authorization: 'Bearer test-token' },
+        },
+      },
+    },
+  });
+
+  assert.equal(server.name, 'pelco');
+  assert.deepEqual(server.config, {
+    type: 'streamableHttp',
+    url: 'http://localhost:3000/mcp',
+    headers: { Authorization: 'Bearer test-token' },
+  });
+});
+
+test('MCP import normalizes the http transport alias', () => {
+  db.prepare('DELETE FROM mcp_servers').run();
+  const service = new McpService();
+
+  const result = service.importJson(JSON.stringify({
+    mcpServers: {
+      remote: { type: 'http', url: 'http://localhost:3000/mcp' },
+    },
+  }));
+
+  assert.deepEqual(result, { added: 1, updated: 0, skipped: [] });
+  const server = service.listServers()[0];
+  assert.equal(server.type, 'streamableHttp');
+  assert.equal(server.config.type, 'streamableHttp');
+});
+
 test('a fetched tool list is reused until its TTL expires', async () => {
   addServer('ttl');
   const { service, calls } = serviceWith({ listTools: async () => ({ tools: [TOOL], ttlMs: 60_000 }) });

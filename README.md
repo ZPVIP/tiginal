@@ -19,6 +19,13 @@ A cross-platform terminal emulator built with Electron, xterm.js, and node-pty.
 
 [Master Key Encryption Explained](README-KEY.md)
 
+## AI Web Tools
+
+- `WebSearch` uses `fetch()` to request DuckDuckGo, Google, or Bing search-result HTML. Cheerio extracts the title, URL, and snippet from each result, which Tiginal returns to the model in a numbered format. It does not open each result page.
+- `WebFetch` loads a specific URL in a hidden Electron `BrowserWindow`. It waits for JavaScript-rendered content, then returns the page title, URL, and body text to the model.
+
+`WebSearch` is faster and works well for discovery. Use `WebFetch` when the model needs the content of a specific page.
+
 ## Command History & Suggestions
 
 Commands are automatically recorded and suggested as you type (prefix match, sorted by frequency).
