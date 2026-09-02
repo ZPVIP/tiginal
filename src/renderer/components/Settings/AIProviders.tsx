@@ -9,6 +9,7 @@ import { ICONS } from '../../settings/icons';
 const invoke = window.electron?.invoke || (async () => {});
 
 import { CopilotAuthModal } from './CopilotAuthModal';
+import { SettingsPageHeader } from './SettingsPageHeader';
 
 export function AIProviders() {
   const [providers, setProviders] = useState<AIProvider[]>([]);
@@ -88,27 +89,27 @@ export function AIProviders() {
 
   return (
     <div className="space-y-4 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
-        <div>
-            <h3 className="text-xl font-semibold">AI Providers</h3>
-            <p className="text-sm text-text-muted mt-1">Manage API connections for LLMs.</p>
-        </div>
-        <div className="flex gap-2">
+      <SettingsPageHeader
+        icon={<Bot size={24} />}
+        title="AI Providers"
+        actions={(
+          <div className="flex gap-2">
              <button 
                 onClick={() => setIsCopilotModalOpen(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-surface hover:bg-surface-light border border-border text-text-main rounded-lg text-sm transition-colors"
+                className="flex h-8 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm text-text-main transition-colors hover:bg-surface-light"
                 title="Login with GitHub Copilot"
              >
                 <div className="w-4 h-4 flex items-center justify-center text-text-main" dangerouslySetInnerHTML={{ __html: ICONS.copilot }} /> Add Copilot
              </button>
              <button 
                 onClick={openAdd}
-                className="flex items-center gap-2 px-3 py-2 bg-primary hover:opacity-90 text-primary-foreground rounded-lg text-sm transition-colors"
+                className="flex h-8 items-center gap-2 rounded-lg bg-primary px-3 text-sm text-primary-foreground transition-colors hover:opacity-90"
              >
                 <Plus size={16} /> Add Provider
              </button>
-        </div>
-      </div>
+          </div>
+        )}
+      />
 
       <div className="grid gap-2">
         {providers.map(provider => {

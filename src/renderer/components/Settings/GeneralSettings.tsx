@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Lock, Unlock, Globe, KeyRound, Calendar, Clock3, ArrowUpDown, FolderOpen } from 'lucide-react';
+import { Lock, Unlock, Globe, KeyRound, Calendar, Clock3, ArrowUpDown, FolderOpen, Settings as SettingsIcon } from 'lucide-react';
 import { FancySelect } from '../ui/FancySelect';
 import { Modal } from '../ui/Modal';
 import { InfoIcon } from '../Shared/InfoIcon';
+import { SettingsPageHeader } from './SettingsPageHeader';
 import {
   getSupportedTimeZones,
   parseDateFormat,
@@ -193,7 +194,13 @@ export function GeneralSettings() {
   const isSetupState = !isUnlocked && !hasMasterPassword && !hasSavedKey;
 
   return (
-    <div className="space-y-3 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <SettingsPageHeader
+        icon={<SettingsIcon size={24} />}
+        title="General"
+      />
+
+      <div className="space-y-3">
       <div className="flex items-center justify-between">
         <label className="text-sm font-medium text-text-main flex items-center gap-2">
           <KeyRound className="w-4 h-4 text-yellow-500" />
@@ -361,6 +368,8 @@ export function GeneralSettings() {
             />
           </div>
         </div>
+      </div>
+
       </div>
 
       <Modal

@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
 import { clsx } from 'clsx';
+import { Keyboard } from 'lucide-react';
+import { SettingsPageHeader } from './SettingsPageHeader';
 
 interface ShortcutDef {
   section: string;   // Big category: "Chat Box", "Terminal"
@@ -113,7 +115,10 @@ export function ShortcutSettings() {
 
   return (
     <div className="space-y-10 pb-12">
-      <h2 className="text-xl font-semibold text-text-main mb-6">Keyboard Shortcuts</h2>
+      <SettingsPageHeader
+        icon={<Keyboard size={24} />}
+        title="Keyboard Shortcuts"
+      />
       
       {sections.map((sec) => (
         <div key={sec.section} className="space-y-6">

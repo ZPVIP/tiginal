@@ -16,6 +16,7 @@ import {
   Apple
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { GlobalToggle, SettingsPageHeader } from './SettingsPageHeader';
 
 const invoke = window.electron?.invoke || (async () => {});
 
@@ -46,6 +47,7 @@ type TabId = 'default' | 'custom';
 export function SystemPromptSettings() {
   // State
   const [activeTab, setActiveTab] = useState<TabId>('default');
+  const [globalEnabled, setGlobalEnabled] = useState(true);
   const [prompts, setPrompts] = useState<SystemPrompt[]>([]);
   const [dynamicSettings, setDynamicSettings] = useState<DynamicSettings>({
     dateInfo: true,
@@ -76,12 +78,14 @@ export function SystemPromptSettings() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [promptList, dynSettings, dynTemplates] = await Promise.all([
+      const [promptList, dynSettings, dynTemplates, enabled] = await Promise.all([
         invoke('system-prompts:get-all'),
         invoke('system-prompts:get-dynamic-settings'),
         invoke('system-prompts:get-dynamic-templates'),
+        invoke('system-prompts:get-global-enabled'),
       ]);
       setPrompts(promptList || []);
+      setGlobalEnabled(enabled !== false);
       setDynamicSettings(dynSettings || {
         dateInfo: true,
         wdInfo: true,
@@ -145,6 +149,12 @@ export function SystemPromptSettings() {
     } catch (err) {
       console.error('Failed to toggle dynamic setting', err);
     }
+  };
+
+  const handleGlobalToggle = async (enabled: boolean) => {
+    setGlobalEnabled(enabled);
+    await invoke('system-prompts:set-global-enabled', enabled);
+    notifySystemPromptsUpdated();
   };
 
   // Reset to defaults
@@ -330,27 +340,24 @@ export function SystemPromptSettings() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between shrink-0">
-        <div>
-          <h2 className="text-2xl font-bold text-text-main flex items-center gap-2">
-            <FileText className="text-cyan-400" />
-            System Prompts
-          </h2>
-          <p className="text-sm text-text-muted mt-1">
-            Configure system prompts that are prepended to every AI conversation.
-          </p>
-        </div>
-        {activeTab === 'default' && (
-          <button
-            onClick={() => setShowResetModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-surface hover:bg-surface-light border border-border rounded-lg transition-colors text-text-muted hover:text-text-main"
-          >
-            <RotateCcw size={14} />
-            Reset
-          </button>
+      <SettingsPageHeader
+        icon={<FileText size={24} />}
+        title="System Prompts"
+        actions={(
+          <>
+            {activeTab === 'default' && (
+              <button
+                onClick={() => setShowResetModal(true)}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-muted transition-colors hover:bg-surface-light hover:text-text-main"
+              >
+                <RotateCcw size={14} />
+                Reset
+              </button>
+            )}
+            <GlobalToggle checked={globalEnabled} onChange={handleGlobalToggle} />
+          </>
         )}
-      </div>
+      />
 
       {/* Tabs */}
       <div className="flex space-x-1 bg-surface border border-border p-1 rounded-lg shrink-0">

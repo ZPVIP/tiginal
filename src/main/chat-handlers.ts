@@ -429,7 +429,7 @@ export function setupChatHandlers(): void {
 
 /**
  * Shared helper: Make a non-streaming chat completion API call.
- * Used by analyzeCommand, callToolsModel, and generateConversationTitle.
+ * Used by analyzeCommand, searchToolsWithCurrentModel, and generateConversationTitle.
  * Returns the response content string, or null on failure.
  */
 interface NonStreamingAPIConfig {
@@ -1162,7 +1162,18 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                         const searchQuery = typeof toolInput.query === 'string' ? toolInput.query : '';
                         _event.sender.send('chat:chunk', { conversationId, content: `\n\n> 🔍 Searching tools for: "${searchQuery}"...\n` });
                         if (process.env.NODE_ENV !== 'production') console.log(`>>> Executing ToolSearch: ${searchQuery}`);
-                        const foundTools = await callToolsModel(searchQuery, dbService);
+                        const foundTools = await searchToolsWithCurrentModel(
+                            searchQuery,
+                            dbService,
+                            {
+                                type: provider.type,
+                                endpoint: provider.endpoint || 'https://api.openai.com/v1',
+                                apiKey,
+                                model: modelToUse,
+                                autoCORSFix: provider.auto_cors_fix === 1,
+                                customHeaders,
+                            }
+                        );
                         if (process.env.NODE_ENV !== 'production') console.log('>>> ToolSearch Results:', JSON.stringify(foundTools, null, 2));
                         
                         // Add found tools to currentTools if not exists
@@ -1441,42 +1452,14 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     return { response: finalResponse };
 }
 
-// Helper: Call Tools AI Model
-async function callToolsModel(query: string, dbService: any): Promise<any[]> {
+// Find relevant tools using the model selected for this conversation.
+async function searchToolsWithCurrentModel(
+    query: string,
+    dbService: any,
+    config: NonStreamingAPIConfig
+): Promise<any[]> {
     try {
-        const toolModelSetting = dbService.getSetting('toolModel'); // e.g. "providerId:modelId" or just "modelId"
-        if (!toolModelSetting) return []; // Fallback?
-
-        // Parse setting
         const db = dbService.getDb();
-        let providerId = ''; 
-        let model = '';
-        
-        if (toolModelSetting.includes(':')) {
-            const parts = toolModelSetting.split(':');
-            providerId = parts[0];
-            model = parts.slice(1).join(':');
-        } else {
-             // Fallback: search for provider with this model
-             const p = db.prepare('SELECT id FROM ai_providers WHERE model = ?').get(toolModelSetting) as any;
-             if (p) { providerId = p.id; model = toolModelSetting; }
-             // Else use default provider
-             else {
-                 const def = db.prepare('SELECT id, model FROM ai_providers WHERE is_default = 1').get() as any;
-                 if (def) { providerId = def.id; model = def.model; } // Use default as fallback
-             }
-        }
-        
-        const provider = db.prepare('SELECT * FROM ai_providers WHERE id = ?').get(providerId) as any;
-        if (!provider) return [];
-        
-        const crypto = getCrypto();
-        let apiKey: string | null = null;
-        if (provider.api_key_encrypted && crypto.isUnlocked()) {
-             try { apiKey = crypto.decrypt(provider.api_key_encrypted); } catch {}
-        }
-        
-
         const toolSearchPrompt = buildToolSearchPrompt(db);
 
         const messages = [
@@ -1485,13 +1468,7 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
         ];
 
         const searchResult = await callNonStreamingChatCompletion(
-            {
-                type: provider.type,
-                endpoint: provider.endpoint || 'https://api.openai.com/v1',
-                apiKey,
-                model,
-                autoCORSFix: provider.auto_cors_fix === 1
-            },
+            config,
             messages,
             { temperature: 0, maxTokens: 2000, label: 'TOOL SEARCH' }
         );
@@ -1529,7 +1506,7 @@ async function callToolsModel(query: string, dbService: any): Promise<any[]> {
         return foundTools;
 
     } catch (e) {
-        console.error('Tools Model call failed', e);
+        console.error('Tool search failed', e);
         return [];
     }
 }

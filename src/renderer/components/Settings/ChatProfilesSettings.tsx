@@ -11,6 +11,7 @@ import {
 import { clsx } from 'clsx';
 import { ProfileEditDialog } from './ProfileEditDialog';
 import { parseStoredMcpProfile } from '../../../shared/profile-mcp';
+import { SettingsPageHeader } from './SettingsPageHeader';
 
 const invoke = window.electron?.invoke || (async () => {});
 
@@ -138,22 +139,19 @@ export function ChatProfilesSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Chat Profiles</h3>
-          <p className="text-sm text-text-muted mt-1">
-            Save and switch between different AI configurations
-          </p>
-        </div>
-        <button
-          onClick={handleAdd}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 transition-colors"
-        >
-          <Plus size={14} />
-          Add Profile
-        </button>
-      </div>
+      <SettingsPageHeader
+        icon={<UserCircle size={24} />}
+        title="Chat Profiles"
+        actions={(
+          <button
+            onClick={handleAdd}
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm text-primary-foreground transition-colors hover:opacity-90"
+          >
+            <Plus size={14} />
+            Add Profile
+          </button>
+        )}
+      />
 
       {/* Profile List */}
       {profiles.length === 0 ? (

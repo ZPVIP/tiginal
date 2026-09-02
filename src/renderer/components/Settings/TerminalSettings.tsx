@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { Settings, Terminal, FolderOpen, Trash2, Star, StarOff, Search, Edit2, Save, X, Bot, ChevronDown, ArrowDown, Plus, Shield, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
 import { InfoIcon } from '../Shared/InfoIcon';
+import { SettingsPageHeader } from './SettingsPageHeader';
 
 interface CommandRow {
   id: number;
@@ -408,7 +409,10 @@ export function TerminalSettings() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-text-main">Terminal Settings</h2>
+      <SettingsPageHeader
+        icon={<Terminal size={24} />}
+        title="Terminal"
+      />
       
       {/* Tabs */}
       <div className="flex space-x-1 bg-surface border border-border p-1 rounded-lg shrink-0">

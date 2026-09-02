@@ -8,7 +8,6 @@ import {
   FileJson,
   ChevronDown,
   ChevronUp,
-  Bot,
   Download,
   FolderOpen,
   Edit2,
@@ -20,8 +19,8 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { AIProvider } from '../../settings/ai-constants';
 import { FancySelect } from '../ui/FancySelect';
+import { GlobalToggle, SettingsPageHeader } from './SettingsPageHeader';
 
 const invoke = window.electron?.invoke || (async () => {});
 
@@ -48,18 +47,17 @@ interface ToolCategory {
 }
 
 interface TabItem {
-  id: 'model' | 'categories' | 'tools';
+  id: 'categories' | 'tools';
   label: string;
   icon: React.ReactNode;
 }
 
 export function ToolsSettings() {
   // --- State ---
-  const [activeTab, setActiveTab] = useState<'model' | 'categories' | 'tools'>('model');
+  const [activeTab, setActiveTab] = useState<'categories' | 'tools'>('categories');
+  const [globalEnabled, setGlobalEnabled] = useState(true);
   const [tools, setTools] = useState<Tool[]>([]);
   const [categories, setCategories] = useState<ToolCategory[]>([]);
-  const [providers, setProviders] = useState<AIProvider[]>([]);
-  const [selectedToolModel, setSelectedToolModel] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   // Tools Tab State
@@ -104,16 +102,14 @@ export function ToolsSettings() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [toolList, catList, providerList, savedModel] = await Promise.all([
+      const [toolList, catList, enabled] = await Promise.all([
         invoke('tools:get-all'),
         invoke('categories:get-all'),
-        invoke('ai:get-providers'),
-        invoke('tools:get-model'),
+        invoke('tools:get-global-enabled'),
       ]);
       setTools(toolList || []);
       setCategories(catList || []);
-      setProviders(providerList || []);
-      setSelectedToolModel(savedModel || '');
+      setGlobalEnabled(enabled !== false);
     } catch (err) {
       console.error('Failed to load tools data', err);
     } finally {
@@ -128,6 +124,12 @@ export function ToolsSettings() {
     ]);
     setTools(toolList || []);
     setCategories(catList || []);
+    notifyToolsUpdated();
+  };
+
+  const handleGlobalToggle = async (enabled: boolean) => {
+    setGlobalEnabled(enabled);
+    await invoke('tools:set-global-enabled', enabled);
     notifyToolsUpdated();
   };
 
@@ -150,13 +152,6 @@ export function ToolsSettings() {
 
     return { groups, uncategorized };
   }, [tools, categories]);
-
-  // --- Handlers: Tool Model ---
-  const handleModelChange = async (value: string) => {
-    setSelectedToolModel(value);
-    await invoke('tools:set-model', value);
-    notifyToolsUpdated();
-  };
 
   // --- Handlers: Categories ---
   const handleAddCategory = async () => {
@@ -345,20 +340,9 @@ export function ToolsSettings() {
 
   // --- Render Helpers ---
   const tabs: TabItem[] = [
-    { id: 'model', label: 'Tool Model', icon: <Bot size={18} /> },
     { id: 'categories', label: 'Tool Categories', icon: <FolderOpen size={18} /> },
     { id: 'tools', label: 'Tools', icon: <Wrench size={18} /> },
   ];
-
-  const modelOptions = providers.flatMap(p => {
-    const models = p.availableModels || [];
-    return models
-      .filter((m: any) => typeof m === 'string' || m.enabled !== false)
-      .map((m: any) => ({
-        value: `${p.id}:${typeof m === 'string' ? m : m.id}`,
-        label: `${p.name} / ${typeof m === 'string' ? m : m.name || m.id}`,
-      }));
-  });
 
   if (isLoading) {
     return (
@@ -370,6 +354,12 @@ export function ToolsSettings() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 h-full flex flex-col">
+      <SettingsPageHeader
+        icon={<Wrench size={24} />}
+        title="Tools"
+        actions={<GlobalToggle checked={globalEnabled} onChange={handleGlobalToggle} />}
+      />
+
       {/* Tabs Header */}
       <div className="flex space-x-1 bg-surface border border-border p-1 rounded-lg shrink-0">
         {tabs.map(tab => (
@@ -391,28 +381,6 @@ export function ToolsSettings() {
 
       {/* Tab Content */}
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-        
-        {/* === TAB: TOOL MODEL === */}
-        {activeTab === 'model' && (
-          <div className="space-y-4 p-1">
-            <h3 className="text-xl font-semibold text-text-main">AI Model Configuration</h3>
-            <p className="text-sm text-text-muted">
-              Select the AI model used for executing tool logic. Using a model with strong reasoning capabilities (e.g. Claude 3.5 Sonnet, GPT-4o) is recommended.
-            </p>
-            <div className="bg-surface border border-border rounded-lg p-6 max-w-xl">
-              <label className="text-sm font-medium text-text-sec block mb-2">Selected Model</label>
-              <FancySelect
-                value={selectedToolModel}
-                onChange={handleModelChange}
-                options={[
-                  { value: '', label: '-- Select Model --' },
-                  ...modelOptions.map(opt => ({ value: opt.value, label: opt.label }))
-                ]}
-              />
-            </div>
-          </div>
-        )}
-
         {/* === TAB: CATEGORIES === */}
         {activeTab === 'categories' && (
           <div className="flex flex-col h-full space-y-4">

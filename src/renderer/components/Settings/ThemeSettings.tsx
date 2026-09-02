@@ -1,22 +1,21 @@
 import React from 'react';
 import { useTheme } from '../../context/ThemeContext';
-import { Check } from 'lucide-react';
+import { Check, Palette } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Theme } from '../../themes';
+import { SettingsPageHeader } from './SettingsPageHeader';
 
 export function ThemeSettings() {
   const { currentTheme, setTheme, availableThemes } = useTheme();
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <section className="space-y-4">
-        <div>
-           <h3 className="text-xl font-semibold text-[color:var(--text-primary)]">Appearance</h3>
-           <p className="text-sm text-[color:var(--text-muted)]">
-             Choose a theme to personalize your terminal and workspace.
-           </p>
-        </div>
+      <SettingsPageHeader
+        icon={<Palette size={24} />}
+        title="Theme"
+      />
 
+      <section className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {availableThemes.map(theme => (
              <ThemeCard 

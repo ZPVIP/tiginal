@@ -13,6 +13,7 @@ import { ToolsSettings } from './ToolsSettings';
 import { SystemPromptSettings } from './SystemPromptSettings';
 import { StatisticsSettings } from './StatisticsSettings';
 import { ChatProfilesSettings } from './ChatProfilesSettings';
+import { SettingsPageHeader } from './SettingsPageHeader';
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState('general');
@@ -60,10 +61,15 @@ export function Settings() {
           {activeTab === 'profiles' && <ChatProfilesSettings />}
           {activeTab === 'terminal' && <TerminalSettings />}
           {activeTab === 'ssh' && (
-             <div className="flex flex-col items-center justify-center h-64 text-text-muted">
-                <Shield size={48} className="mb-4 opacity-50" />
-                <p>SSH Keys and Host Config coming soon.</p>
-             </div>
+            <div className="space-y-6">
+              <SettingsPageHeader
+                icon={<Shield size={24} />}
+                title="SSH"
+              />
+              <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-border text-sm text-text-muted">
+                SSH key and host configuration is coming soon.
+              </div>
+            </div>
           )}
           {activeTab === 'statistics' && <StatisticsSettings />}
           {activeTab === 'theme' && <ThemeSettings />}

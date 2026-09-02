@@ -4,6 +4,8 @@ import {
   Plus, Trash2, Edit2, RefreshCw, Download, Upload, Check, Save, X,
   ChevronUp, ChevronDown, AlertCircle, Server, Lock, FileJson
 } from 'lucide-react';
+import { McpIcon } from '../icons/McpIcon';
+import { GlobalToggle, SettingsPageHeader } from './SettingsPageHeader';
 
 interface McpTool {
   name: string;
@@ -101,10 +103,9 @@ export function McpSettings() {
     }
   };
 
-  const toggleGlobal = async () => {
-    const next = !globalEnabled;
-    setGlobalEnabled(next);
-    await invoke('mcp:set-global-enabled', next);
+  const toggleGlobal = async (enabled: boolean) => {
+    setGlobalEnabled(enabled);
+    await invoke('mcp:set-global-enabled', enabled);
     notifyUpdated();
   };
 
@@ -266,30 +267,11 @@ export function McpSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-text-main">MCP Servers</h2>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-text-muted font-medium">Global</span>
-          <button
-            onClick={toggleGlobal}
-            className={clsx(
-              'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none',
-              globalEnabled ? 'bg-primary' : 'bg-toggle-off border border-toggle-off-border'
-            )}
-          >
-            <span className={clsx(
-              'inline-block h-3.5 w-3.5 transform rounded-full transition-transform shadow-sm',
-              globalEnabled ? 'bg-primary-foreground' : 'bg-toggle-off-thumb',
-              globalEnabled ? 'translate-x-5' : 'translate-x-0.5'
-            )} />
-          </button>
-        </div>
-      </div>
-
-      <p className="text-sm text-text-muted -mt-4">
-        Model Context Protocol servers add tools to the chat. Built-in servers run inside Tiginal;
-        others are launched as a command or reached over HTTP. Every server is stored as plain JSON.
-      </p>
+      <SettingsPageHeader
+        icon={<McpIcon size={24} />}
+        title="MCP Servers"
+        actions={<GlobalToggle checked={globalEnabled} onChange={toggleGlobal} />}
+      />
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2">

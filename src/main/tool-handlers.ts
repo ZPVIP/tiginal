@@ -636,18 +636,6 @@ export function setupToolHandlers(): void {
     return result.filePaths[0];
   });
 
-  // Get tool model setting
-  ipcMain.handle('tools:get-model', async (): Promise<string | null> => {
-    const db = getDatabase();
-    return db.getSetting('toolModel');
-  });
-
-  // Set tool model setting
-  ipcMain.handle('tools:set-model', async (_event, model: string): Promise<void> => {
-    const db = getDatabase();
-    db.setSetting('toolModel', model);
-  });
-
   // Get global tools enabled setting
   ipcMain.handle('tools:get-global-enabled', async (): Promise<boolean> => {
     const db = getDatabase();

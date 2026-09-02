@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { BarChart3 } from 'lucide-react';
+import { SettingsPageHeader } from './SettingsPageHeader';
 
 const invoke = (window as any).electron?.invoke || (async () => {});
 
@@ -41,7 +43,10 @@ export function StatisticsSettings() {
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-semibold">Token Statistics</h3>
+      <SettingsPageHeader
+        icon={<BarChart3 size={24} />}
+        title="Statistics"
+      />
 
       {/* Date Range */}
       <div className="flex items-end gap-4">

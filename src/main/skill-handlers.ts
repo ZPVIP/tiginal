@@ -76,6 +76,14 @@ function getDefaultSkillsDir(): string {
 export function setupSkillHandlers(): void {
   const db = getDatabase().getDb();
 
+  ipcMain.handle('skills:get-global-enabled', async (): Promise<boolean> => {
+    return getDatabase().getSetting('skillsGlobalEnabled') !== 'false';
+  });
+
+  ipcMain.handle('skills:set-global-enabled', async (_event, enabled: boolean): Promise<void> => {
+    getDatabase().setSetting('skillsGlobalEnabled', String(enabled));
+  });
+
   // Initialize default skills directory on first run
   ipcMain.handle('skills:init-default', async (): Promise<void> => {
     const defaultDir = getDefaultSkillsDir();

@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { 
   FolderOpen, Trash2, Plus, Edit2, Save, X, RefreshCw, 
-  Check, ChevronLeft, ChevronRight, Folder, Zap
+  Check, ChevronLeft, ChevronRight, Folder, Zap, Wand2
 } from 'lucide-react';
+import { GlobalToggle, SettingsPageHeader } from './SettingsPageHeader';
 
 interface SkillDirectory {
   id: string;
@@ -31,6 +32,7 @@ const TABS = [
 
 export function SkillsSettings() {
   const [activeTab, setActiveTab] = useState('directories');
+  const [globalEnabled, setGlobalEnabled] = useState(true);
   
   // Directories
   const [directories, setDirectories] = useState<SkillDirectory[]>([]);
@@ -56,7 +58,13 @@ export function SkillsSettings() {
   useEffect(() => {
     loadDirectories();
     loadSkills();
+    loadGlobalEnabled();
   }, []);
+
+  const loadGlobalEnabled = async () => {
+    const enabled = await invoke('skills:get-global-enabled');
+    setGlobalEnabled(enabled !== false);
+  };
 
   const loadDirectories = async () => {
     const dirs = await invoke('skills:get-directories');
@@ -70,6 +78,12 @@ export function SkillsSettings() {
 
   // Let the drawer / chat know the skill set changed
   const notifySkillsUpdated = () => window.dispatchEvent(new Event('skills-updated'));
+
+  const handleGlobalToggle = async (enabled: boolean) => {
+    setGlobalEnabled(enabled);
+    await invoke('skills:set-global-enabled', enabled);
+    notifySkillsUpdated();
+  };
 
   const handleAddDirectory = async () => {
     if (!newDirName.trim() || !newDirPath.trim()) return;
@@ -145,7 +159,11 @@ export function SkillsSettings() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-text-main">Skills Settings</h2>
+      <SettingsPageHeader
+        icon={<Wand2 size={24} />}
+        title="Skills"
+        actions={<GlobalToggle checked={globalEnabled} onChange={handleGlobalToggle} />}
+      />
       
       {/* Tabs */}
       <div className="flex space-x-1 bg-surface border border-border p-1 rounded-lg shrink-0">
