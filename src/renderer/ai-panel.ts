@@ -121,12 +121,19 @@ export class AIPanel {
   private getAllModelOptions(): ModelOption[] {
     const options: ModelOption[] = [];
     this.providers.forEach(provider => {
-      options.push({
-        providerId: provider.id,
-        providerName: provider.name,
-        model: provider.model,
-        isDefault: provider.isDefault,
+      const configuredModels = provider.availableModels ?? [];
+      const defaultIsEnabled = configuredModels.length === 0 || configuredModels.some(model => {
+        if (typeof model === 'string') return model === provider.model;
+        return model.name === provider.model && model.enabled;
       });
+      if (provider.model && defaultIsEnabled) {
+        options.push({
+          providerId: provider.id,
+          providerName: provider.name,
+          model: provider.model,
+          isDefault: provider.isDefault,
+        });
+      }
       if (provider.availableModels) {
         provider.availableModels.forEach(m => {
           let modelName: string;

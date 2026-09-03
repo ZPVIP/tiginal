@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  parseToolArguments,
   prepareToolInput,
   validateDefaultInput,
 } = require('../dist/main/main/services/tools/tool-input.js');
@@ -24,6 +25,20 @@ const WEB_SEARCH_SCHEMA = {
   required: ['query'],
   additionalProperties: false,
 };
+
+test('treats omitted arguments from a no-argument tool call as an empty object', () => {
+  assert.deepEqual(parseToolArguments(''), { kind: 'valid', input: {} });
+  assert.deepEqual(parseToolArguments('   '), { kind: 'valid', input: {} });
+  assert.deepEqual(parseToolArguments('{}'), { kind: 'valid', input: {} });
+});
+
+test('rejects malformed or non-object tool-call arguments', () => {
+  assert.equal(parseToolArguments('{').kind, 'invalid');
+  assert.deepEqual(parseToolArguments('[]'), {
+    kind: 'invalid',
+    error: 'tool arguments must be a JSON object',
+  });
+});
 
 test('merges local defaults before validating tool arguments', () => {
   const prepared = prepareToolInput({

@@ -1,3 +1,5 @@
+import type { ReasoningEffort } from '../../../shared/ai-provider';
+
 export type OpenAIRequestPayload = Record<string, unknown>;
 
 type RequestFetcher = (url: string, init: RequestInit) => Promise<Response>;
@@ -91,14 +93,26 @@ export function applyCompletionTokenLimit(
   payload: Readonly<OpenAIRequestPayload>,
   endpoint: string,
   tokenLimit: number,
+  useMaxCompletionTokens: boolean = isOfficialOpenAIEndpoint(endpoint),
 ): OpenAIRequestPayload {
   const result = withoutKeys(payload, new Set(['max_tokens', 'max_completion_tokens']));
-  if (isOfficialOpenAIEndpoint(endpoint)) {
+  if (useMaxCompletionTokens) {
     result.max_completion_tokens = tokenLimit;
   } else {
     result.max_tokens = tokenLimit;
   }
   return result;
+}
+
+export function applyReasoningEffort(
+  payload: Readonly<OpenAIRequestPayload>,
+  reasoningEffort: ReasoningEffort | undefined,
+): OpenAIRequestPayload {
+  if (!reasoningEffort) return { ...payload };
+  return {
+    ...withoutKeys(payload, new Set(['temperature'])),
+    reasoning_effort: reasoningEffort,
+  };
 }
 
 export function getOpenAIRequestFallback(

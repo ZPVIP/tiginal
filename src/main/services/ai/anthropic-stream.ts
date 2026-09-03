@@ -4,6 +4,7 @@ import {
   normalizeAnthropicUsage,
   NormalizedUsage,
 } from './cache-usage';
+import type { ReasoningEffort } from '../../../shared/ai-provider';
 
 interface AnthropicToolCall {
   id: string;
@@ -25,6 +26,7 @@ interface StreamAnthropicOptions {
   messages: any[];
   customHeaders?: Record<string, string>;
   tools?: Array<{ name: string; description: string; input_schema: object }>;
+  reasoningEffort?: ReasoningEffort;
   onChunk: (data: { content?: string; reasoning?: string }) => void;
   onToolCall?: (data: AnthropicToolCall) => void | Promise<void>;
   abortSignal?: AbortSignal;
@@ -106,6 +108,15 @@ export function anthropicMessagesUrl(endpoint: string): string {
   return normalized.endsWith('/messages') ? normalized : `${normalized}/messages`;
 }
 
+export function anthropicModelsUrl(endpoint: string): string {
+  const normalized = endpoint.replace(/\/+$/, '');
+  const parsed = new URL(normalized);
+  if (!parsed.pathname || parsed.pathname === '/') return `${parsed.origin}/v1/models`;
+  if (normalized.endsWith('/models')) return normalized;
+  if (normalized.endsWith('/messages')) return normalized.slice(0, -'/messages'.length) + '/models';
+  return `${normalized}/models`;
+}
+
 export async function streamAnthropicAPI(options: StreamAnthropicOptions): Promise<{ usage: NormalizedUsage }> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -123,6 +134,7 @@ export async function streamAnthropicAPI(options: StreamAnthropicOptions): Promi
         model: options.model,
         messages: options.messages,
         tools: options.tools,
+        reasoningEffort: options.reasoningEffort,
       })),
       signal: options.abortSignal,
     });

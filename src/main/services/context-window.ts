@@ -1,6 +1,7 @@
 import { getDatabase } from '../../services/database/database';
 import { getCrypto } from '../../services/ssh/CryptoService';
 import { getCopilotToken } from './ai/CopilotAuthService';
+import { parseStoredModels } from './ai/model-metadata';
 
 /**
  * Work out how many tokens a provider/model pair can hold.
@@ -186,6 +187,13 @@ export function setOverride(providerId: string, modelId: string, tokens: number 
   cache.delete(key(providerId, modelId));
 }
 
+export function invalidateProviderContextWindows(providerId: string): void {
+  const prefix = `${providerId}::`;
+  for (const cacheKey of cache.keys()) {
+    if (cacheKey.startsWith(prefix)) cache.delete(cacheKey);
+  }
+}
+
 export async function getContextWindow(providerId: string, modelId: string): Promise<ContextWindow> {
   if (!providerId || !modelId) return { tokens: null, source: 'unknown' };
 
@@ -198,6 +206,14 @@ export async function getContextWindow(providerId: string, modelId: string): Pro
   const provider = getDatabase().getDb()
     .prepare('SELECT * FROM ai_providers WHERE id = ?').get(providerId) as any;
   if (!provider) return { tokens: null, source: 'unknown' };
+
+  const storedModel = parseStoredModels(provider.available_models || null)
+    ?.find(model => model.id === modelId);
+  if (storedModel?.contextWindow) {
+    const result: ContextWindow = { tokens: storedModel.contextWindow, source: 'models' };
+    cache.set(key(providerId, modelId), result);
+    return result;
+  }
 
   const endpoint = (provider.endpoint || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const host = hostOf(endpoint);

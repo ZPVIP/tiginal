@@ -1,43 +1,41 @@
 
-// This file will hold the shared constants and types for AI settings
+export type {
+  AIProvider,
+  ApiFormat,
+  CatalogNpmPackage,
+  CatalogProvider,
+  ModelCatalogUpdateResult,
+  ModelConfig,
+  ReasoningEffort,
+} from '../../shared/ai-provider';
+export {
+  apiFormatForCatalogPackage,
+  defaultReasoningEffort,
+  isApiFormat,
+  isReasoningEffort,
+} from '../../shared/ai-provider';
 
-export interface ModelConfig {
-  id: string;
-  name: string;
-  enabled: boolean;
-}
+export const API_FORMAT_OPTIONS = [
+  { label: 'Chat Completions (/chat/completions)', value: 'chat-completions' },
+  { label: 'Anthropic Messages (/v1/messages)', value: 'anthropic-messages' },
+] as const;
 
-export interface AIProvider {
-  id: string;
-  name: string;
-  type: 'openai-compatible' | 'copilot';
-  endpoint?: string;
-  apiKey?: string; // Decrypted for UI
-  apiKeyEncrypted?: string;
-  model: string;
-  availableModels?: ModelConfig[]; // Updated to store config objects
-  customHeaders?: Record<string, string>;
-  autoCORSFix?: boolean;
-  isDefault: boolean;
-  createdAt?: number;
-  updatedAt?: number;
+export function providerIconKey(provider: string | undefined): string {
+  if (!provider) return 'custom';
+  const aliases: Readonly<Record<string, string>> = {
+    google: 'gemini',
+    'ollama-cloud': 'ollama',
+    'ollama-local': 'ollama',
+    nvidia: 'nvidia_nim',
+  };
+  return aliases[provider] ?? provider;
 }
 
 export const OAI_API_PROVIDERS = [
   { label: "Custom", value: "custom", baseUrl: "" },
-  { label: "Anthropic (Claude)", value: "anthropic", baseUrl: "https://api.anthropic.com/v1" },
-  { label: "Cerebras", value: "cerebras", baseUrl: "https://api.cerebras.ai/v1" },
-  { label: "DeepSeek", value: "deepseek", baseUrl: "https://api.deepseek.com" },
   { label: "Google AI", value: "gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" },
-  { label: "GitHub Copilot", value: "copilot", baseUrl: "https://api.githubcopilot.com" },
-  { label: "Groq", value: "groq", baseUrl: "https://api.groq.com/openai/v1" },
   { label: "Llamafile", value: "llamafile", baseUrl: "http://127.0.0.1:8080/v1" },
   { label: "LLaMa.cpp", value: "llamacpp", baseUrl: "http://127.0.0.1:8080/v1" },
   { label: "LM Studio", value: "lmstudio", baseUrl: "http://127.0.0.1:1234/v1" },
-  { label: "Mistral", value: "mistral", baseUrl: "https://api.mistral.ai/v1" },
-  { label: "NVIDIA NIM", value: "nvidia_nim", baseUrl: "https://integrate.api.nvidia.com/v1" },
-  { label: "Ollama (Local)", value: "ollama", baseUrl: "http://127.0.0.1:11434/v1" },
-  { label: "Ollama (Cloud)", value: "ollama", baseUrl: "https://ollama.com/v1" },
-  { label: "OpenAI", value: "openai", baseUrl: "https://api.openai.com/v1" },
-  { label: "OpenRouter", value: "openrouter", baseUrl: "https://openrouter.ai/api/v1" },
+  { label: "Ollama (Local)", value: "ollama-local", baseUrl: "http://127.0.0.1:11434/v1" },
 ];

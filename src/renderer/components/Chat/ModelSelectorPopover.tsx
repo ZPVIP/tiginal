@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Search, ChevronDown, ChevronRight, Check } from 'lucide-react';
+import { Brain, Check, ChevronDown, ChevronRight, Eye, Search, Wrench, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Bot } from 'lucide-react';
 import { ICONS } from '../../settings/icons';
@@ -9,6 +9,23 @@ interface ModelOption {
     providerId: string;
     modelId: string;
     label: string;
+    contextWindow?: number;
+    maxOutputTokens?: number;
+    supportsImages?: boolean;
+    supportsReasoning?: boolean;
+    supportsToolCalls?: boolean;
+}
+
+function compactTokens(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    const value = tokens / 1_000_000;
+    return `${Number.isInteger(value) ? value : value.toFixed(1)}M`;
+  }
+  if (tokens >= 1_000) {
+    const value = tokens / 1_000;
+    return `${Number.isInteger(value) ? value : value.toFixed(1)}K`;
+  }
+  return String(tokens);
 }
 
 interface ModelSelectorPopoverProps {
@@ -86,7 +103,7 @@ export const ModelSelectorPopover: React.FC<ModelSelectorPopoverProps> = ({
   }, [groupedModels.groups, searchQuery]);
 
   return (
-    <div className="absolute bottom-full left-0 mb-4 w-72 md:w-80 bg-surface border border-border rounded-xl shadow-xl z-50 flex flex-col max-h-[500px] animate-in fade-in slide-in-from-bottom-2">
+    <div className="absolute bottom-full left-0 mb-4 w-[min(26rem,calc(100vw-1rem))] bg-surface border border-border rounded-xl shadow-xl z-50 flex flex-col max-h-[500px] animate-in fade-in slide-in-from-bottom-2">
         {/* Header */}
         <div className="flex items-center justify-between p-4 bg-surface-light/50 rounded-t-xl backdrop-blur-sm shrink-0">
             <h3 className="font-medium text-text-main flex items-center gap-2">
@@ -193,8 +210,23 @@ export const ModelSelectorPopover: React.FC<ModelSelectorPopoverProps> = ({
                                                     isSelected ? "bg-primary/10 text-primary" : "text-text-sec hover:text-text-main hover:bg-surface-hover"
                                                 )}
                                              >
-                                                 <span className="truncate mr-2">{modelName}</span>
-                                                 {isSelected && <Check size={14} className="shrink-0" />}
+                                                 <span className="min-w-0 flex-1 truncate pr-3">{modelName}</span>
+                                                 <span className="ml-auto flex shrink-0 items-center justify-end gap-1.5 text-[10px] text-text-muted">
+                                                     {m.contextWindow && (
+                                                         <span title={`${m.contextWindow.toLocaleString()} context tokens`}>
+                                                             {compactTokens(m.contextWindow)} ctx
+                                                         </span>
+                                                     )}
+                                                     {m.maxOutputTokens && (
+                                                         <span title={`${m.maxOutputTokens.toLocaleString()} maximum output tokens`}>
+                                                             {compactTokens(m.maxOutputTokens)} out
+                                                         </span>
+                                                     )}
+                                                     {m.supportsImages && <Eye size={12} aria-label="Image input" title="Image input" />}
+                                                     {m.supportsReasoning && <Brain size={12} aria-label="Reasoning" title="Reasoning" />}
+                                                     {m.supportsToolCalls && <Wrench size={12} aria-label="Tool calls" title="Tool calls" />}
+                                                     {isSelected && <Check size={14} className="ml-0.5 text-primary" />}
+                                                 </span>
                                              </button>
                                          );
                                      })}

@@ -1,4 +1,5 @@
 import type { CacheStatus } from '../../../shared/token-tooltips';
+import type { ReasoningEffort } from '../../../shared/ai-provider';
 
 export interface NormalizedUsage {
   promptTokens: number;
@@ -16,6 +17,7 @@ interface AnthropicRequestOptions {
   tools?: Array<{ name: string; description: string; input_schema: object }>;
   maxTokens?: number;
   temperature?: number;
+  reasoningEffort?: ReasoningEffort;
 }
 
 type ToolDefinition = { name: string; description: string; input_schema: object };
@@ -85,6 +87,16 @@ export function normalizeAnthropicUsage(usage: any): NormalizedUsage {
     totalTokens: promptTokens + completionTokens,
     cacheStatus: cacheTelemetryAvailable ? (cachedTokens > 0 ? 'hit' : 'miss') : 'unknown',
   };
+}
+
+export function normalizeResponsesUsage(usage: any): NormalizedUsage {
+  return normalizeOpenAIUsage({
+    prompt_tokens: usage?.input_tokens,
+    completion_tokens: usage?.output_tokens,
+    total_tokens: usage?.total_tokens,
+    prompt_tokens_details: usage?.input_tokens_details,
+    completion_tokens_details: usage?.output_tokens_details,
+  });
 }
 
 export function aggregateCacheUsage(usages: NormalizedUsage[]): NormalizedUsage {
@@ -208,13 +220,16 @@ export function buildAnthropicRequest(options: AnthropicRequestOptions): any {
   return {
     model: options.model,
     max_tokens: options.maxTokens ?? 4000,
-    temperature: options.temperature ?? 0.7,
+    ...(!options.reasoningEffort ? { temperature: options.temperature ?? 0.7 } : {}),
     stream: true,
     system,
     messages: options.messages
       .filter(message => message.role !== 'system')
       .map(toAnthropicMessage),
     ...(options.tools && options.tools.length > 0 ? { tools: options.tools } : {}),
+    ...(options.reasoningEffort
+      ? { output_config: { effort: options.reasoningEffort } }
+      : {}),
     cache_control: { type: 'ephemeral' },
   };
 }

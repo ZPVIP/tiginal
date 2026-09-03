@@ -7,11 +7,13 @@ const {
   canonicalizeToolDefinitions,
   isAnthropicEndpoint,
   normalizeAnthropicUsage,
+  normalizeResponsesUsage,
   normalizeOpenAIUsage,
   summarizeAgentUsage,
 } = require('../dist/main/main/services/ai/cache-usage.js');
 const {
   anthropicMessagesUrl,
+  anthropicModelsUrl,
   createAnthropicStreamState,
   processAnthropicEvent,
 } = require('../dist/main/main/services/ai/anthropic-stream.js');
@@ -60,6 +62,24 @@ test('normalizes Anthropic cache read and cache creation tokens', () => {
     cachedTokens: 800,
     cacheWriteTokens: 300,
     totalTokens: 1250,
+    cacheStatus: 'hit',
+  });
+});
+
+test('normalizes Responses API usage fields', () => {
+  assert.deepEqual(normalizeResponsesUsage({
+    input_tokens: 100,
+    output_tokens: 20,
+    total_tokens: 120,
+    input_tokens_details: { cached_tokens: 40 },
+    output_tokens_details: { reasoning_tokens: 8 },
+  }), {
+    promptTokens: 100,
+    completionTokens: 20,
+    reasoningTokens: 8,
+    cachedTokens: 40,
+    cacheWriteTokens: 0,
+    totalTokens: 120,
     cacheStatus: 'hit',
   });
 });
@@ -165,6 +185,7 @@ test('builds a native Anthropic request with automatic prompt caching', () => {
       description: 'Run a command',
       input_schema: { type: 'object', properties: { command: { type: 'string' } } },
     }],
+    reasoningEffort: 'medium',
   });
 
   assert.deepEqual(request.system, [
@@ -172,6 +193,8 @@ test('builds a native Anthropic request with automatic prompt caching', () => {
     { type: 'text', text: 'Today is 2026-08-28' },
   ]);
   assert.deepEqual(request.cache_control, { type: 'ephemeral' });
+  assert.deepEqual(request.output_config, { effort: 'medium' });
+  assert.equal(request.temperature, undefined);
   assert.equal(request.stream, true);
   assert.deepEqual(request.tools[0], {
     name: 'Bash',
@@ -251,4 +274,7 @@ test('normalizes official Anthropic endpoint variants', () => {
   assert.equal(anthropicMessagesUrl('https://api.anthropic.com'), 'https://api.anthropic.com/v1/messages');
   assert.equal(anthropicMessagesUrl('https://api.anthropic.com/v1'), 'https://api.anthropic.com/v1/messages');
   assert.equal(anthropicMessagesUrl('https://api.anthropic.com/v1/messages'), 'https://api.anthropic.com/v1/messages');
+  assert.equal(anthropicModelsUrl('https://api.anthropic.com'), 'https://api.anthropic.com/v1/models');
+  assert.equal(anthropicModelsUrl('https://api.anthropic.com/v1'), 'https://api.anthropic.com/v1/models');
+  assert.equal(anthropicModelsUrl('https://api.anthropic.com/v1/models'), 'https://api.anthropic.com/v1/models');
 });

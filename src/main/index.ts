@@ -31,6 +31,7 @@ import { setupMcpHandlers } from './mcp-handlers';
 import { registerImageScheme, setupImageHandlers } from './image-handlers';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
+import { ensureModelCatalogInitialized } from './services/ai/model-catalog';
 import * as crypto from 'crypto';
 
 // Default configuration for first run
@@ -269,9 +270,10 @@ function createMenu(): void {
   Menu.setApplicationMenu(menu);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Initialize database
   getDatabase();
+  await ensureModelCatalogInitialized();
   
   // Setup IPC handlers
   setupIpcHandlers();

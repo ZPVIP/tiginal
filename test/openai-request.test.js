@@ -3,11 +3,22 @@ const assert = require('node:assert/strict');
 
 const {
   applyCompletionTokenLimit,
+  applyReasoningEffort,
   fetchOpenAIWithCompatibility,
   getOpenAIRequestFallback,
   parseOpenAIChatCompletion,
   prepareOpenAIRequestPayload,
 } = require('../dist/main/main/services/ai/openai-request.js');
+
+test('adds reasoning_effort and omits unsupported temperature from Chat Completions requests', () => {
+  assert.deepEqual(applyReasoningEffort({ model: 'gpt-5.6-sol', temperature: 0.7 }, 'xhigh'), {
+    model: 'gpt-5.6-sol',
+    reasoning_effort: 'xhigh',
+  });
+  assert.deepEqual(applyReasoningEffort({ model: 'gpt-4o' }, undefined), {
+    model: 'gpt-4o',
+  });
+});
 
 test('parses a standard OpenAI chat completion response', () => {
   assert.deepEqual(parseOpenAIChatCompletion({
@@ -43,6 +54,17 @@ test('keeps max_tokens for generic OpenAI-compatible providers', () => {
   assert.deepEqual(
     applyCompletionTokenLimit({ model: 'local-model', stream: true }, 'http://127.0.0.1:1234/v1', 4000),
     { model: 'local-model', stream: true, max_tokens: 4000 },
+  );
+});
+
+test('uses the provider token-field setting instead of inferring from the endpoint', () => {
+  assert.deepEqual(
+    applyCompletionTokenLimit({ model: 'o3', stream: true }, 'https://proxy.example/v1', 4000, true),
+    { model: 'o3', stream: true, max_completion_tokens: 4000 },
+  );
+  assert.deepEqual(
+    applyCompletionTokenLimit({ model: 'gpt-5', stream: true }, 'https://api.openai.com/v1', 4000, false),
+    { model: 'gpt-5', stream: true, max_tokens: 4000 },
   );
 });
 

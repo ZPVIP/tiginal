@@ -19,7 +19,7 @@ export function SettingsPageHeader({
           <span className="flex h-7 w-7 items-center justify-center text-primary shrink-0">
             {icon}
           </span>
-          <h2 className="text-2xl font-bold leading-8">{title}</h2>
+          <h2 className="whitespace-nowrap text-2xl font-bold leading-8">{title}</h2>
         </div>
       </div>
       {actions && (

@@ -47,7 +47,9 @@ export function ModelManagerModal({ isOpen, onClose, provider, onSave }: ModelMa
                     endpoint: provider.endpoint || '',
                     apiKey: provider.apiKey || '', 
                     customHeaders: provider.customHeaders,
-                    autoCORSFix: provider.autoCORSFix
+                    autoCORSFix: provider.autoCORSFix,
+                    apiFormat: provider.apiFormat,
+                    catalogProvider: provider.catalogProvider,
                 });
             } catch (e) {
                 console.error("Fetch failed", e);
@@ -55,20 +57,15 @@ export function ModelManagerModal({ isOpen, onClose, provider, onSave }: ModelMa
 
             let modelsToShow: ModelConfig[] = [];
 
-            // 3. Build new list based on SERVER response
-            if (res && res.success && res.models) {
+            // Build the new list from the server response.
+            if (res && res.success && Array.isArray(res.models)) {
                 const uniqueIds = new Set<string>();
                 
-                res.models.forEach((id: string) => {
-                    // Ensure ID uniqueness
-                    if (!uniqueIds.has(id)) {
-                        uniqueIds.add(id);
-                        // Start with server ID/Name
-                        const name = id; 
-                        // Inherit enabled status from local if exists (matching by Name), default to true
-                        const isEnabled = localEnabledMap.has(name) ? (localEnabledMap.get(name) ?? true) : true;
-                        
-                        modelsToShow.push({ id, name, enabled: isEnabled });
+                res.models.forEach((serverModel: ModelConfig) => {
+                    if (!uniqueIds.has(serverModel.id)) {
+                        uniqueIds.add(serverModel.id);
+                        const isEnabled = localEnabledMap.get(serverModel.id) ?? true;
+                        modelsToShow.push({ ...serverModel, enabled: isEnabled });
                     }
                 });
             } else {

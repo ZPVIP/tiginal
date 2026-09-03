@@ -22,20 +22,33 @@ import { toModelDataUrl, deleteImages } from './image-handlers';
 import { expandHome, normalizeForCompare, workspaceDir } from './utils/paths';
 import {
   canonicalizeToolDefinitions,
-  isAnthropicEndpoint,
   normalizeOpenAIUsage,
+  normalizeAnthropicUsage,
+  normalizeResponsesUsage,
   NormalizedUsage,
   summarizeAgentUsage,
+  buildAnthropicRequest,
 } from './services/ai/cache-usage';
-import { streamAnthropicAPI } from './services/ai/anthropic-stream';
+import { anthropicMessagesUrl, streamAnthropicAPI } from './services/ai/anthropic-stream';
 import {
   applyCompletionTokenLimit,
+  applyReasoningEffort,
   fetchOpenAIWithCompatibility,
   parseOpenAIChatCompletion,
   prepareOpenAIRequestPayload,
 } from './services/ai/openai-request';
 import {
+  buildResponsesRequest,
+  parseResponsesOutput,
+  responsesUrl,
+  streamResponsesAPI,
+} from './services/ai/responses-api';
+import type { ApiFormat, ReasoningEffort } from '../shared/ai-provider';
+import { normalizeApiFormat } from '../shared/ai-provider';
+import { parseStoredModels, resolveReasoningEffort } from './services/ai/model-metadata';
+import {
   JsonObject,
+  parseToolArguments,
   parseStoredJsonObject,
   prepareToolInput,
 } from './services/tools/tool-input';
@@ -56,6 +69,17 @@ interface LogAccumulator {
     reasoningParts: string[];
     toolCalls: any[];
     usage?: any;
+}
+
+interface ChatSendOptions {
+  useSystemPrompt?: boolean;
+  useSkills?: boolean;
+  images?: string[];
+  reasoningEffort?: unknown;
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 // Module-level state for tool approvals
@@ -339,7 +363,7 @@ export function setupChatHandlers(): void {
   });
 
   // Send message to AI (Autonomous Agent Loop)
-  ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string, options: { useSystemPrompt?: boolean, useSkills?: boolean, images?: string[] } = {}): Promise<{ response: string; error?: string }> => {
+  ipcMain.handle('chat:send-message', async (_event, conversationId: string, providerId: string, content: string, specificModel?: string, options: ChatSendOptions = {}): Promise<{ response: string; error?: string }> => {
     return runAgentLoop(_event, conversationId, providerId, content, specificModel, options);
   });
 
@@ -439,13 +463,18 @@ interface NonStreamingAPIConfig {
   model: string;
   autoCORSFix?: boolean;
   customHeaders?: Record<string, string>;
+  apiFormat?: ApiFormat;
+  useMaxCompletionTokens?: boolean;
 }
 
 async function callNonStreamingChatCompletion(
   config: NonStreamingAPIConfig,
   messages: Array<{ role: string; content: string }>,
   options?: { temperature?: number; maxTokens?: number; label?: string }
-): Promise<{ content: string | null; usage?: any }> {
+): Promise<{ content: string | null; usage?: unknown }> {
+  const apiFormat = config.type === 'copilot'
+    ? 'chat-completions'
+    : normalizeApiFormat(config.apiFormat);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(config.customHeaders || {})
@@ -464,6 +493,9 @@ async function callNonStreamingChatCompletion(
     headers['Editor-Plugin-Version'] = 'copilot-chat/0.35.0';
     headers['User-Agent'] = 'GitHubCopilotChat/0.35.0';
     headers['Openai-Intent'] = 'conversation-edits';
+  } else if (config.apiKey && apiFormat === 'anthropic-messages') {
+    headers['x-api-key'] = config.apiKey;
+    headers['anthropic-version'] = headers['anthropic-version'] || '2023-06-01';
   } else if (config.apiKey) {
     headers['Authorization'] = `Bearer ${config.apiKey}`;
   }
@@ -472,35 +504,74 @@ async function callNonStreamingChatCompletion(
     try { const url = new URL(endpoint); headers['Origin'] = url.origin; } catch (e) {}
   }
 
-  const bodyPayload = prepareOpenAIRequestPayload(applyCompletionTokenLimit({
-    model: config.model,
-    messages,
-    temperature: options?.temperature ?? 0.3,
-    stream: false
-  }, endpoint, options?.maxTokens ?? 1000));
+  const maxTokens = options?.maxTokens ?? 1000;
+  const bodyPayload = apiFormat === 'anthropic-messages'
+    ? {
+      ...buildAnthropicRequest({
+        model: config.model,
+        messages,
+        maxTokens,
+        temperature: options?.temperature ?? 0.3,
+      }),
+      stream: false,
+    }
+    : apiFormat === 'responses'
+      ? buildResponsesRequest({
+        model: config.model,
+        messages,
+        stream: false,
+        maxOutputTokens: maxTokens,
+      })
+      : prepareOpenAIRequestPayload(applyCompletionTokenLimit({
+        model: config.model,
+        messages,
+        temperature: options?.temperature ?? 0.3,
+        stream: false,
+      }, endpoint, maxTokens, config.useMaxCompletionTokens ?? false));
 
   const label = options?.label || 'NON_STREAMING';
 
   printRequestStartSeparator();
   if (process.env.NODE_ENV !== 'production') {
     process.stdout.write(`\n--- ${label} REQUEST ---\n`);
-    process.stdout.write('URL: ' + `${endpoint}/chat/completions` + '\n');
+    const requestUrl = apiFormat === 'anthropic-messages'
+      ? anthropicMessagesUrl(endpoint)
+      : apiFormat === 'responses'
+        ? responsesUrl(endpoint)
+        : `${endpoint}/chat/completions`;
+    process.stdout.write('URL: ' + requestUrl + '\n');
     const safeHeaders = { ...headers };
     if (safeHeaders['Authorization']) safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
     process.stdout.write('Headers: ' + JSON.stringify(safeHeaders, null, 2) + '\n');
     process.stdout.write('Body: ' + JSON.stringify(bodyPayload, null, 2) + '\n');
   }
 
-  const result = await fetchOpenAIWithCompatibility(fetchWithLocalhostFallback, `${endpoint}/chat/completions`, {
-    method: 'POST',
-    headers,
-  }, bodyPayload);
-  const response = result.response;
+  const requestUrl = apiFormat === 'anthropic-messages'
+    ? anthropicMessagesUrl(endpoint)
+    : apiFormat === 'responses'
+      ? responsesUrl(endpoint)
+      : `${endpoint}/chat/completions`;
+  let response: Response;
+  let responseErrorText: string | undefined;
+  if (apiFormat === 'chat-completions') {
+    const result = await fetchOpenAIWithCompatibility(fetchWithLocalhostFallback, requestUrl, {
+      method: 'POST',
+      headers,
+    }, bodyPayload);
+    response = result.response;
+    responseErrorText = result.errorText;
+  } else {
+    response = await fetchWithLocalhostFallback(requestUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(bodyPayload),
+    });
+  }
 
   printRequestEndSeparator();
 
   if (!response.ok) {
-    const errorText = result.errorText ?? await response.text();
+    const errorText = responseErrorText ?? await response.text();
     console.error(`${label} API failed: ${response.status} - ${errorText}`);
     return { content: null, usage: undefined };
   }
@@ -515,6 +586,24 @@ async function callNonStreamingChatCompletion(
     printRespondEndSeparator();
   }
 
+  if (apiFormat === 'responses') return parseResponsesOutput(data);
+  if (apiFormat === 'anthropic-messages' && isUnknownRecord(data)) {
+    const responseData = data;
+    const content = Array.isArray(responseData.content)
+      ? responseData.content
+        .filter((block): block is { type: 'text'; text: string } => (
+          typeof block === 'object'
+          && block !== null
+          && 'type' in block
+          && block.type === 'text'
+          && 'text' in block
+          && typeof block.text === 'string'
+        ))
+        .map(block => block.text)
+        .join('')
+      : '';
+    return { content: content || null, usage: responseData.usage };
+  }
   return parseOpenAIChatCompletion(data);
 }
 
@@ -527,7 +616,9 @@ async function analyzeCommand(
       type: 'openai-compatible' | 'copilot',
       endpoint: string,
       apiKey: string | null,
-      model: string
+      model: string,
+      apiFormat?: ApiFormat,
+      useMaxCompletionTokens?: boolean
   }
 ): Promise<ToolApprovalAnalysis> {
     const prompt = `You are a security analyzer for shell commands. Your task is to analyze a bash command and determine:
@@ -577,7 +668,7 @@ Risk levels:
         ];
 
         const analyzerResult = await callNonStreamingChatCompletion(
-            { type: apiConfig.type, endpoint: apiConfig.endpoint, apiKey: apiConfig.apiKey, model: apiConfig.model },
+            apiConfig,
             messages,
             { temperature: 0.1, maxTokens: 1000, label: 'ANALYZE COMMAND' }
         );
@@ -609,6 +700,8 @@ Risk levels:
  */
 async function streamAIAPI(
   type: 'openai-compatible' | 'copilot',
+  apiFormat: ApiFormat,
+  useMaxCompletionTokens: boolean,
   endpoint: string,
   apiKey: string | null,
   model: string,
@@ -616,13 +709,14 @@ async function streamAIAPI(
   customHeaders: Record<string, string> = {},
   autoCORSFix: boolean = true,
   tools: Array<{ name: string; description: string; input_schema: object }> = [],
+  reasoningEffort: ReasoningEffort | undefined,
   onChunk: (data: { content?: string; reasoning?: string }) => void,
   onToolCall?: (data: { id: string; name: string; input: any }) => void | Promise<void>,
   abortSignal?: AbortSignal
 ): Promise<{ usage: NormalizedUsage }> {
   const stableTools = canonicalizeToolDefinitions(tools);
 
-  if (type !== 'copilot' && isAnthropicEndpoint(endpoint)) {
+  if (type !== 'copilot' && apiFormat === 'anthropic-messages') {
     return streamAnthropicAPI({
       endpoint,
       apiKey,
@@ -630,6 +724,23 @@ async function streamAIAPI(
       messages,
       customHeaders,
       tools: stableTools,
+      reasoningEffort,
+      onChunk,
+      onToolCall,
+      abortSignal,
+    });
+  }
+
+  if (type !== 'copilot' && apiFormat === 'responses') {
+    return streamResponsesAPI({
+      endpoint,
+      apiKey,
+      model,
+      messages,
+      customHeaders,
+      tools: stableTools,
+      maxOutputTokens: 4000,
+      reasoningEffort,
       onChunk,
       onToolCall,
       abortSignal,
@@ -671,13 +782,13 @@ async function streamAIAPI(
     }
   }
 
-  let bodyPayload = applyCompletionTokenLimit({
+  let bodyPayload = applyReasoningEffort(applyCompletionTokenLimit({
     model,
     messages,
     temperature: 0.7,
     stream: true,
     stream_options: { include_usage: true },
-  }, endpoint, 4000);
+  }, endpoint, 4000, useMaxCompletionTokens), reasoningEffort);
 
   if (stableTools.length > 0) {
     bodyPayload.tools = stableTools.map(t => ({
@@ -860,16 +971,19 @@ async function streamAIAPI(
             if (abortSignal?.aborted) break;
             
             try {
-                if (tool.name && tool.arguments) {
-                     const input = JSON.parse(tool.arguments);
-                     await onToolCall({
-                         id: tool.id,
-                         name: tool.name,
-                         input
-                     });
+                if (!tool.name) continue;
+                const parsedArguments = parseToolArguments(tool.arguments);
+                if (parsedArguments.kind === 'invalid') {
+                    console.warn(`Failed to parse arguments for tool ${tool.name}: ${parsedArguments.error}`);
+                    continue;
                 }
+                await onToolCall({
+                    id: tool.id,
+                    name: tool.name,
+                    input: parsedArguments.input,
+                });
             } catch (e) {
-                console.warn('Failed to parse pending tool call at stream end', e);
+                console.warn('Failed to handle pending tool call at stream end', e);
             }
         }
     }
@@ -887,7 +1001,7 @@ async function streamAIAPI(
   return { usage: normalizeOpenAIUsage(logAccumulator.usage) };
 }
 
-async function runAgentLoop(_event: any, conversationId: string, providerId: string, content: string, specificModel?: string, options: { useSystemPrompt?: boolean, useSkills?: boolean, images?: string[] } = {}): Promise<{ response: string; error?: string }> {
+async function runAgentLoop(_event: any, conversationId: string, providerId: string, content: string, specificModel?: string, options: ChatSendOptions = {}): Promise<{ response: string; error?: string }> {
     const chatService = getChatService();
     const db = getDatabase().getDb();
     const dbService = getDatabase();
@@ -904,6 +1018,15 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
     }
     const modelToUse = specificModel || provider.model;
     const customHeaders = provider.custom_headers ? JSON.parse(provider.custom_headers) : {};
+    const apiFormat = provider.type === 'copilot'
+      ? 'chat-completions'
+      : normalizeApiFormat(provider.api_format);
+    const useMaxCompletionTokens = provider.use_max_completion_tokens === 1;
+    const reasoningEffort = resolveReasoningEffort(
+      parseStoredModels(provider.available_models || null),
+      modelToUse,
+      options.reasoningEffort,
+    );
     
     // 2. Build Initial Messages
     chatService.addMessage(conversationId, 'user', content, undefined, undefined, undefined, options.images);
@@ -1093,6 +1216,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
 
             const streamResult = await streamAIAPI(
                 provider.type as 'openai-compatible' | 'copilot',
+                apiFormat,
+                useMaxCompletionTokens,
                 provider.endpoint || 'https://api.openai.com/v1',
                 apiKey,
                 modelToUse,
@@ -1100,6 +1225,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                 customHeaders,
                 provider.auto_cors_fix === 1,
                 currentTools,
+                reasoningEffort,
                 (chunkData) => {
                     // Stream to UI. 
                     if (chunkData.content) {
@@ -1172,6 +1298,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                 model: modelToUse,
                                 autoCORSFix: provider.auto_cors_fix === 1,
                                 customHeaders,
+                                apiFormat,
+                                useMaxCompletionTokens,
                             }
                         );
                         if (process.env.NODE_ENV !== 'production') console.log('>>> ToolSearch Results:', JSON.stringify(foundTools, null, 2));
@@ -1213,6 +1341,8 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                                 endpoint: provider.endpoint || 'https://api.openai.com/v1',
                                 apiKey,
                                 model: modelToUse,
+                                apiFormat,
+                                useMaxCompletionTokens,
                             }
                           )
                           : analyzeNonShellTool(toolCall.name, toolInput);
@@ -1327,7 +1457,7 @@ async function runAgentLoop(_event: any, conversationId: string, providerId: str
                     }
 
                     // Append Tool Result
-                    if (modelToUse.toLowerCase().includes('claude') && provider.type !== 'copilot') {
+                    if (apiFormat === 'anthropic-messages') {
                          // Copilot/OpenAI proxies often reject 'tool_result' content type (400 Bad Request).
                          // We format it as a User Message but with specific content structure that they might expect if they support tool_use blocks.
                          // Per user request, we use the standard structure:
@@ -1687,6 +1817,9 @@ async function generateConversationTitle(
   };
 
   try {
+    const apiFormat = provider.type === 'copilot'
+      ? 'chat-completions'
+      : normalizeApiFormat(provider.api_format);
     const result = await callNonStreamingChatCompletion(
       {
         type: provider.type,
@@ -1694,7 +1827,9 @@ async function generateConversationTitle(
         apiKey,
         model,
         autoCORSFix: provider.auto_cors_fix === 1,
-        customHeaders
+        customHeaders,
+        apiFormat,
+        useMaxCompletionTokens: provider.use_max_completion_tokens === 1,
       },
       messages,
       { temperature: 0.3, maxTokens: 1000, label: 'TITLE GENERATION' }
@@ -1713,7 +1848,11 @@ async function generateConversationTitle(
     sender.send('chat:title-updated', { conversationId, title });
 
     // Extract token data from title generation
-    const titleUsage = normalizeOpenAIUsage(result.usage);
+    const titleUsage = apiFormat === 'anthropic-messages'
+      ? normalizeAnthropicUsage(result.usage)
+      : apiFormat === 'responses'
+        ? normalizeResponsesUsage(result.usage)
+        : normalizeOpenAIUsage(result.usage);
     const titleTokenData = {
       providerId: provider.id,
       modelId: model,

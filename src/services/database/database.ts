@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 24;
+const SCHEMA_VERSION = 26;
 
 /**
  * Database service for Tiginal
@@ -161,6 +161,14 @@ export class DatabaseService {
 
     if (currentVersion < 24) {
       this.migrateV24();
+    }
+
+    if (currentVersion < 25) {
+      this.migrateV25();
+    }
+
+    if (currentVersion < 26) {
+      this.migrateV26();
     }
 
     // Update schema version
@@ -743,6 +751,44 @@ export class DatabaseService {
 
     try {
       this.db.exec(`ALTER TABLE chat_profiles ADD COLUMN mcp TEXT DEFAULT NULL`);
+    } catch {
+      // Column might already exist.
+    }
+  }
+
+  /** Migration v25: Store the provider request format and token-limit field. */
+  private migrateV25(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE ai_providers ADD COLUMN api_format TEXT NOT NULL DEFAULT 'chat-completions'`);
+    } catch {
+      // Column might already exist.
+    }
+    try {
+      this.db.exec(`ALTER TABLE ai_providers ADD COLUMN use_max_completion_tokens INTEGER NOT NULL DEFAULT 0`);
+    } catch {
+      // Column might already exist.
+    }
+
+    this.db.exec(`
+      UPDATE ai_providers
+      SET api_format = 'anthropic-messages'
+      WHERE lower(endpoint) LIKE '%api.anthropic.com%'
+    `);
+    this.db.exec(`
+      UPDATE ai_providers
+      SET use_max_completion_tokens = 1
+      WHERE lower(endpoint) LIKE '%api.openai.com%'
+    `);
+  }
+
+  /** Migration v26: Link a configured provider to the downloaded model catalog. */
+  private migrateV26(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE ai_providers ADD COLUMN catalog_provider TEXT DEFAULT NULL`);
     } catch {
       // Column might already exist.
     }

@@ -2,33 +2,45 @@ import { ipcMain } from 'electron';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
 import { fetchWithLocalhostFallback } from './utils/NetworkUtils';
+import type { AIProvider, ApiFormat, ModelConfig } from '../shared/ai-provider';
+import { normalizeApiFormat } from '../shared/ai-provider';
+import { parseModelListPayload, parseStoredModels } from './services/ai/model-metadata';
+import { invalidateProviderContextWindows } from './services/context-window';
+import {
+  enrichModelsFromLocalCatalog,
+  loadProviderCatalog,
+  updateModelCatalog,
+} from './services/ai/model-catalog';
+import { anthropicModelsUrl } from './services/ai/anthropic-stream';
 
 interface AIProviderInput {
   id?: string;
   name: string;
   type: 'openai-compatible' | 'copilot';
   endpoint?: string;
+  catalogProvider?: string;
   apiKey?: string;
   model: string;
   isDefault?: boolean;
-  availableModels?: string[];
+  availableModels?: ModelConfig[];
   customHeaders?: Record<string, string>;
   autoCORSFix?: boolean;
+  apiFormat?: ApiFormat;
+  useMaxCompletionTokens?: boolean;
 }
 
-interface AIProvider {
-  id: string;
-  name: string;
-  type: 'openai-compatible' | 'copilot';
-  endpoint?: string;
-  apiKeyEncrypted?: string;
-  model: string;
-  availableModels?: string[];
-  customHeaders?: Record<string, string>;
-  autoCORSFix?: boolean;
-  isDefault: boolean;
-  createdAt: number;
-  updatedAt: number;
+function parseHeaders(value: string | null): Record<string, string> | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+    const headers = Object.entries(parsed).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    );
+    return Object.fromEntries(headers);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -44,13 +56,15 @@ export function setupAIHandlers(): void {
   ipcMain.handle('ai:get-providers', async (): Promise<AIProvider[]> => {
     const db = getDatabase().getDb();
     const rows = db.prepare(`
-      SELECT id, name, type, endpoint, api_key_encrypted, model, available_models, custom_headers, auto_cors_fix, is_default, created_at, updated_at
+      SELECT id, name, type, endpoint, catalog_provider, api_key_encrypted, model, available_models, custom_headers,
+             auto_cors_fix, api_format, use_max_completion_tokens, is_default, created_at, updated_at
       FROM ai_providers ORDER BY is_default DESC, name ASC
     `).all() as Array<{
       id: string;
       name: string;
       type: string;
       endpoint: string | null;
+      catalog_provider: string | null;
       api_key_encrypted: string | null;
       model: string;
       is_default: number;
@@ -59,41 +73,27 @@ export function setupAIHandlers(): void {
       available_models: string | null;
       custom_headers: string | null;
       auto_cors_fix: number | null;
+      api_format: string | null;
+      use_max_completion_tokens: number | null;
     }>;
 
-    return rows.map(row => {
-        let availableModels: any[] | undefined = undefined;
-        if (row.available_models) {
-            try {
-                const parsed = JSON.parse(row.available_models);
-                if (Array.isArray(parsed)) {
-                    // Check if it's the old format (string[])
-                    if (parsed.length > 0 && typeof parsed[0] === 'string') {
-                         availableModels = parsed.map((id: string) => ({ id, name: id, enabled: true }));
-                    } else {
-                         availableModels = parsed;
-                    }
-                }
-            } catch (e) {
-                console.error("Failed to parse available models", e);
-            }
-        }
-
-        return {
+    return rows.map(row => ({
             id: row.id,
             name: row.name,
-            type: row.type as 'openai-compatible' | 'copilot',
+            type: row.type === 'copilot' ? 'copilot' : 'openai-compatible',
             endpoint: row.endpoint || undefined,
+            catalogProvider: row.catalog_provider || undefined,
             apiKeyEncrypted: row.api_key_encrypted || undefined,
             model: row.model,
-            availableModels,
-            customHeaders: row.custom_headers ? JSON.parse(row.custom_headers) : undefined,
+            availableModels: parseStoredModels(row.available_models),
+            customHeaders: parseHeaders(row.custom_headers),
             autoCORSFix: row.auto_cors_fix === 1,
+            apiFormat: normalizeApiFormat(row.api_format),
+            useMaxCompletionTokens: row.use_max_completion_tokens === 1,
             isDefault: row.is_default === 1,
             createdAt: row.created_at,
             updatedAt: row.updated_at,
-        };
-    });
+    }));
   });
 
   // Add provider
@@ -115,18 +115,23 @@ export function setupAIHandlers(): void {
     }
 
     db.prepare(`
-      INSERT INTO ai_providers (id, name, type, endpoint, api_key_encrypted, model, available_models, custom_headers, auto_cors_fix, is_default, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO ai_providers (
+        id, name, type, endpoint, catalog_provider, api_key_encrypted, model, available_models, custom_headers,
+        auto_cors_fix, api_format, use_max_completion_tokens, is_default, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       input.name,
       input.type,
       input.endpoint || null,
+      input.catalogProvider || null,
       apiKeyEncrypted,
       input.model,
       input.availableModels ? JSON.stringify(input.availableModels) : null,
       input.customHeaders ? JSON.stringify(input.customHeaders) : null,
       input.autoCORSFix !== false ? 1 : 0, // Default to true if undefined
+      normalizeApiFormat(input.apiFormat),
+      input.useMaxCompletionTokens ? 1 : 0,
       input.isDefault ? 1 : 0,
       now,
       now
@@ -137,10 +142,14 @@ export function setupAIHandlers(): void {
       name: input.name,
       type: input.type,
       endpoint: input.endpoint,
+      catalogProvider: input.catalogProvider,
       apiKeyEncrypted: apiKeyEncrypted || undefined,
       model: input.model,
+      availableModels: input.availableModels,
       customHeaders: input.customHeaders,
       autoCORSFix: input.autoCORSFix ?? true,
+      apiFormat: normalizeApiFormat(input.apiFormat),
+      useMaxCompletionTokens: input.useMaxCompletionTokens ?? false,
       isDefault: input.isDefault || false,
       createdAt: now,
       updatedAt: now,
@@ -158,6 +167,9 @@ export function setupAIHandlers(): void {
     // Get existing provider
     const existing = db.prepare('SELECT * FROM ai_providers WHERE id = ?').get(input.id) as {
       api_key_encrypted: string | null;
+      catalog_provider: string | null;
+      api_format: string | null;
+      use_max_completion_tokens: number | null;
     } | undefined;
     
     if (!existing) throw new Error('Provider not found');
@@ -172,68 +184,63 @@ export function setupAIHandlers(): void {
       db.prepare('UPDATE ai_providers SET is_default = 0').run();
     }
 
-    // Validate model vs availableModels
+    // Keep the active model inside the enabled model set when possible.
     let modelToSave = input.model;
     if (input.availableModels && input.availableModels.length > 0) {
-        // Handle both string[] and object[] (ModelConfig[])
-        const firstItem = input.availableModels[0];
-        const isString = typeof firstItem === 'string';
-        
-        let enabledIds: string[] = [];
-        let allIds: string[] = [];
-        
-        if (isString) {
-            allIds = input.availableModels as unknown as string[];
-            enabledIds = allIds; // Strings are always "enabled"
-        } else {
-            const list = input.availableModels as unknown as { id: string, enabled?: boolean }[];
-            allIds = list.map(m => m.id);
-            enabledIds = list.filter(m => m.enabled !== false).map(m => m.id);
-        }
-            
-        // If current model is not ENABLED, default to the first enabled one
+        const enabledIds = input.availableModels.filter(model => model.enabled).map(model => model.id);
         if (!enabledIds.includes(modelToSave)) {
-             if (enabledIds.length > 0) {
-                 modelToSave = enabledIds[0];
-             } else if (allIds.length > 0) {
-                 // Fallback: If ALL are disabled, we still need to store *something* valid in DB
-                 // effectively "first available" even if disabled, or keep current if it exists in allIds
-                 // Let's pick first from allIds to be safe against deletions
-                 modelToSave = allIds[0];
-             }
+          modelToSave = enabledIds[0] || '';
         }
     }
+    const useMaxCompletionTokens = input.useMaxCompletionTokens
+      ?? existing.use_max_completion_tokens === 1;
 
     db.prepare(`
       UPDATE ai_providers SET
         name = ?,
         endpoint = ?,
+        catalog_provider = ?,
         api_key_encrypted = ?,
         model = ?,
         available_models = ?,
         custom_headers = ?,
         auto_cors_fix = ?,
+        api_format = ?,
+        use_max_completion_tokens = ?,
         is_default = ?,
         updated_at = ?
       WHERE id = ?
     `).run(
       input.name,
       input.endpoint || null,
+      input.catalogProvider === undefined ? existing.catalog_provider : input.catalogProvider || null,
       apiKeyEncrypted,
       modelToSave,
       input.availableModels ? JSON.stringify(input.availableModels) : null,
       input.customHeaders ? JSON.stringify(input.customHeaders) : null,
       input.autoCORSFix !== false ? 1 : 0,
+      normalizeApiFormat(input.apiFormat ?? existing.api_format),
+      useMaxCompletionTokens ? 1 : 0,
       input.isDefault ? 1 : 0,
       now,
       input.id
     );
+    invalidateProviderContextWindows(input.id);
+  });
+
+  ipcMain.handle('ai:get-model-catalog-providers', async () => {
+    return loadProviderCatalog();
+  });
+
+  ipcMain.handle('ai:update-model-catalog', async () => {
+    return updateModelCatalog();
   });
 
   // Delete provider
   ipcMain.handle('ai:delete-provider', async (_event, id: string): Promise<void> => {
     const db = getDatabase().getDb();
     db.prepare('DELETE FROM ai_providers WHERE id = ?').run(id);
+    invalidateProviderContextWindows(id);
   });
 
   // Get decrypted API key
@@ -263,7 +270,9 @@ export function setupAIHandlers(): void {
     apiKey?: string;
     customHeaders?: Record<string, string>;
     autoCORSFix?: boolean;
-  }): Promise<{ success: boolean; error?: string; models?: string[] }> => {
+    apiFormat?: ApiFormat;
+    catalogProvider?: string;
+  }): Promise<{ success: boolean; error?: string; models?: ModelConfig[] }> => {
     
     // Handle OpenAI Compatible & Copilot
     if (provider.type !== 'openai-compatible' && provider.type !== 'copilot') {
@@ -278,7 +287,8 @@ export function setupAIHandlers(): void {
       // Remove trailing slash
       if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
 
-      let headers: Record<string, string> = {
+      const apiFormat = normalizeApiFormat(provider.apiFormat);
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...provider.customHeaders
       };
@@ -318,10 +328,12 @@ export function setupAIHandlers(): void {
               endpoint = 'https://api.githubcopilot.com'; 
           }
       } else {
-         // Standard OpenAI / Ollama Logic
-         if (finalApiKey) {
-           headers['Authorization'] = `Bearer ${finalApiKey}`;
-         }
+        if (finalApiKey && apiFormat === 'anthropic-messages') {
+          headers['x-api-key'] = finalApiKey;
+          headers['anthropic-version'] = headers['anthropic-version'] || '2023-06-01';
+        } else if (finalApiKey) {
+          headers['Authorization'] = `Bearer ${finalApiKey}`;
+        }
       }
 
       // Auto CORS fix
@@ -332,70 +344,54 @@ export function setupAIHandlers(): void {
         } catch (e) { }
       }
 
-      let models: string[] = [];
-      let fetchSuccess = false;
-      let usedUrl = '';
-      let errorLog: string[] = [];
-
-      // Helper for trying a URL
-      const tryFetch = async (url: string, isOllamaNative: boolean = false) => {
-          if (fetchSuccess) return;
-          try {
-              if (process.env.NODE_ENV !== 'production') console.log(`Testing connection URL: ${url}`);
-              const res = await fetchWithLocalhostFallback(url, { method: 'GET', headers, signal: controller.signal });
-              
-              if (res.ok) {
-                  const data = await res.json() as any;
-                  
-                  if (isOllamaNative && data.models && Array.isArray(data.models)) {
-                      // Ollama native format: { models: [ { name: "llama2", ... }, ... ] }
-                      models = data.models.map((m: any) => m.name || m.model);
-                      fetchSuccess = true;
-                      usedUrl = url;
-                  } else if (Array.isArray(data.data)) {
-                      // OpenAI format: { data: [ { id: "gpt-4", ... }, ... ] }
-                      models = data.data.map((m: any) => m.id);
-                      fetchSuccess = true;
-                      usedUrl = url;
-                  }
-              } else {
-                  const text = await res.text();
-                  errorLog.push(`${url} returned ${res.status}: ${text}`);
-              }
-          } catch (e) {
-              errorLog.push(`${url} failed: ${(e as Error).message}`);
-          }
-      };
-
-      // 1. Try Standard OpenAI path (e.g. endpoint/models)
-      await tryFetch(`${endpoint}/models`);
-
-      clearTimeout(timeoutId);
-
-      if (models.length > 0) {
-          models.sort();
+      const modelsUrl = apiFormat === 'anthropic-messages'
+        ? anthropicModelsUrl(endpoint)
+        : `${endpoint}/models`;
+      let models: ModelConfig[] = [];
+      let errorDetail = '';
+      try {
+        if (process.env.NODE_ENV !== 'production') console.log(`Fetching models from: ${modelsUrl}`);
+        const response = await fetchWithLocalhostFallback(modelsUrl, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+        if (response.ok) {
+          const payload: unknown = await response.json();
+          models = enrichModelsFromLocalCatalog(
+            parseModelListPayload(payload),
+            provider.catalogProvider,
+          );
+        } else {
+          errorDetail = `${modelsUrl} returned ${response.status}: ${await response.text()}`;
+        }
+      } finally {
+        clearTimeout(timeoutId);
       }
 
       // -- Copilot Fallback & Merging --
       if (provider.type === 'copilot') {
           // Known Copilot Models
-          const fallbackModels = [
+          const fallbackModels: ModelConfig[] = [
               'gpt-4',
               'gpt-3.5-turbo',
               'o1-preview',
               'o1-mini',
               'claude-3.5-sonnet'
-          ];
-          const uniqueModels = new Set([...models, ...fallbackModels]);
-          models = Array.from(uniqueModels).sort();
+          ].map(id => ({ id, name: id, enabled: true }));
+          const uniqueModels = new Map(models.map(model => [model.id, model]));
+          for (const model of fallbackModels) {
+            if (!uniqueModels.has(model.id)) uniqueModels.set(model.id, model);
+          }
+          models = [...uniqueModels.values()].sort((left, right) => left.name.localeCompare(right.name));
           return { success: true, models };
       }
 
       // If we failed to fetch models and it's NOT copilot, we should warn user unless we decide to succeed anyway?
       // For generic OpenAI, listing models is crucial.
       // If we failed to fetch models and it's NOT copilot
-      if (!fetchSuccess || models.length === 0) {
-           return { success: false, error: `Could not fetch models. Verified: ${endpoint}. Details: ${errorLog.join('; ')}` }; 
+      if (models.length === 0) {
+           return { success: false, error: `Could not fetch models from ${modelsUrl}. ${errorDetail}`.trim() };
       }
 
       return { success: true, models };

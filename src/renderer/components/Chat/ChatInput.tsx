@@ -23,6 +23,7 @@ import {
   validateImageAttachmentMimeType,
 } from '../../../shared/image-attachments';
 import { isMcpStatusActive, McpStatus } from '../../../shared/profile-mcp';
+import type { ReasoningEffort } from '../../../shared/ai-provider';
 
 export interface ChatInputHandle {
     setText: (text: string) => void;
@@ -40,10 +41,22 @@ interface ChatInputProps {
   onUseSkillsChange: (enabled: boolean) => void;
   
   // Model Selection Props
-  models?: { providerId: string; modelId: string; label: string }[];
+  models?: Array<{
+    providerId: string;
+    modelId: string;
+    label: string;
+    contextWindow?: number;
+    maxOutputTokens?: number;
+    supportsImages?: boolean;
+    supportsReasoning?: boolean;
+    supportsToolCalls?: boolean;
+    reasoningEffortOptions?: ReasoningEffort[];
+  }>;
   selectedProviderId?: string;
   selectedModel?: string;
   onModelSelect?: (providerId: string, modelId: string) => void;
+  selectedReasoningEffort?: ReasoningEffort;
+  onReasoningEffortChange?: (effort: ReasoningEffort) => void;
 
   /** Tokens the last turn occupied, for the context ring. */
   contextUsed?: number;
@@ -62,6 +75,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     selectedProviderId = '',
     selectedModel = '',
     onModelSelect = () => {},
+    selectedReasoningEffort,
+    onReasoningEffortChange = () => {},
     contextUsed = 0
 }, ref) => {
   const [text, setText] = useState('');
@@ -75,6 +90,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [globalSystemPromptsEnabled, setGlobalSystemPromptsEnabled] = useState(true);
   const [images, setImages] = useState<string[]>([]);
   const [imageError, setImageError] = useState('');
+  const reasoningEffortOptions = models.find(model => (
+      model.providerId === selectedProviderId && model.modelId === selectedModel
+  ))?.reasoningEffortOptions || [];
 
   useEffect(() => {
     checkGlobalSettings();
@@ -366,6 +384,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                     </span>
                     <ChevronUp size={12} className="opacity-50 shrink-0" />
                 </button>
+                {reasoningEffortOptions.length > 0 && selectedReasoningEffort && (
+                    <select
+                      aria-label="Reasoning effort"
+                      title="Reasoning effort"
+                      value={selectedReasoningEffort}
+                      onChange={event => {
+                          const effort = reasoningEffortOptions.find(value => value === event.target.value);
+                          if (effort) onReasoningEffortChange(effort);
+                      }}
+                      disabled={disabled}
+                      className="h-7 max-w-24 rounded-lg border border-border bg-surface-light px-2 text-xs font-medium text-text-sec outline-none transition-colors hover:bg-surface-hover hover:text-text-main focus:border-primary/50"
+                    >
+                      {reasoningEffortOptions.map(effort => (
+                          <option key={effort} value={effort}>{effort}</option>
+                      ))}
+                    </select>
+                )}
             </div>
 
 

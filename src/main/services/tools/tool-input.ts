@@ -6,8 +6,26 @@ export type PreparedToolInput =
   | { kind: 'valid'; input: JsonObject }
   | { kind: 'invalid'; error: string };
 
+export type ParsedToolArguments =
+  | { kind: 'valid'; input: JsonObject }
+  | { kind: 'invalid'; error: string };
+
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function parseToolArguments(value: string): ParsedToolArguments {
+  if (value.trim() === '') return { kind: 'valid', input: {} };
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isJsonObject(parsed)
+      ? { kind: 'valid', input: parsed }
+      : { kind: 'invalid', error: 'tool arguments must be a JSON object' };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { kind: 'invalid', error: `tool arguments contain invalid JSON: ${message}` };
+  }
 }
 
 function formatErrors(errors: ErrorObject[] | null | undefined): string {

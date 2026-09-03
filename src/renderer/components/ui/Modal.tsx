@@ -9,9 +9,10 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   width?: string;
+  alwaysShowScrollbar?: boolean;
 }
 
-export function Modal({ isOpen, onClose, title, children, width = 'max-w-md' }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, width = 'max-w-md', alwaysShowScrollbar = false }: ModalProps) {
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -29,7 +30,7 @@ export function Modal({ isOpen, onClose, title, children, width = 'max-w-md' }: 
            initial={{ opacity: 0, scale: 0.95 }}
            animate={{ opacity: 1, scale: 1 }}
            exit={{ opacity: 0, scale: 0.95 }}
-           className={`bg-surface border border-border rounded-xl shadow-xl w-full ${width} max-h-full overflow-hidden flex flex-col`}
+           className={`bg-surface border border-border rounded-xl shadow-xl w-full ${width} max-h-[calc(100vh-2rem)] overflow-hidden flex flex-col`}
         >
           <div className="flex items-center justify-between p-4 border-b border-border">
             <h3 className="font-semibold text-text-main">{title}</h3>
@@ -37,7 +38,7 @@ export function Modal({ isOpen, onClose, title, children, width = 'max-w-md' }: 
               <X size={20} />
             </button>
           </div>
-          <div className="p-0 overflow-y-auto flex-1">
+          <div className={`p-0 flex-1 ${alwaysShowScrollbar ? 'overflow-y-scroll [scrollbar-gutter:stable]' : 'overflow-y-auto'}`}>
             {children}
           </div>
         </motion.div>

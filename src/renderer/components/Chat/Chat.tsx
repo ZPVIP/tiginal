@@ -3,7 +3,12 @@ import { MessageList } from './MessageList';
 import { ChatInput, ChatInputHandle } from './ChatInput';
 import { EmptyState } from './EmptyState';
 
-import { AIProvider, ModelConfig } from '../../settings/ai-constants';
+import {
+  AIProvider,
+  defaultReasoningEffort,
+  ModelConfig,
+  ReasoningEffort,
+} from '../../settings/ai-constants';
 import { EyeOff, Trash2 } from 'lucide-react';
 import { IMAGE_ATTACHMENT_FORMAT_MESSAGE } from '../../../shared/image-attachments';
 
@@ -28,6 +33,7 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffort>();
   
   const [isLoading, setIsLoading] = useState(false);
   const [isIncognito, setIsIncognito] = useState(false);
@@ -383,7 +389,8 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
 
               await invoke('chat:send-message', conv.id, selectedProviderId, messageContent, selectedModel, { 
                   useSkills,
-                  images: imagePaths
+                  images: imagePaths,
+                  reasoningEffort: effectiveReasoningEffort,
               });
               
               await invoke('chat:delete-conversation', conv.id);
@@ -425,7 +432,8 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
       try {
           await invoke('chat:send-message', convId, selectedProviderId, messageContent, selectedModel, { 
               useSkills,
-              images: imagePaths
+              images: imagePaths,
+              reasoningEffort: effectiveReasoningEffort,
           });
       } catch (err) {
           setMessages(prev => {
@@ -488,7 +496,17 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
   };
 
   const allModels = React.useMemo(() => {
-     const list: { providerId: string; modelId: string; label: string }[] = [];
+     const list: Array<{
+       providerId: string;
+       modelId: string;
+       label: string;
+       contextWindow?: number;
+       maxOutputTokens?: number;
+       supportsImages?: boolean;
+       supportsReasoning?: boolean;
+       supportsToolCalls?: boolean;
+       reasoningEffortOptions?: ReasoningEffort[];
+     }> = [];
      
      providers.forEach(p => {
          let hasDefault = false;
@@ -500,7 +518,13 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
                      list.push({
                          providerId: p.id,
                          modelId: mObj.id, // Correctly use ID
-                         label: `${p.name} / ${mObj.name}`
+                         label: `${p.name} / ${mObj.name}`,
+                         contextWindow: mObj.contextWindow,
+                         maxOutputTokens: mObj.maxOutputTokens,
+                         supportsImages: mObj.supportsImages,
+                         supportsReasoning: mObj.supportsReasoning,
+                         supportsToolCalls: mObj.supportsToolCalls,
+                         reasoningEffortOptions: mObj.reasoningEffortOptions,
                      });
                      if (mObj.id === p.model) hasDefault = true;
                  }
@@ -540,6 +564,22 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
      });
      return list;
   }, [providers]);
+
+  const selectedReasoningEffortOptions = React.useMemo(() => (
+      allModels.find(model => (
+          model.providerId === selectedProviderId && model.modelId === selectedModel
+      ))?.reasoningEffortOptions || []
+  ), [allModels, selectedProviderId, selectedModel]);
+  const effectiveReasoningEffort = selectedReasoningEffort
+      && selectedReasoningEffortOptions.includes(selectedReasoningEffort)
+      ? selectedReasoningEffort
+      : defaultReasoningEffort(selectedReasoningEffortOptions);
+
+  React.useEffect(() => {
+      if (selectedReasoningEffort !== effectiveReasoningEffort) {
+          setSelectedReasoningEffort(effectiveReasoningEffort);
+      }
+  }, [effectiveReasoningEffort, selectedReasoningEffort]);
 
   // Validate selection when model list changes
   React.useEffect(() => {
@@ -713,6 +753,8 @@ export const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(props, ref) 
         models={allModels}
         selectedProviderId={selectedProviderId}
         selectedModel={selectedModel}
+        selectedReasoningEffort={effectiveReasoningEffort}
+        onReasoningEffortChange={setSelectedReasoningEffort}
         onModelSelect={(pId, mId) => handleModelSelect(`${pId}:${mId}`)}
         contextUsed={contextUsed}
       />
