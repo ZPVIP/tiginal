@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "description": "A cross-platform terminal emulator with SSH management and AI-powered command history",
   "main": "dist/main/main/index.js",
+  "bin": {
+    "tiginal": "bin/tiginal.js"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
     "dev:main": "tsc -p tsconfig.main.json --watch",
@@ -18,7 +21,8 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "postinstall": "electron-rebuild",
-    "test": "npm run build:main && node --test test/*.test.js"
+    "test": "npm run build:main && node --test test/*.test.js",
+    "test:credentials": "npm run build:main && node scripts/credential-harness.cjs"
   },
   "author": "",
   "license": "MIT",
@@ -41,6 +45,7 @@
     "vite": "^7.3.1"
   },
   "dependencies": {
+    "@pierre/trees": "1.0.0-beta.6",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "ajv": "^6.12.6",

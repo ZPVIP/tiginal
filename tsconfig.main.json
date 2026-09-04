@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "declaration": false
   },
-  "include": ["src/main/**/*", "src/shared/**/*"],
+  "include": ["src/main/**/*", "src/shared/**/*", "src/cli/**/*"],
   "exclude": ["node_modules"]
 }

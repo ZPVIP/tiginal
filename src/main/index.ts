@@ -28,6 +28,7 @@ import { setupToolHandlers } from './tool-handlers';
 import { setupStatisticsHandlers } from './statistics-handlers';
 import { setupProfileHandlers } from './profile-handlers';
 import { setupMcpHandlers } from './mcp-handlers';
+import { setupCredentialHandlers } from './credential-handlers';
 import { registerImageScheme, setupImageHandlers } from './image-handlers';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
@@ -289,6 +290,7 @@ app.whenReady().then(async () => {
   setupProfileHandlers();
   setupMcpHandlers();
   setupImageHandlers();
+  setupCredentialHandlers();
   
   // Initialize default skills directory
   getDatabase().getDb().prepare(
@@ -329,4 +331,12 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   const { getMcpService } = require('./services/mcp/McpService');
   void getMcpService().disposeAll();
+
+  // Live credential sessions have decrypted material in temporary files. This
+  // is one of three cleanup layers: the startup orphan sweep is what covers a
+  // crash that never reaches this handler.
+  const { getCredentialRuntime } = require('./services/credentials/CredentialRuntime');
+  getCredentialRuntime().disposeAll();
+  const { stopCredentialSocket } = require('./services/credentials/CredentialSocket');
+  stopCredentialSocket();
 });

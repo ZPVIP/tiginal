@@ -8,6 +8,7 @@ directories:
 publish: null
 
 files:
+  - bin/**/*
   - dist/**/*
   - src/renderer/index.html
   - src/renderer/styles.css

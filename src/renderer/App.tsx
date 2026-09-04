@@ -1,19 +1,18 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { TerminalSquare, Server, Settings as SettingsIcon, MessageSquare, PanelLeft, PanelLeftClose, SquarePen, EyeOff, SquareSplitHorizontal } from 'lucide-react';
+import { TerminalSquare, KeyRound, Settings as SettingsIcon, MessageSquare, PanelLeft, PanelLeftClose, SquarePen, EyeOff, SquareSplitHorizontal } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SettingsModal } from './components/Settings/SettingsModal';
 import { Chat, ChatHandle } from './components/Chat/Chat';
 import { TerminalView } from './components/Terminal/TerminalView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Drawer } from './components/Drawer/Drawer';
-
-const SSHView = () => <div className="p-4 text-text-muted">SSH Servers (Placeholder)</div>;
+import { CredentialsSettings } from './components/Settings/CredentialsSettings';
 
 // Platform detection
 const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'terminal' | 'ssh'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'credentials'>('terminal');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Layout State
@@ -143,7 +142,7 @@ export default function App() {
     setShowTerminal(false);
   };
 
-  const switchToTerminal = (tab?: 'terminal' | 'ssh') => {
+  const switchToTerminal = (tab?: 'terminal' | 'credentials') => {
     setShowChat(false);
     setShowTerminal(true);
     if (tab) setActiveTab(tab);
@@ -154,7 +153,7 @@ export default function App() {
     setShowTerminal(true);
   };
 
-  const handleNavClick = (id: 'terminal' | 'ssh') => {
+  const handleNavClick = (id: 'terminal' | 'credentials') => {
     switchToTerminal(id);
   };
 
@@ -280,11 +279,11 @@ export default function App() {
               onClick={switchToIDE}
             />
             <NavItem
-              id="ssh"
-              icon={Server}
-              title="SSH Servers"
-              isActive={!showChat && showTerminal && activeTab === 'ssh'}
-              onClick={() => switchToTerminal('ssh')}
+              id="credentials"
+              icon={KeyRound}
+              title="Credentials"
+              isActive={!showChat && showTerminal && activeTab === 'credentials'}
+              onClick={() => switchToTerminal('credentials')}
             />
             <NavItem
               id="settings"
@@ -356,7 +355,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Right Pane: Terminal/SSH (now on right) */}
+            {/* Right Pane: Terminal/Credentials (now on right) */}
             <div
               className={clsx(
                 "overflow-hidden relative min-w-0",
@@ -372,7 +371,7 @@ export default function App() {
               <div className={clsx("h-full w-full", activeTab !== 'terminal' && "hidden")}>
                 <TerminalView onActivePathChange={setActiveTerminalPath} />
               </div>
-              {activeTab === 'ssh' && <SSHView />}
+              {activeTab === 'credentials' && <CredentialsSettings />}
             </div>
           </div>
         </div>
