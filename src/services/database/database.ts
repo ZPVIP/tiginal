@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 27;
+const SCHEMA_VERSION = 28;
 
 /**
  * Database service for Tiginal
@@ -173,6 +173,10 @@ export class DatabaseService {
 
     if (currentVersion < 27) {
       this.migrateV27();
+    }
+
+    if (currentVersion < 28) {
+      this.migrateV28();
     }
 
     // Update schema version
@@ -898,6 +902,42 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_credential_audit_at
         ON credential_audit(at DESC);
     `);
+  }
+
+  /**
+   * Migration v28: the user declares what a managed credential file is.
+   *
+   * `kind` records which add action created the row. A path cannot say whether
+   * a file is a whole-file secret, a key/value file, or an SSH private key,
+   * and the value rules differ for each, so guessing from the name was the
+   * thing to remove. Existing rows are backfilled from their format, which is
+   * exactly what the old detection produced.
+   *
+   * `swap_during_session` goes with it. The session dialog already chooses
+   * between writing real values at the original paths and authorizing the CLI,
+   * so a per-file opt-in was a second place to say the same thing.
+   */
+  private migrateV28(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE credential_files ADD COLUMN kind TEXT NOT NULL DEFAULT 'env'`);
+    } catch {
+      // Column might already exist.
+    }
+    try {
+      this.db.exec(`ALTER TABLE credential_files ADD COLUMN public_key_path TEXT`);
+    } catch {
+      // Column might already exist.
+    }
+
+    this.db.exec(`UPDATE credential_files SET kind = 'key' WHERE format = 'opaque'`);
+
+    try {
+      this.db.exec(`ALTER TABLE credential_files DROP COLUMN swap_during_session`);
+    } catch {
+      // An older SQLite cannot drop a column. Nothing reads it either way.
+    }
   }
 
   /**

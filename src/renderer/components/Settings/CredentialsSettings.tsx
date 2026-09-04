@@ -1,20 +1,29 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { clsx } from 'clsx';
 import {
-  KeyRound, FolderTree, History, ChevronLeft, ChevronRight,
-  Plus, FilePlus, Search, Zap, Trash2, ShieldCheck, AlertTriangle,
+  KeyRound, FolderTree, Plus, FileCode, Fingerprint, Zap, Trash2, ShieldCheck, AlertTriangle,
 } from 'lucide-react';
 import { SettingsPageHeader } from './SettingsPageHeader';
 import { CredentialLocationTree } from './CredentialLocationTree';
-import { Modal } from '../ui/Modal';
-import { Toggle } from '../ui/Toggle';
+import { ProjectPicker } from './ProjectPicker';
+import { AddProjectDialog } from './AddProjectDialog';
+import { FileContentPanel } from './FileContentPanel';
+import { AuthorizeSessionDialog } from './AuthorizeSessionDialog';
+import { DriftReviewDialog } from './DriftReviewDialog';
+import { CredentialActivityPane } from './CredentialActivityPane';
+import {
+  PILL, NEUTRAL_PILL, MUTED_PILL, GREEN_PILL, GROUP_PILLS, FILE_PILLS,
+  BTN_SUBTLE, EMPTY,
+} from './credentialStyles';
+import type { NewProjectInput } from './AddProjectDialog';
+import type { CredentialCall, ManagedFile } from './FileContentPanel';
+import type { ActivateDraft } from './AuthorizeSessionDialog';
 import type {
   AuditRecord, CredentialFileLocation, CredentialSession, CredentialUiSessionGrant,
-  CredentialUiSessionMode, CredentialUiSessionRequest, FileFormat, FileState, GroupKind, GroupScope,
-  GroupStatus, GroupStatusReport, GroupSummary, Injection, SecretType,
+  CredentialUiSessionMode, CredentialUiSessionRequest, FileKind, FileState,
+  GroupStatusReport, GroupSummary, SecretType,
 } from '../../../shared/credentials/types';
 
-type ManagedFile = GroupStatusReport['files'][number];
 type CredentialDivider = 'tree-details' | 'details-activity';
 
 type ResizeState =
@@ -27,23 +36,9 @@ interface ColumnRatios {
   activity: number;
 }
 
-interface ScanResult {
-  absolutePath: string;
-  relativePath: string;
-  format: FileFormat;
-  suggestedKind: GroupKind;
-}
-
 interface InspectResult {
   state: FileState;
   keys: Array<{ key: string; secretType: SecretType; masked: true }>;
-}
-
-interface ActivateDraft {
-  rootId: string;
-  selected: Set<string>;
-  ttlMinutes: number;
-  mode: CredentialUiSessionMode;
 }
 
 interface LiveSession {
@@ -58,22 +53,6 @@ interface DriftDraft {
   armed: boolean;
 }
 
-interface GroupDraft {
-  parentId: string | null;
-  name: string;
-  kind: GroupKind;
-  scope: GroupScope;
-  rootPath: string | null;
-}
-
-interface ScanDraft {
-  groupId: string;
-  rootPath: string;
-  results: ScanResult[];
-  selected: Set<string>;
-}
-
-const PAGE_SIZE = 10;
 const CREDENTIALS_LAYOUT_KEY = 'credentials-layout-config-v1';
 const DIVIDER_WIDTH = 1;
 const COLUMN_MINIMUMS = { tree: 220, details: 320, activity: 280 };
@@ -82,42 +61,6 @@ const MIN_WORKSPACE_WIDTH = COLUMN_MINIMUMS.tree
   + COLUMN_MINIMUMS.activity
   + DIVIDER_WIDTH * 2;
 const DEFAULT_COLUMN_RATIOS: ColumnRatios = { tree: 0.25, details: 0.45, activity: 0.3 };
-
-const TTL_CHOICES = [5, 15, 30, 60];
-
-const GROUP_KINDS: GroupKind[] = ['generic', 'rails', 'kamal', 'terraform', 'ssh', 'aws'];
-const GROUP_SCOPES: GroupScope[] = ['project', 'system'];
-const INJECTIONS: Injection[] = ['env', 'file', 'both'];
-
-const NEUTRAL_PILL = 'bg-surface-light border-border text-text-muted';
-const MUTED_PILL = 'bg-surface-light border-border text-text-muted/70';
-const AMBER_PILL = 'bg-amber-500/10 border-amber-500/30 text-amber-400';
-const GREEN_PILL = 'bg-green-500/10 border-green-500/30 text-green-400';
-const RED_PILL = 'bg-red-500/10 border-red-500/30 text-red-400';
-
-const GROUP_PILLS: Record<GroupStatus, { label: string; className: string }> = {
-  safe: { label: 'SAFE', className: NEUTRAL_PILL },
-  drifted: { label: 'DRIFTED', className: AMBER_PILL },
-  live: { label: 'LIVE', className: GREEN_PILL },
-  unmanaged: { label: 'UNMANAGED', className: MUTED_PILL },
-  missing: { label: 'MISSING', className: RED_PILL },
-};
-
-const FILE_PILLS: Record<FileState['kind'], { label: string; className: string }> = {
-  safe: { label: 'SAFE', className: NEUTRAL_PILL },
-  'safe-edited': { label: 'SAFE (EDITED)', className: NEUTRAL_PILL },
-  drifted: { label: 'DRIFTED', className: AMBER_PILL },
-  missing: { label: 'MISSING', className: RED_PILL },
-  unmanaged: { label: 'UNMANAGED', className: MUTED_PILL },
-};
-
-const PILL = 'text-[10px] px-1.5 py-0.5 rounded border shrink-0';
-const BTN_PRIMARY = 'flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm rounded-lg hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-const BTN_SUBTLE = 'flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border text-text-main text-xs rounded-lg hover:border-primary hover:bg-surface-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-const BTN_MODAL = 'px-4 py-2 text-sm bg-background hover:bg-surface-light border border-border rounded-lg transition-colors';
-const BTN_MODAL_PRIMARY = 'px-4 py-2 text-sm bg-primary hover:opacity-90 text-primary-foreground rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-const FIELD = 'bg-background text-text-main text-sm rounded-lg py-2 px-3 border border-border focus:border-primary outline-none';
-const EMPTY = 'text-center py-8 text-text-muted text-sm';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -191,11 +134,6 @@ function cleanError(error: unknown): string {
     || 'Something went wrong';
 }
 
-function nativeBasename(filePath: string): string {
-  const trimmed = filePath.replace(/[\\/]+$/, '');
-  return trimmed.split(/[\\/]/).filter(Boolean).at(-1) ?? trimmed;
-}
-
 function descendantsOf(groups: GroupSummary[], group: GroupSummary) {
   const start = groups.findIndex((g) => g.id === group.id);
   if (start < 0) return [];
@@ -227,13 +165,10 @@ export function CredentialsSettings() {
   const [live, setLive] = useState<LiveSession | null>(null);
   const [activate, setActivate] = useState<ActivateDraft | null>(null);
   const [drift, setDrift] = useState<DriftDraft | null>(null);
-  const [groupDraft, setGroupDraft] = useState<GroupDraft | null>(null);
-  const [scan, setScan] = useState<ScanDraft | null>(null);
+  const [addingProject, setAddingProject] = useState(false);
   const [cli, setCli] = useState<{ socketPath: string; installed: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
-  const [sessionPage, setSessionPage] = useState(0);
-  const [auditPage, setAuditPage] = useState(0);
   const [preferredRatios, setPreferredRatios] = useState<ColumnRatios>(readColumnRatios);
   const [workspaceWidth, setWorkspaceWidth] = useState(MIN_WORKSPACE_WIDTH);
   const [resizeState, setResizeState] = useState<ResizeState>({ kind: 'idle' });
@@ -242,9 +177,10 @@ export function CredentialsSettings() {
   const detailsPaneRef = useRef<HTMLElement>(null);
   const activityPaneRef = useRef<HTMLElement>(null);
 
-  const invoke = window.electron?.invoke || (async () => null);
-
-  const call = async <T,>(channel: string, ...args: unknown[]): Promise<T | null> => {
+  /** Stable so the detail pane's reveal effect is not refired by every parent render. */
+  const call = useCallback<CredentialCall>(async <T,>(channel: string, ...args: unknown[]) => {
+    const invoke = window.electron?.invoke;
+    if (!invoke) return null;
     setBusy(true);
     try {
       return (await invoke(channel, ...args)) as T | null;
@@ -254,7 +190,7 @@ export function CredentialsSettings() {
     } finally {
       setBusy(false);
     }
-  };
+  }, []);
 
   const loadSessions = async (list: GroupSummary[]) => {
     const [rows, records, cliStatus] = await Promise.all([
@@ -422,6 +358,11 @@ export function CredentialsSettings() {
 
   const pathById = useMemo(() => new Map(groups.map((g) => [g.id, g.path])), [groups]);
 
+  const visibleLocations = useMemo(
+    () => locations.filter((location) => location.groupId === selectedId),
+    [locations, selectedId],
+  );
+
   const selectedFile = useMemo<ManagedFile | null>(() => {
     if (!detail) return null;
     return detail.files.find((file) => file.id === selectedFileId) ?? detail.files[0] ?? null;
@@ -446,35 +387,19 @@ export function CredentialsSettings() {
     if (report) setDetail(report);
   };
 
-  const openGroupDraft = async (parentId: string | null) => {
-    if (parentId !== null) {
-      setGroupDraft({ parentId, name: '', kind: 'generic', scope: 'project', rootPath: null });
-      return;
-    }
-    const rootPath = await call<string>('credentials:choose-directory');
-    if (!rootPath) return;
-    setGroupDraft({
-      parentId: null,
-      name: nativeBasename(rootPath),
-      kind: 'generic',
-      scope: 'project',
-      rootPath,
-    });
-  };
-
-  const createGroup = async (draft: GroupDraft) => {
+  const createProject = async (input: NewProjectInput) => {
     const created = await call<GroupSummary>('credentials:create-group', {
-      parentId: draft.parentId,
-      name: draft.name.trim(),
-      kind: draft.kind,
-      scope: draft.scope,
-      rootPath: draft.rootPath,
+      parentId: null,
+      name: input.name,
+      kind: 'generic',
+      scope: input.scope,
+      rootPath: input.rootPath,
     });
-    setGroupDraft(null);
+    setAddingProject(false);
     if (created) {
       setSelectedId(created.id);
       setSelectedFileId(null);
-      setBanner({ kind: 'info', text: `Created ${created.name || draft.name.trim()}` });
+      setBanner({ kind: 'info', text: `Created ${created.name || input.name}` });
     }
     await refresh(created?.id ?? selectedId);
   };
@@ -491,11 +416,11 @@ export function CredentialsSettings() {
     await refresh(nextSelected);
   };
 
-  const addFiles = async (groupId: string) => {
+  const addFiles = async (groupId: string, kind: FileKind) => {
     const paths = await call<string[]>('credentials:choose-files');
     if (!paths || paths.length === 0) return;
     const result = await call<{ imported: number; skipped: number; errors: string[] }>(
-      'credentials:import-files', groupId, paths,
+      'credentials:import-files', groupId, paths, kind,
     );
     if (result) {
       const errors = result.errors || [];
@@ -527,43 +452,6 @@ export function CredentialsSettings() {
     await refresh(groupId);
   };
 
-  const openScan = async (group: GroupSummary) => {
-    const rootPath = await call<string>('credentials:choose-directory');
-    if (!rootPath) return;
-    const results = (await call<ScanResult[]>('credentials:scan-project', rootPath)) || [];
-    setScan({
-      groupId: group.id,
-      rootPath,
-      results,
-      selected: new Set(results.map((r) => r.absolutePath)),
-    });
-  };
-
-  const toggleScanFile = (absolutePath: string) => {
-    setScan((prev) => {
-      if (!prev) return prev;
-      const selected = new Set(prev.selected);
-      if (selected.has(absolutePath)) selected.delete(absolutePath);
-      else selected.add(absolutePath);
-      return { ...prev, selected };
-    });
-  };
-
-  const importScan = async (draft: ScanDraft) => {
-    setScan(null);
-    const result = await call<{ imported: number; skipped: number; errors: string[] }>(
-      'credentials:import-files', draft.groupId, [...draft.selected],
-    );
-    if (result) {
-      const errors = result.errors || [];
-      setBanner({
-        kind: errors.length ? 'error' : 'info',
-        text: `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}${errors.length ? `. ${errors.join('; ')}` : ''}`,
-      });
-    }
-    await refresh(draft.groupId);
-  };
-
   const materializeSafe = async (groupId: string) => {
     const result = await call<unknown>('credentials:materialize-safe', groupId);
     if (result) {
@@ -575,16 +463,6 @@ export function CredentialsSettings() {
       });
     }
     await refresh(groupId);
-  };
-
-  const setInjection = async (file: ManagedFile, injection: Injection) => {
-    await call('credentials:set-file-injection', file.id, injection, file.swapDuringSession);
-    await refresh(selectedId);
-  };
-
-  const setSwap = async (file: ManagedFile, nextValue: boolean) => {
-    await call('credentials:set-file-injection', file.id, file.injection, nextValue);
-    await refresh(selectedId);
   };
 
   const inspectFile = async (file: ManagedFile) => {
@@ -637,16 +515,6 @@ export function CredentialsSettings() {
     });
   };
 
-  const toggleActivateGroup = (id: string) => {
-    setActivate((prev) => {
-      if (!prev) return prev;
-      const selected = new Set(prev.selected);
-      if (selected.has(id)) selected.delete(id);
-      else selected.add(id);
-      return { ...prev, selected };
-    });
-  };
-
   const beginSession = async (draft: ActivateDraft) => {
     const ttlMs = draft.ttlMinutes * 60_000;
     const root = groups.find((g) => g.id === draft.rootId);
@@ -675,12 +543,6 @@ export function CredentialsSettings() {
     await load();
   };
 
-  const paginate = <T,>(items: T[], page: number) => items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const totalPages = (total: number) => Math.ceil(total / PAGE_SIZE);
-
-  const pagedSessions = paginate(sessions, sessionPage);
-  const pagedAudit = paginate(audit, auditPage);
-
   const activateRoot = activate ? groups.find((g) => g.id === activate.rootId) ?? null : null;
   const activateDescendants = activateRoot ? descendantsOf(groups, activateRoot) : [];
   const driftFile = drift && detail ? detail.files.find((f) => f.id === drift.fileId) ?? null : null;
@@ -700,28 +562,6 @@ export function CredentialsSettings() {
     const pill = FILE_PILLS[state.kind] ?? FILE_PILLS.unmanaged;
     return <span className={clsx(PILL, pill.className)}>{pill.label}</span>;
   };
-
-  const pager = (total: number, page: number, setPage: (next: number) => void) => (
-    totalPages(total) > 1 ? (
-      <div className="flex items-center justify-center gap-2 mt-2">
-        <button
-          onClick={() => setPage(Math.max(0, page - 1))}
-          disabled={page === 0}
-          className="p-1 rounded hover:bg-surface-light disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <span className="text-xs text-text-muted">{page + 1} / {totalPages(total)}</span>
-        <button
-          onClick={() => setPage(Math.min(totalPages(total) - 1, page + 1))}
-          disabled={page >= totalPages(total) - 1}
-          className="p-1 rounded hover:bg-surface-light disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <ChevronRight size={16} />
-        </button>
-      </div>
-    ) : null
-  );
 
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
@@ -791,7 +631,7 @@ export function CredentialsSettings() {
                 <p className="text-[11px] text-text-muted">Physical locations on this computer</p>
               </div>
               <button
-                onClick={() => openGroupDraft(null)}
+                onClick={() => setAddingProject(true)}
                 disabled={busy}
                 title="Add project"
                 className="rounded-lg bg-primary p-2 text-primary-foreground hover:opacity-90 disabled:opacity-50"
@@ -800,29 +640,23 @@ export function CredentialsSettings() {
               </button>
             </div>
 
-            {groups.length > 0 && (
-              <select
-                aria-label="Credential group"
-                value={selectedId ?? ''}
-                onChange={(event) => void selectGroup(event.target.value)}
-                className="w-full shrink-0 rounded-lg border border-border bg-background px-2 py-2 text-xs text-text-main outline-none focus:border-primary"
-              >
-                {groups.map(group => (
-                  <option key={group.id} value={group.id}>
-                    {`${'  '.repeat(group.depth)}${group.path}`}
-                  </option>
-                ))}
-              </select>
-            )}
+            <ProjectPicker
+              groups={groups}
+              selectedId={selectedId}
+              onSelect={(groupId) => void selectGroup(groupId)}
+              disabled={busy}
+            />
 
             <div className="min-h-[240px] flex-1 overflow-hidden rounded-lg border border-border bg-background">
-              {locations.length === 0 ? (
+              {visibleLocations.length === 0 ? (
                 <div className="flex h-full items-center justify-center px-5 text-center text-xs text-text-muted">
-                  No credential files yet. Select a group, then add or scan files.
+                  {selectedId === null
+                    ? 'No projects yet. Use + to add one.'
+                    : 'No credential files in this project yet. Use Add Key Files or Add ENV Files to put some under management.'}
                 </div>
               ) : (
                 <CredentialLocationTree
-                  locations={locations}
+                  locations={visibleLocations}
                   selectedFileId={selectedFileId}
                   onSelect={(location) => void selectGroup(location.groupId, location.id)}
                 />
@@ -831,7 +665,7 @@ export function CredentialsSettings() {
 
             {selectedFileId && (
               <p className="shrink-0 break-all font-mono text-[10px] leading-4 text-text-muted">
-                {locations.find(location => location.id === selectedFileId)?.absolutePath}
+                {visibleLocations.find(location => location.id === selectedFileId)?.absolutePath}
               </p>
             )}
           </aside>
@@ -881,15 +715,15 @@ export function CredentialsSettings() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <button onClick={() => openGroupDraft(detail.group.id)} disabled={busy} className={BTN_SUBTLE}>
-                      <Plus size={14} /> Add Group
+                    <button onClick={() => addFiles(detail.group.id, 'key')} disabled={busy || originalFileSessionActive} className={BTN_SUBTLE}>
+                      <KeyRound size={14} /> Add Key Files
                     </button>
-                    <button onClick={() => addFiles(detail.group.id)} disabled={busy || originalFileSessionActive} className={BTN_SUBTLE}>
-                      <FilePlus size={14} /> Add Files
+                    <button onClick={() => addFiles(detail.group.id, 'env')} disabled={busy || originalFileSessionActive} className={BTN_SUBTLE}>
+                      <FileCode size={14} /> Add ENV Files
                     </button>
-                    {detail.group.depth === 0 && (
-                      <button onClick={() => openScan(detail.group)} disabled={busy || originalFileSessionActive} className={BTN_SUBTLE}>
-                        <Search size={14} /> Scan Directory
+                    {detail.group.scope === 'system' && (
+                      <button onClick={() => addFiles(detail.group.id, 'ssh-key')} disabled={busy || originalFileSessionActive} className={BTN_SUBTLE}>
+                        <Fingerprint size={14} /> Add SSH Private Key
                       </button>
                     )}
                     <button onClick={() => materializeSafe(detail.group.id)} disabled={busy || originalFileSessionActive} className={BTN_SUBTLE}>
@@ -914,79 +748,63 @@ export function CredentialsSettings() {
                 {!selectedFile ? (
                   <div className={EMPTY}>No files in this group yet. Add files to put their secrets under management.</div>
                 ) : (
-                  <div className="space-y-4 rounded-lg border border-primary/50 bg-surface p-4">
-                    <div className="flex items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <h4 className="break-all font-mono text-sm text-text-main">{selectedFile.relativePath}</h4>
-                        <p className="mt-1 break-all font-mono text-[10px] text-text-muted">{selectedFile.absolutePath}</p>
-                      </div>
-                      <span className={clsx(PILL, NEUTRAL_PILL)}>{selectedFile.format}</span>
-                      {filePill(selectedFile.state)}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <label className="text-[11px] text-text-sec">Injection</label>
-                      <select
-                        value={selectedFile.injection}
-                        onChange={(event) => setInjection(selectedFile, event.target.value as Injection)}
-                        className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-text-main outline-none focus:border-primary"
-                      >
-                        {INJECTIONS.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
-                      </select>
-                      <button onClick={() => inspectFile(selectedFile)} disabled={busy} className={BTN_SUBTLE}>Inspect</button>
-                      {selectedFile.state.kind === 'drifted' && !originalFileSessionActive && (
-                        <>
-                          <button onClick={() => setDrift({ fileId: selectedFile.id, armed: false })} className={BTN_SUBTLE}>
-                            Review Changes
-                          </button>
-                          <button onClick={() => restoreSafe(selectedFile)} disabled={busy || originalFileSessionActive} className={BTN_SUBTLE}>
-                            Restore Safe
-                          </button>
-                          <button onClick={() => setDrift({ fileId: selectedFile.id, armed: true })} disabled={originalFileSessionActive} className={BTN_SUBTLE}>
-                            Import Changes
-                          </button>
-                        </>
-                      )}
-                      <button
-                        onClick={() => removeFile(selectedFile)}
-                        disabled={busy || originalFileSessionActive}
-                        className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-text-main transition-colors hover:border-red-500/50 hover:text-red-400 disabled:opacity-50"
-                      >
-                        Remove
-                      </button>
-                    </div>
-
-                    <div className="space-y-1.5 border-t border-border pt-3">
-                      <div className="flex items-center gap-2">
-                        <Toggle
-                          checked={selectedFile.swapDuringSession}
-                          onChange={(next) => setSwap(selectedFile, next)}
-                          disabled={originalFileSessionActive}
-                          label="Swap real values into this file during a session"
-                          size="small"
-                        />
-                        <span className="text-[11px] text-text-main">Swap real values into this file during a session</span>
-                      </div>
-                      <p className="text-[11px] text-amber-400">
-                        With this on, a live session writes the real secrets to this exact path.
-                        Anything that can read the file during that window reads the real values, agents included.
-                        Leave it off unless a tool hard-codes the path and gives you no way to point it elsewhere.
-                      </p>
-                    </div>
-
-                    <div className="space-y-1.5 border-t border-border pt-3">
-                      <h4 className="text-xs font-medium text-text-sec">Masked entries</h4>
-                      {selectedFile.entries.length === 0 ? (
-                        <p className="text-[11px] text-text-muted">Inspect this file to load its key names.</p>
-                      ) : selectedFile.entries.map((entry) => (
-                        <div key={entry.id} className="flex items-center gap-2 text-[11px]">
-                          <span className="min-w-0 flex-1 truncate font-mono text-text-main">{entry.keyName}</span>
-                          <span className={clsx(PILL, MUTED_PILL)}>{entry.secretType}</span>
-                          <span className="font-mono text-text-muted">********</span>
+                  <>
+                    <div className="space-y-4 rounded-lg border border-primary/50 bg-surface p-4">
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="break-all font-mono text-sm text-text-main">{selectedFile.relativePath}</h4>
+                          <p className="mt-1 break-all font-mono text-[10px] text-text-muted">{selectedFile.absolutePath}</p>
                         </div>
-                      ))}
+                        <span className={clsx(PILL, NEUTRAL_PILL)}>{selectedFile.kind}</span>
+                        {filePill(selectedFile.state)}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button onClick={() => inspectFile(selectedFile)} disabled={busy} className={BTN_SUBTLE}>Inspect</button>
+                        {selectedFile.state.kind === 'drifted' && !originalFileSessionActive && (
+                          <>
+                            <button onClick={() => setDrift({ fileId: selectedFile.id, armed: false })} className={BTN_SUBTLE}>
+                              Review Changes
+                            </button>
+                            <button onClick={() => restoreSafe(selectedFile)} disabled={busy || originalFileSessionActive} className={BTN_SUBTLE}>
+                              Restore Safe
+                            </button>
+                            <button onClick={() => setDrift({ fileId: selectedFile.id, armed: true })} disabled={originalFileSessionActive} className={BTN_SUBTLE}>
+                              Import Changes
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => removeFile(selectedFile)}
+                          disabled={busy || originalFileSessionActive}
+                          className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-text-main transition-colors hover:border-red-500/50 hover:text-red-400 disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5 border-t border-border pt-3">
+                        <h4 className="text-xs font-medium text-text-sec">Masked entries</h4>
+                        {selectedFile.entries.length === 0 ? (
+                          <p className="text-[11px] text-text-muted">Inspect this file to load its key names.</p>
+                        ) : selectedFile.entries.map((entry) => (
+                          <div key={entry.id} className="flex items-center gap-2 text-[11px]">
+                            <span className="min-w-0 flex-1 truncate font-mono text-text-main">{entry.keyName}</span>
+                            <span className={clsx(PILL, MUTED_PILL)}>{entry.secretType}</span>
+                            <span className="font-mono text-text-muted">********</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+
+                    <FileContentPanel
+                      file={selectedFile}
+                      call={call}
+                      onChanged={() => refresh(selectedId)}
+                      disabled={originalFileSessionActive}
+                      busy={busy}
+                    />
+                  </>
                 )}
               </div>
             )}
@@ -1007,74 +825,13 @@ export function CredentialsSettings() {
             <div className="absolute inset-y-0 -left-1 w-3" />
           </div>
 
-          <aside ref={activityPaneRef} className="min-h-0 min-w-0 space-y-4 overflow-y-auto bg-surface p-3">
-            <div>
-              <h3 className="flex items-center gap-2 text-sm font-medium text-text-main">
-                <History size={15} className="text-primary" />
-                Sessions
-              </h3>
-              <p className="text-[11px] text-text-muted">Live access and credential history</p>
-            </div>
-
-            <div className="space-y-1.5 rounded-lg border border-border bg-background p-3 text-[11px] text-text-muted">
-              <div className="flex items-center justify-between gap-2">
-                <span>CLI</span>
-                <span className={clsx(PILL, cli?.installed ? GREEN_PILL : MUTED_PILL)}>
-                  {cli?.installed ? 'INSTALLED' : 'NOT INSTALLED'}
-                </span>
-              </div>
-              <p className="break-all font-mono text-text-main">{cli?.socketPath || 'Socket not reported'}</p>
-            </div>
-
-            <div className="space-y-2">
-              {sessions.length === 0 ? (
-                <div className={EMPTY}>No sessions yet. Start a file session or authorize a CLI command.</div>
-              ) : pagedSessions.map((session) => (
-                <div key={session.id} className="space-y-1 rounded-lg border border-border bg-background p-3 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 truncate font-mono text-text-main">
-                      {pathById.get(session.groupId) || session.groupId}
-                    </span>
-                    <span className="shrink-0 text-text-muted">{session.status}</span>
-                  </div>
-                  <p className="text-[11px] text-text-muted">{new Date(session.createdAt).toLocaleString()}</p>
-                  <p className="truncate font-mono text-[11px] text-text-muted">
-                    {session.approvedBy === 'ui-original-files'
-                      ? 'original file paths'
-                      : session.commandSummary || 'CLI authorization'}
-                  </p>
-                  <div className="flex items-center justify-between text-[11px] text-text-muted">
-                    <span>{Math.round((session.expiresAt - session.createdAt) / 60000)} minutes</span>
-                    {typeof session.exitCode === 'number' && <span>exit {session.exitCode}</span>}
-                  </div>
-                </div>
-              ))}
-              {pager(sessions.length, sessionPage, setSessionPage)}
-            </div>
-
-            <div className="space-y-2 border-t border-border pt-4">
-              <h4 className="text-xs font-medium text-text-sec">History</h4>
-              {audit.length === 0 ? (
-                <div className={EMPTY}>No credential history recorded yet.</div>
-              ) : pagedAudit.map((record) => (
-                <div key={record.id} className="space-y-1 rounded-lg border border-border bg-background p-3 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 truncate font-mono text-text-main">{record.event}</span>
-                    <span className="shrink-0 text-[11px] text-text-muted">
-                      {new Date(record.at).toLocaleString()}
-                    </span>
-                  </div>
-                  {record.groupId && (
-                    <p className="truncate font-mono text-[11px] text-text-muted">
-                      {pathById.get(record.groupId) || record.groupId}
-                    </p>
-                  )}
-                  <p className="break-words text-[11px] text-text-muted">{record.detail}</p>
-                </div>
-              ))}
-              {pager(audit.length, auditPage, setAuditPage)}
-            </div>
-          </aside>
+          <CredentialActivityPane
+            ref={activityPaneRef}
+            sessions={sessions}
+            audit={audit}
+            cli={cli}
+            pathById={pathById}
+          />
         </div>
       </div>
 
@@ -1082,337 +839,35 @@ export function CredentialsSettings() {
         <div className="absolute inset-0 z-50 cursor-col-resize select-none" />
       )}
 
-      <Modal
-        isOpen={activate !== null && activateRoot !== null}
+      <AuthorizeSessionDialog
+        draft={activate}
+        root={activateRoot}
+        descendants={activateDescendants}
+        unrecognizedOpaqueCount={unrecognizedOpaqueCount}
+        busy={busy}
+        onChange={setActivate}
         onClose={() => setActivate(null)}
-        title="Authorize credential session"
-        width="max-w-lg"
-      >
-        {activate && activateRoot && (
-          <div>
-            <div className="p-4 space-y-4">
-              <div>
-                <div className="text-[11px] text-text-sec mb-1">Project</div>
-                <div className="text-sm text-text-main">{activateRoot.name}</div>
-                <div className="text-[11px] font-mono text-text-muted">{activateRoot.path}</div>
-              </div>
+        onConfirm={(draft) => void beginSession(draft)}
+      />
 
-              <div>
-                <div className="text-[11px] text-text-sec mb-1.5">Access</div>
-                <div className="space-y-2">
-                  <label className={clsx(
-                    'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors',
-                    activate.mode === 'original-files'
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border bg-background hover:border-primary/50',
-                  )}>
-                    <input
-                      type="radio"
-                      name="credential-session-mode"
-                      checked={activate.mode === 'original-files'}
-                      onChange={() => setActivate({ ...activate, mode: 'original-files' })}
-                      className="mt-0.5 accent-primary"
-                    />
-                    <span>
-                      <span className="block text-sm text-text-main">Write to original files</span>
-                      <span className="mt-0.5 block text-[11px] leading-4 text-text-muted">
-                        Restore real values at the managed paths now, then put FAKE_SECRET back on revoke or timeout.
-                      </span>
-                    </span>
-                  </label>
-                  <label className={clsx(
-                    'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors',
-                    activate.mode === 'cli-authorization'
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border bg-background hover:border-primary/50',
-                  )}>
-                    <input
-                      type="radio"
-                      name="credential-session-mode"
-                      checked={activate.mode === 'cli-authorization'}
-                      onChange={() => setActivate({ ...activate, mode: 'cli-authorization' })}
-                      className="mt-0.5 accent-primary"
-                    />
-                    <span>
-                      <span className="block text-sm text-text-main">Authorize CLI command</span>
-                      <span className="mt-0.5 block text-[11px] leading-4 text-text-muted">
-                        Keep files masked and authorize the next matching tiginal cred run command.
-                      </span>
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[11px] text-text-sec mb-1.5">Groups</div>
-                <div className="space-y-1.5">
-                  <label className="flex items-center gap-2 text-sm text-text-main">
-                    <input type="checkbox" checked readOnly disabled className="accent-primary" />
-                    <span>{activateRoot.name}</span>
-                    <span className={clsx(PILL, NEUTRAL_PILL)}>session root</span>
-                  </label>
-                  {activateDescendants.map((group) => (
-                    <label
-                      key={group.id}
-                      style={{ paddingLeft: (group.depth - activateRoot.depth) * 16 }}
-                      className="flex items-center gap-2 text-sm text-text-main"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={activate.selected.has(group.id)}
-                        onChange={() => toggleActivateGroup(group.id)}
-                        className="accent-primary"
-                      />
-                      <span>{group.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="credentials-ttl" className="block text-[11px] text-text-sec mb-1.5">Duration</label>
-                <select
-                  id="credentials-ttl"
-                  value={activate.ttlMinutes}
-                  onChange={(e) => setActivate({ ...activate, ttlMinutes: Number(e.target.value) })}
-                  className={FIELD}
-                >
-                  {TTL_CHOICES.map((minutes) => (
-                    <option key={minutes} value={minutes}>{minutes} minutes</option>
-                  ))}
-                </select>
-              </div>
-
-              <p className="rounded-lg border border-border bg-background p-3 text-[11px] leading-5 text-text-muted">
-                {activate.mode === 'original-files' ? (
-                  <>
-                    Real passwords will be readable by any process that can access these files until the session ends.
-                    Tiginal restores the masked copies on revoke, timeout, normal app exit, or next startup after a crash.
-                  </>
-                ) : (
-                  <>
-                    This only authorizes the next matching <span className="font-mono">tiginal cred run</span> command.
-                    It does not rewrite the managed files now.
-                  </>
-                )}
-              </p>
-
-              {activate.mode === 'original-files' && unrecognizedOpaqueCount > 0 && (
-                <p className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-[11px] leading-5 text-amber-400">
-                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                  <span>
-                    Protect the {unrecognizedOpaqueCount} unrecognized file(s) first. Tiginal cannot restore a value
-                    that was never encrypted and stored.
-                  </span>
-                </p>
-              )}
-            </div>
-
-            <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
-              <button onClick={() => setActivate(null)} className={BTN_MODAL}>Cancel</button>
-              <button
-                onClick={() => beginSession(activate)}
-                disabled={busy || (activate.mode === 'original-files' && unrecognizedOpaqueCount > 0)}
-                className={BTN_MODAL_PRIMARY}
-              >
-                {activate.mode === 'original-files' ? 'Start File Session' : 'Authorize CLI'}
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        isOpen={drift !== null && driftState !== null}
+      <DriftReviewDialog
+        draft={drift}
+        file={driftFile}
+        state={driftState}
+        busy={busy}
+        onArmedChange={(armed) => setDrift((prev) => (prev === null ? null : { ...prev, armed }))}
         onClose={() => setDrift(null)}
-        title="Review changes"
-        width="max-w-lg"
-      >
-        {drift && driftFile && driftState && (
-          <div>
-            <div className="p-4 space-y-4">
-              <div>
-                <p className="text-xs font-mono text-text-main break-all">{driftFile.relativePath}</p>
-                <p className="text-[11px] text-text-muted mt-1">
-                  Key names only. Values are never read into the app.
-                </p>
-              </div>
+        onRestoreSafe={() => { if (driftFile) void restoreSafe(driftFile); }}
+        onImport={() => { if (driftFile) void importDrift(driftFile); }}
+      />
 
-              <div>
-                <div className="text-[11px] text-text-sec mb-1.5">Changed keys</div>
-                {driftState.changedKeys.length === 0 ? (
-                  <p className="text-[11px] text-text-muted">None</p>
-                ) : (
-                  <div className="space-y-1">
-                    {driftState.changedKeys.map((key) => (
-                      <div key={key} className="text-[11px] font-mono text-text-main">{key}</div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="text-[11px] text-text-sec mb-1.5">Keys no longer in the file</div>
-                {driftState.missingKeys.length === 0 ? (
-                  <p className="text-[11px] text-text-muted">None</p>
-                ) : (
-                  <div className="space-y-1">
-                    {driftState.missingKeys.map((key) => (
-                      <div key={key} className="text-[11px] font-mono text-text-main">{key}</div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="px-4 py-3 border-t border-border space-y-3">
-              {drift.armed ? (
-                <>
-                  <p className="text-[11px] text-amber-400 flex items-start gap-1.5">
-                    <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-                    <span>
-                      Whatever value sits in this file right now becomes the new stored secret for every
-                      changed key. The values stored before this are replaced and cannot be recovered.
-                    </span>
-                  </p>
-                  <div className="flex justify-end gap-2">
-                    <button onClick={() => setDrift({ ...drift, armed: false })} className={BTN_MODAL}>
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => importDrift(driftFile)}
-                      disabled={busy}
-                      className="px-4 py-2 text-sm bg-amber-500/20 border border-amber-500/40 text-amber-400 rounded-lg hover:bg-amber-500/30 transition-colors disabled:opacity-50"
-                    >
-                      Confirm Import
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => setDrift(null)} className={BTN_MODAL}>Close</button>
-                  <button onClick={() => restoreSafe(driftFile)} disabled={busy} className={BTN_MODAL}>
-                    Restore Safe
-                  </button>
-                  <button onClick={() => setDrift({ ...drift, armed: true })} className={BTN_MODAL_PRIMARY}>
-                    Import Changes
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        isOpen={groupDraft !== null}
-        onClose={() => setGroupDraft(null)}
-        title={groupDraft && groupDraft.parentId === null ? 'Add project' : 'Add group'}
-      >
-        {groupDraft && (
-          <div>
-            <div className="p-4 space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-text-sec mb-1.5">Name</label>
-                <input
-                  type="text"
-                  value={groupDraft.name}
-                  onChange={(e) => setGroupDraft({ ...groupDraft, name: e.target.value })}
-                  placeholder="e.g. Acme App"
-                  className={clsx(FIELD, 'w-full')}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-text-sec mb-1.5">Kind</label>
-                <select
-                  value={groupDraft.kind}
-                  onChange={(e) => setGroupDraft({ ...groupDraft, kind: e.target.value as GroupKind })}
-                  className={clsx(FIELD, 'w-full')}
-                >
-                  {GROUP_KINDS.map((kind) => (
-                    <option key={kind} value={kind}>{kind}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-text-sec mb-1.5">Scope</label>
-                <select
-                  value={groupDraft.scope}
-                  onChange={(e) => setGroupDraft({ ...groupDraft, scope: e.target.value as GroupScope })}
-                  className={clsx(FIELD, 'w-full')}
-                >
-                  {GROUP_SCOPES.map((scope) => (
-                    <option key={scope} value={scope}>{scope}</option>
-                  ))}
-                </select>
-              </div>
-
-              {groupDraft.rootPath !== null && (
-                <div>
-                  <label className="block text-xs font-medium text-text-sec mb-1.5">Project root</label>
-                  <p className="text-[11px] font-mono text-text-muted break-all">{groupDraft.rootPath}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
-              <button onClick={() => setGroupDraft(null)} className={BTN_MODAL}>Cancel</button>
-              <button
-                onClick={() => createGroup(groupDraft)}
-                disabled={busy || groupDraft.name.trim().length === 0}
-                className={BTN_MODAL_PRIMARY}
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        isOpen={scan !== null}
-        onClose={() => setScan(null)}
-        title="Scan results"
-        width="max-w-lg"
-      >
-        {scan && (
-          <div>
-            <div className="p-4 space-y-3">
-              <p className="text-[11px] font-mono text-text-muted break-all">{scan.rootPath}</p>
-              {scan.results.length === 0 ? (
-                <div className={EMPTY}>No credential files found under this path.</div>
-              ) : (
-                scan.results.map((result) => (
-                  <label key={result.absolutePath} className="flex items-center gap-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={scan.selected.has(result.absolutePath)}
-                      onChange={() => toggleScanFile(result.absolutePath)}
-                      className="accent-primary shrink-0"
-                    />
-                    <span className="flex-1 min-w-0 font-mono text-text-main truncate">{result.relativePath}</span>
-                    <span className={clsx(PILL, NEUTRAL_PILL)}>{result.format}</span>
-                    <span className={clsx(PILL, MUTED_PILL)}>{result.suggestedKind}</span>
-                  </label>
-                ))
-              )}
-            </div>
-
-            <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
-              <button onClick={() => setScan(null)} className={BTN_MODAL}>Cancel</button>
-              <button
-                onClick={() => importScan(scan)}
-                disabled={busy || scan.selected.size === 0}
-                className={BTN_MODAL_PRIMARY}
-              >
-                Import {scan.selected.size} file(s)
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
+      <AddProjectDialog
+        isOpen={addingProject}
+        busy={busy}
+        onClose={() => setAddingProject(false)}
+        onChooseDirectory={() => call<string>('credentials:choose-directory')}
+        onCreate={(input) => void createProject(input)}
+      />
     </div>
   );
 }

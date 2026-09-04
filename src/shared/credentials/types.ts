@@ -10,6 +10,20 @@ export type FileFormat = 'dotenv' | 'tfvars' | 'opaque';
 export type GroupScope = 'project' | 'system';
 export type GroupKind = 'generic' | 'rails' | 'kamal' | 'terraform' | 'ssh' | 'aws';
 
+/**
+ * What the user said a managed file is when they added it.
+ *
+ * `key` is a whole-file secret whose name comes from its basename, the shape a
+ * Kamal key file has. `env` is `key=value` lines where every value to the
+ * right of the first `=` is managed and every comment is left alone. `ssh-key`
+ * is a private key, and its sibling `.pub` travels with it for display without
+ * ever being encrypted or masked.
+ *
+ * A path cannot be trusted to say which of the three a file is, so the add
+ * action records it and `format` only decides which parser reads the file.
+ */
+export type FileKind = 'key' | 'env' | 'ssh-key';
+
 /** How a group's real values reach a child process during a live session. */
 export type Injection = 'env' | 'file' | 'both';
 
@@ -85,6 +99,9 @@ export type AuditEvent =
   | 'safe.restored'
   | 'drift.detected'
   | 'drift.imported'
+  | 'file.revealed'
+  | 'entry.saved'
+  | 'entry.deleted'
   | 'session.requested'
   | 'session.denied'
   | 'session.started'
@@ -110,18 +127,15 @@ export interface CredentialGroup {
 export interface CredentialFile {
   id: string;
   groupId: string;
+  kind: FileKind;
   absolutePath: string;
   relativePath: string;
   format: FileFormat;
   injection: Injection;
   safeFingerprint: string | null;
   fileMode: number | null;
-  /**
-   * Opt-in: put real values at the file's own path for the session's lifetime,
-   * for a tool that hard-codes the path and offers no override. Off by default
-   * because an agent reading the file during that window sees the real value.
-   */
-  swapDuringSession: boolean;
+  /** An `ssh-key` file's sibling public key. Displayed, never managed. */
+  publicKeyPath: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -202,6 +216,8 @@ export interface GroupSummary {
   name: string;
   scope: GroupScope;
   kind: GroupKind;
+  /** Null for a `system`-scope group, which is not rooted anywhere. */
+  rootPath: string | null;
   depth: number;
   status: GroupStatus;
   fileCount: number;
@@ -214,11 +230,11 @@ export interface GroupStatusReport {
   group: GroupSummary;
   files: Array<{
     id: string;
+    kind: FileKind;
     relativePath: string;
     absolutePath: string;
     format: FileFormat;
-    injection: Injection;
-    swapDuringSession: boolean;
+    publicKeyPath: string | null;
     state: FileState;
     entries: MaskedEntry[];
   }>;
@@ -227,13 +243,47 @@ export interface GroupStatusReport {
 
 /** A file leaf in the renderer's physical filesystem tree. */
 export interface CredentialFileLocation {
+  /** The managed file's id. A `public-key` row shares its private key's id. */
   id: string;
   groupId: string;
   groupPath: string;
+  kind: FileKind;
+  /** A `public-key` row is display-only: selecting it opens the private key. */
+  role: 'managed' | 'public-key';
   absolutePath: string;
   /** Forward-slash path consumed by @pierre/trees. */
   treePath: string;
   state: FileState;
+}
+
+/** One managed key with its real value, for the credential detail pane only. */
+export interface RevealedEnvEntry {
+  keyName: string;
+  secretType: SecretType;
+  /** Exactly the bytes stored for this key, quotes included when it had them. */
+  value: string;
+  /** False when Tiginal holds the key but the file on disk no longer does. */
+  onDisk: boolean;
+}
+
+/**
+ * One managed file's real content, shaped by the kind the user declared.
+ *
+ * This is the one payload that carries plaintext into the renderer, and it is
+ * built only when the user opens a file in the credential detail pane. Every
+ * other renderer-facing shape in this file is masked.
+ */
+export type RevealedFileContent =
+  | { kind: 'key'; text: string }
+  | { kind: 'ssh-key'; text: string; publicKeyText: string | null }
+  | { kind: 'env'; entries: RevealedEnvEntry[] };
+
+/** An add or edit from the ENV table. `previousKeyName` is null when adding. */
+export interface EnvEntryEdit {
+  fileId: string;
+  previousKeyName: string | null;
+  keyName: string;
+  value: string;
 }
 
 /**

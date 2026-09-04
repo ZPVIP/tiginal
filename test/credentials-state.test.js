@@ -61,6 +61,52 @@ test('reports unmanaged before the file has ever been materialized', () => {
   assert.deepEqual(state({ safeFingerprint: null }), { kind: 'unmanaged' });
 });
 
+test('reads a declared ENV file as safe when every value is masked', () => {
+  const content = '# cache\nREDIS_PASSWORD=********\nREDIS_HOST=********\nREDIS_PORT=********\n';
+  const entries = ['REDIS_PASSWORD', 'REDIS_HOST', 'REDIS_PORT'].map((keyName) => ({
+    keyName,
+    fakeValue: '********',
+  }));
+
+  assert.deepEqual(
+    deriveFileState({ content, safeFingerprint: fingerprint(content), format: 'dotenv', entries }),
+    { kind: 'safe' },
+  );
+  assert.deepEqual(
+    deriveFileState({
+      content: content.replace('REDIS_HOST=********', 'REDIS_HOST=localhost'),
+      safeFingerprint: fingerprint(content),
+      format: 'dotenv',
+      entries,
+    }),
+    { kind: 'drifted', changedKeys: ['REDIS_HOST'], missingKeys: [] },
+  );
+});
+
+test('a key appended back into the file settles to safe once the mask is written', () => {
+  const entries = [...ENTRIES, { keyName: 'API_KEY', fakeValue: '********' }];
+  const appended = `${SAFE_ENV}API_KEY=********\n`;
+
+  assert.deepEqual(
+    deriveFileState({
+      content: SAFE_ENV,
+      safeFingerprint: fingerprint(SAFE_ENV),
+      format: 'dotenv',
+      entries,
+    }),
+    { kind: 'drifted', changedKeys: [], missingKeys: ['API_KEY'] },
+  );
+  assert.deepEqual(
+    deriveFileState({
+      content: appended,
+      safeFingerprint: fingerprint(appended),
+      format: 'dotenv',
+      entries,
+    }),
+    { kind: 'safe' },
+  );
+});
+
 test('compares a whole-file secret against its placeholder', () => {
   const safe = 'FAKE_SECRET\n';
   const entries = [{ keyName: 'KAMAL_REGISTRY_PASSWORD', fakeValue: 'FAKE_SECRET' }];

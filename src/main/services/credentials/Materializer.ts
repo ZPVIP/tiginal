@@ -17,15 +17,18 @@ import {
   opaqueKeyFromPath,
   rewriteValues,
   FORMAT_HANDLERS,
+  type RewriteResult,
 } from '../../../shared/credentials/formats';
-import { classify, fakeValueFor } from '../../../shared/credentials/classify';
+import { classify, classifyEnvValue, fakeValueFor } from '../../../shared/credentials/classify';
 import { fingerprint, deriveFileState } from '../../../shared/credentials/state';
 import type {
+  Classification,
   CredentialGroup,
   CredentialFile,
   CredentialFileLocation,
   CredentialSession,
   FileFormat,
+  FileKind,
   FileState,
   GroupStatus,
   GroupStatusReport,
@@ -70,10 +73,11 @@ export function claimRevealCapability(): RevealCapability {
 }
 
 export interface ImportOptions {
+  /** What the user declared the file to be. `format` follows from it. */
+  kind: FileKind;
   /** Project root that the stored `relativePath` is computed against. */
   relativeTo?: string | null;
   injection?: Injection;
-  swapDuringSession?: boolean;
 }
 
 export interface ImportResult {
@@ -108,14 +112,83 @@ export interface SafeFileOutcome {
 }
 
 /**
- * How a newly imported file is consumed by default. A dotenv or tfvars file
- * has named values a child process can take as environment; an opaque file is
- * one blob that a tool reads by path.
+ * How a newly imported file is consumed by default. An ENV file has named
+ * values a child process can take as environment; a key file is one blob that
+ * a tool reads by path.
  */
-const DEFAULT_INJECTION: Record<FileFormat, Injection> = {
-  dotenv: 'env',
-  tfvars: 'env',
-  opaque: 'file',
+const DEFAULT_INJECTION: Record<FileKind, Injection> = {
+  env: 'env',
+  key: 'file',
+  'ssh-key': 'file',
+};
+
+/** A public key body, which is never the thing an `ssh-key` file manages. */
+const PUBLIC_KEY_BODY = /^(ssh-rsa |ssh-ed25519 |ssh-dss |ecdsa-sha2-)/;
+
+interface ImportCandidate {
+  absolutePath: string;
+  content: string;
+  format: FileFormat;
+  group: CredentialGroup;
+}
+
+/**
+ * What each declared kind means for the file it was declared for. A table
+ * rather than a chain of `if (kind === ...)`, so adding a kind to `FileKind`
+ * fails to compile until its parser, its checks and its sibling are all named.
+ */
+interface KindRules {
+  /** The parser this kind's files are read with. */
+  formatFor(absolutePath: string): FileFormat;
+  /** Refuse a file the declared kind cannot manage, before anything is stored. */
+  verify(candidate: ImportCandidate): void;
+  /** A sibling file shown alongside this one, never encrypted or masked. */
+  publicKeyFor(absolutePath: string): string | null;
+}
+
+const KIND_RULES: Record<FileKind, KindRules> = {
+  env: {
+    // The user said this file is `key=value`, so a name the detector does not
+    // recognize is read as dotenv rather than as one opaque blob.
+    formatFor: absolutePath => {
+      const detected = detectFormat(absolutePath);
+      return detected === 'opaque' ? 'dotenv' : detected;
+    },
+    verify: ({ content, format }) => {
+      const named = FORMAT_HANDLERS[format].parse(content).filter(entry => entry.key !== '');
+      if (named.length === 0) {
+        throw new CredError('bad-request', 'no key=value pairs found in that file');
+      }
+    },
+    publicKeyFor: () => null,
+  },
+  key: {
+    formatFor: () => 'opaque',
+    verify: () => undefined,
+    publicKeyFor: () => null,
+  },
+  'ssh-key': {
+    formatFor: () => 'opaque',
+    verify: ({ absolutePath, content, group }) => {
+      if (group.scope !== 'system') {
+        throw new CredError('policy', 'an SSH private key belongs to a system-scope group');
+      }
+      if (path.basename(absolutePath).toLowerCase().endsWith('.pub')) {
+        throw new CredError('bad-request', 'that is a public key file; select the private key instead');
+      }
+      if (PUBLIC_KEY_BODY.test(content)) {
+        throw new CredError('bad-request', 'that file holds a public key; select the private key instead');
+      }
+    },
+    publicKeyFor: absolutePath => {
+      const sibling = `${absolutePath}.pub`;
+      try {
+        return fs.statSync(sibling).isFile() ? sibling : null;
+      } catch {
+        return null;
+      }
+    },
+  },
 };
 
 /**
@@ -174,6 +247,40 @@ function atomicWrite(target: string, content: string, mode: number | null): void
   }
 }
 
+/**
+ * Every value in a declared ENV file is managed whatever it looks like; every
+ * other kind is one whole-file secret. Both paths refuse an already-masked
+ * value, which is what stops a re-import encrypting `********`.
+ */
+function classificationFor(file: CredentialFile, key: string, value: string): Classification {
+  return file.kind === 'env'
+    ? classifyEnvValue(key, value)
+    : classify(key, value, file.format);
+}
+
+/**
+ * Drop every line that assigns `keyName`, its terminator included. Rebuilding
+ * the file from its parsed entries would be shorter and would also discard
+ * every comment in it, which is the thing the span rewrite exists to protect.
+ */
+function withoutKeyLines(content: string, format: FileFormat, keyName: string): string {
+  const cuts = FORMAT_HANDLERS[format]
+    .parse(content)
+    .filter(entry => entry.key === keyName)
+    .map(entry => {
+      const newline = content.indexOf('\n', entry.valueEnd);
+      return {
+        start: content.lastIndexOf('\n', entry.valueStart - 1) + 1,
+        end: newline === -1 ? content.length : newline + 1,
+      };
+    })
+    .sort((a, b) => b.start - a.start);
+
+  let next = content;
+  for (const cut of cuts) next = next.slice(0, cut.start) + next.slice(cut.end);
+  return next;
+}
+
 /** Last occurrence wins, matching the shell's own reading of a dotenv file. */
 function indexByKey(parsed: ParsedEntry[]): Map<string, ParsedEntry> {
   const byKey = new Map<string, ParsedEntry>();
@@ -189,7 +296,7 @@ export class Materializer {
     return path.resolve(expandHome(input));
   }
 
-  importFile(groupId: string, absolutePath: string, opts: ImportOptions = {}): ImportResult {
+  importFile(groupId: string, absolutePath: string, opts: ImportOptions): ImportResult {
     const crypto = getCrypto();
     if (!crypto.isUnlocked()) {
       throw new CredError('locked', 'unlock Tiginal before importing a credential file');
@@ -202,6 +309,7 @@ export class Materializer {
     if (this.store.getFileByPath(target)) {
       throw new CredError('bad-request', 'that file is already managed');
     }
+    this.assertInsideProject(group, target);
 
     const content = readIfExists(target);
     if (content === null) throw new CredError('not-found', 'file does not exist');
@@ -209,15 +317,19 @@ export class Materializer {
     const stats = fs.statSync(target);
     if (!stats.isFile()) throw new CredError('bad-request', 'only a regular file can be managed');
 
-    const format = detectFormat(target);
+    const rules = KIND_RULES[opts.kind];
+    const format = rules.formatFor(target);
+    rules.verify({ absolutePath: target, content, format, group });
+
     const file = this.store.createFile({
       groupId,
+      kind: opts.kind,
       absolutePath: target,
-      relativePath: this.relativePathFor(target, opts.relativeTo ?? group.rootPath),
+      relativePath: this.relativePathFor(target, opts.relativeTo ?? this.projectRootFor(group)),
       format,
-      injection: opts.injection ?? DEFAULT_INJECTION[format],
+      injection: opts.injection ?? DEFAULT_INJECTION[opts.kind],
       fileMode: stats.mode & 0o777,
-      swapDuringSession: opts.swapDuringSession ?? false,
+      publicKeyPath: rules.publicKeyFor(target),
     });
 
     const { imported, skipped } = this.captureEntries(file, content);
@@ -225,7 +337,13 @@ export class Materializer {
     this.store.audit({
       event: 'file.imported',
       groupId,
-      detail: auditDetail({ path: file.relativePath || path.basename(target), format, imported, skipped }),
+      detail: auditDetail({
+        path: file.relativePath || path.basename(target),
+        kind: opts.kind,
+        format,
+        imported,
+        skipped,
+      }),
     });
 
     // The real values are now in the database, so the file on disk must stop
@@ -285,7 +403,7 @@ export class Materializer {
 
     for (const parsed of FORMAT_HANDLERS[file.format].parse(content)) {
       const key = parsed.key || opaqueKeyFromPath(file.absolutePath);
-      const classification = classify(key, parsed.value, file.format);
+      const classification = classificationFor(file, key, parsed.value);
       if (classification.spans.length === 0) {
         skipped++;
         continue;
@@ -331,7 +449,9 @@ export class Materializer {
     }
 
     const values = new Map(entries.map(entry => [entry.keyName, entry.fakeValue]));
-    const rewritten = rewriteValues(content, file.format, values);
+    const rewritten = rewriteValues(content, file.format, values, {
+      appendMissing: file.kind === 'env',
+    });
     const written = rewritten.content !== content;
     if (written) atomicWrite(file.absolutePath, rewritten.content, file.fileMode);
 
@@ -347,6 +467,7 @@ export class Materializer {
         path: file.relativePath || path.basename(file.absolutePath),
         keys: entries.length,
         written: String(written),
+        appended: rewritten.appendedKeys.length,
         absentKeys: rewritten.missingKeys.length,
       }),
     });
@@ -449,14 +570,32 @@ export class Materializer {
 
     return this.store.listGroups().flatMap(group => {
       const groupPath = this.store.groupPathOf(group.id);
-      return this.store.listFiles(group.id).map(file => ({
-        id: file.id,
-        groupId: group.id,
-        groupPath,
-        absolutePath: file.absolutePath,
-        treePath: toCredentialTreePath(file.absolutePath, platform),
-        state: this.inspect(file.id).state,
-      }));
+      return this.store.listFiles(group.id).flatMap(file => {
+        const state = this.inspect(file.id).state;
+        const managed: CredentialFileLocation = {
+          id: file.id,
+          groupId: group.id,
+          groupPath,
+          kind: file.kind,
+          role: 'managed',
+          absolutePath: file.absolutePath,
+          treePath: toCredentialTreePath(file.absolutePath, platform),
+          state,
+        };
+        if (!file.publicKeyPath) return [managed];
+
+        // The public key is display-only, so it borrows its private key's
+        // state rather than claiming one of its own.
+        return [
+          managed,
+          {
+            ...managed,
+            role: 'public-key' as const,
+            absolutePath: file.publicKeyPath,
+            treePath: toCredentialTreePath(file.publicKeyPath, platform),
+          },
+        ];
+      });
     });
   }
 
@@ -469,11 +608,11 @@ export class Materializer {
       group: this.summarize(group, this.store.groupPathOf(groupId), this.depthOf(group)),
       files: this.store.listFiles(groupId).map(file => ({
         id: file.id,
+        kind: file.kind,
         relativePath: file.relativePath,
         absolutePath: file.absolutePath,
         format: file.format,
-        injection: file.injection,
-        swapDuringSession: file.swapDuringSession,
+        publicKeyPath: file.publicKeyPath,
         state: this.inspect(file.id).state,
         entries: this.store.listEntries(file.id).map(entry => ({
           id: entry.id,
@@ -510,7 +649,7 @@ export class Materializer {
 
       // An unchanged mask classifies as not-a-secret, which is what stops this
       // path from encrypting `********` over a real value.
-      const classification = classify(entry.keyName, parsed.value, file.format);
+      const classification = classificationFor(file, entry.keyName, parsed.value);
       if (classification.spans.length === 0) continue;
 
       this.store.upsertEntry({
@@ -558,12 +697,9 @@ export class Materializer {
   /**
    * The managed file's content with real values spliced back in, for an
    * ephemeral copy inside a session temp directory. Never written to the
-   * managed path except through `CredentialRuntime`'s opt-in swap.
+   * managed path except through `CredentialRuntime`'s original-file session.
    */
-  realContentFor(
-    fileId: string,
-    capability: RevealCapability,
-  ): { content: string; missingKeys: string[] } {
+  realContentFor(fileId: string, capability: RevealCapability): RewriteResult {
     this.assertCapability(capability);
 
     const file = this.requireFile(fileId);
@@ -573,7 +709,20 @@ export class Materializer {
     const values = new Map(
       this.revealForRuntime(fileId, capability).map(entry => [entry.key, entry.value]),
     );
-    return rewriteValues(content, file.format, values);
+    return rewriteValues(content, file.format, values, { appendMissing: file.kind === 'env' });
+  }
+
+  /**
+   * Take `keyName`'s line out of the file. The caller re-masks afterwards,
+   * which is what restores the fingerprint the state check compares against.
+   */
+  removeKeyLine(fileId: string, keyName: string): void {
+    const file = this.requireFile(fileId);
+    const content = readIfExists(file.absolutePath);
+    if (content === null) return;
+
+    const next = withoutKeyLines(content, file.format, keyName);
+    if (next !== content) atomicWrite(file.absolutePath, next, file.fileMode);
   }
 
   private summarize(group: CredentialGroup, groupPath: string, depth: number): GroupSummary {
@@ -593,6 +742,7 @@ export class Materializer {
       name: group.name,
       scope: group.scope,
       kind: group.kind,
+      rootPath: group.rootPath,
       depth,
       status: session ? 'live' : groupStatusFrom(kinds),
       fileCount: files.length,
@@ -620,6 +770,35 @@ export class Materializer {
     if (capability !== RuntimeCapability.singleton) {
       throw new CredError('denied', 'plaintext access requires the runtime capability');
     }
+  }
+
+  /**
+   * A project group manages files inside its own root and nowhere else, so a
+   * mistyped path cannot quietly enrol something from another project or from
+   * the user's home directory. A system group is rooted nowhere and accepts
+   * any path.
+   *
+   * The root is taken from the nearest group in the chain that has one, so a
+   * child group inherits its project's root instead of refusing every file for
+   * want of a root of its own.
+   */
+  private assertInsideProject(group: CredentialGroup, target: string): void {
+    if (group.scope !== 'project') return;
+
+    const root = this.projectRootFor(group);
+    if (!root) {
+      throw new CredError('policy', 'set this project\'s root directory before adding a file to it');
+    }
+    if (!isWithin(root, target)) {
+      throw new CredError('policy', 'that file is outside the project root; a project only manages files inside its own root');
+    }
+  }
+
+  private projectRootFor(group: CredentialGroup): string | null {
+    for (const ancestor of this.store.ancestryOf(group.id)) {
+      if (ancestor.rootPath) return Materializer.canonicalPath(ancestor.rootPath);
+    }
+    return null;
   }
 
   private requireFile(fileId: string) {

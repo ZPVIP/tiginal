@@ -10,6 +10,7 @@ const {
   MASK,
   FAKE_OPAQUE,
   classify,
+  classifyEnvValue,
   fakeValueFor,
   isSecret,
 } = require(path.join(DIST_ROOT, 'shared/credentials/classify.js'));
@@ -159,7 +160,7 @@ test('produces the plan section 6.3 safe block from its real block', () => {
   ].join('\n');
   const safe = [
     'aws_region = "us-west-2"',
-    'cloudflare_api_token = "********"',
+    'cloudflare_api_token = ********',
     'domain_name = "example.com"',
     '',
   ].join('\n');
@@ -169,6 +170,46 @@ test('produces the plan section 6.3 safe block from its real block', () => {
 
 test('produces the plan section 6.2 safe Kamal key file', () => {
   assert.equal(toSafe('REAL_KAMAL_PASSWORD\n', 'opaque'), 'FAKE_SECRET\n');
+});
+
+test('every value in a declared ENV file is a secret, whatever it looks like', () => {
+  for (const [key, value] of [
+    ['REDIS_HOST', 'localhost'],
+    ['REDIS_PORT', '6379'],
+    ['REDIS_SSL', 'false'],
+    ['PUBLIC_KEY', 'ssh-ed25519 AAAA'],
+    ['SSH_KEY_PATH', '/home/dev/id_ed25519'],
+    ['APP_URL', 'https://example.com/health'],
+  ]) {
+    const classification = classifyEnvValue(key, value);
+    assert.equal(isSecret(classification), true, `${key} must be managed in an ENV file`);
+    assert.deepEqual(classification.spans, [{ start: 0, end: value.length }]);
+    assert.equal(fakeValueFor(value, classification, 'dotenv'), MASK);
+  }
+});
+
+test('an ENV key name only picks the label, never whether the value is managed', () => {
+  assert.equal(classifyEnvValue('REDIS_PASSWORD', 'pw').secretType, 'password');
+  assert.equal(classifyEnvValue('CLOUDFLARE_API_TOKEN', 'cf').secretType, 'token');
+  assert.equal(classifyEnvValue('REDIS_HOST', 'localhost').secretType, 'generic');
+});
+
+test('an ENV span covers the quotes, so restoring cannot change what the shell reads', () => {
+  const value = '"two words"';
+  const classification = classifyEnvValue('GREETING', value);
+
+  assert.deepEqual(classification.spans, [{ start: 0, end: value.length }]);
+  assert.equal(fakeValueFor(value, classification, 'dotenv'), MASK);
+});
+
+test('an ENV value that is empty or already masked is never captured', () => {
+  for (const value of ['', '   ', '""', MASK, `"${MASK}"`, FAKE_OPAQUE, 'changeme']) {
+    assert.equal(
+      isSecret(classifyEnvValue('REDIS_PASSWORD', value)),
+      false,
+      `re-importing ${JSON.stringify(value)} must not encrypt a mask`,
+    );
+  }
 });
 
 test('materializing an already safe file changes nothing', () => {

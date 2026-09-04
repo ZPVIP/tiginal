@@ -120,3 +120,28 @@ export function fakeValueFor(
 export function isSecret(classification: Classification): boolean {
   return classification.spans.length > 0;
 }
+
+/** A value's own bytes, with one matched pair of surrounding quotes removed. */
+function unquote(value: string): string {
+  const trimmed = value.trim();
+  const quote = trimmed[0];
+  if ((quote === '"' || quote === "'") && trimmed.length > 1 && trimmed.endsWith(quote)) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+/**
+ * Every value in a file the user added as ENV is managed, whatever it looks
+ * like. The user picked the file, so guessing which keys are secret would only
+ * be a way to leave one behind; the key name decides the label and nothing
+ * else. The span is the whole value, quotes included, so restoring a real
+ * value cannot change the quoting the shell sees.
+ */
+export function classifyEnvValue(key: string, value: string): Classification {
+  const bare = unquote(value);
+  if (!bare || ALREADY_MASKED.test(bare)) return NOT_SECRET;
+
+  const secretType = SECRET_KEY_PATTERNS.find(({ pattern }) => pattern.test(key))?.type ?? 'generic';
+  return { secretType, spans: [whole(value)] };
+}

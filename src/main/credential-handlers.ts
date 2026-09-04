@@ -1,15 +1,20 @@
 /**
  * ipcMain handlers for the Developer Credential Manager settings UI.
  *
- * Invariant 2: nothing this module returns carries a plaintext value, the
- * master key or a derived key. It does not import the reveal capability that
- * `Materializer`'s decrypting methods require, so a channel that tried to
- * return a secret would not compile. `grep decrypt` over this file finds
- * nothing, and that is the property a reviewer should check.
+ * Exactly one channel here carries plaintext: `credentials:reveal-file`, which
+ * the credential detail pane calls for the file the user has open. It is
+ * user-initiated, it needs the master key unlocked, and `CredentialRuntime`
+ * records every reveal in the audit trail with a key count and no value. Every
+ * other channel returns masked shapes only: names, counts, paths and states.
  *
- * The renderer can either open a CLI approval window or start a main-process
+ * This module holds no decrypting capability of its own. The plaintext work
+ * lives on `CredentialRuntime`, which is the one holder of the reveal
+ * capability that `Materializer`'s decrypting methods demand, so a channel
+ * that reached for a value any other way would not compile.
+ *
+ * The renderer can also open a CLI approval window or start a main-process
  * session that temporarily restores values at their original file paths.
- * Neither mode returns plaintext over IPC.
+ * Neither of those returns plaintext over IPC.
  */
 
 import * as fs from 'fs';
@@ -21,9 +26,10 @@ import { slugify } from '../shared/credentials/group-path';
 import type {
   CredentialUiSessionMode,
   CredentialUiSessionRequest,
+  EnvEntryEdit,
+  FileKind,
   GroupKind,
   GroupScope,
-  Injection,
 } from '../shared/credentials/types';
 import {
   auditDetail,
@@ -39,7 +45,6 @@ import {
   getCredentialSocket,
   startCredentialSocket,
 } from './services/credentials/CredentialSocket';
-import { scanProject } from './services/credentials/discovery';
 
 /**
  * Membership tables rather than literal arrays: adding a member to one of
@@ -55,7 +60,7 @@ const GROUP_KINDS: Record<GroupKind, true> = {
   ssh: true,
   aws: true,
 };
-const INJECTIONS: Record<Injection, true> = { env: true, file: true, both: true };
+const FILE_KINDS: Record<FileKind, true> = { key: true, env: true, 'ssh-key': true };
 const UI_SESSION_MODES: Record<CredentialUiSessionMode, true> = {
   'original-files': true,
   'cli-authorization': true,
@@ -170,6 +175,26 @@ function parseUpdateGroup(input: unknown): UpdateGroupRequest {
   if (commands !== undefined) patch.allowedCommands = commands;
 
   return patch;
+}
+
+function parseEnvEntryEdit(input: unknown): EnvEntryEdit {
+  if (!input || typeof input !== 'object') {
+    throw new CredError('bad-request', 'an entry description is required');
+  }
+  const record = input as Record<string, unknown>;
+  if (typeof record.value !== 'string') {
+    throw new CredError('bad-request', '"value" must be a string');
+  }
+
+  return {
+    fileId: requireId(record.fileId, 'fileId'),
+    previousKeyName:
+      typeof record.previousKeyName === 'string' && record.previousKeyName
+        ? record.previousKeyName
+        : null,
+    keyName: requireText(record.keyName, 'keyName'),
+    value: record.value,
+  };
 }
 
 function parseUiSessionRequest(input: unknown): CredentialUiSessionRequest {
@@ -322,16 +347,14 @@ export function setupCredentialHandlers(): void {
   );
 
   ipcMain.handle(
-    'credentials:scan-project',
-    guard((rootPath: unknown) => scanProject(requireText(rootPath, 'rootPath'))),
-  );
-
-  ipcMain.handle(
     'credentials:import-files',
-    guard((groupId: unknown, paths: unknown) => {
+    guard((groupId: unknown, paths: unknown, kind: unknown) => {
       const id = requireId(groupId, 'groupId');
       if (!Array.isArray(paths)) {
         throw new CredError('bad-request', '"paths" must be an array of strings');
+      }
+      if (!isMember(FILE_KINDS, kind)) {
+        throw new CredError('bad-request', '"kind" is not a known credential file kind');
       }
 
       let imported = 0;
@@ -344,7 +367,7 @@ export function setupCredentialHandlers(): void {
           continue;
         }
         try {
-          const result = materializer.importFile(id, candidate);
+          const result = materializer.importFile(id, candidate, { kind });
           imported += result.imported;
           skipped += result.skipped;
         } catch (error) {
@@ -405,14 +428,21 @@ export function setupCredentialHandlers(): void {
   );
 
   ipcMain.handle(
-    'credentials:set-file-injection',
-    guard((fileId: unknown, injection: unknown, swapDuringSession: unknown) => {
-      const id = requireId(fileId, 'fileId');
-      if (!isMember(INJECTIONS, injection)) {
-        throw new CredError('bad-request', '"injection" is not a known injection mode');
-      }
-      store.updateFile(id, { injection, swapDuringSession: swapDuringSession === true });
-    }),
+    'credentials:reveal-file',
+    guard((fileId: unknown) => runtime.revealFileForUi(requireId(fileId, 'fileId'))),
+  );
+
+  // Both write channels answer with the file's new content, so the renderer can tell a completed write from a refused one and repaint from the same call.
+  ipcMain.handle(
+    'credentials:save-entry',
+    guard((edit: unknown) => runtime.saveEnvEntry(parseEnvEntryEdit(edit))),
+  );
+
+  ipcMain.handle(
+    'credentials:delete-entry',
+    guard((fileId: unknown, keyName: unknown) =>
+      runtime.deleteEnvEntry(requireId(fileId, 'fileId'), requireText(keyName, 'keyName')),
+    ),
   );
 
   ipcMain.handle(

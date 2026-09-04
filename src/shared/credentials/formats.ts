@@ -17,6 +17,26 @@ export interface FormatHandler {
 const DOTENV_KEY = /^[A-Za-z_][A-Za-z0-9_.]*$/;
 const TFVARS_KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
+/**
+ * `null` for `opaque`, which has no key syntax: its one entry is the whole
+ * file, named after its path rather than by anything inside it.
+ */
+const KEY_PATTERNS: Record<FileFormat, RegExp | null> = {
+  dotenv: DOTENV_KEY,
+  tfvars: TFVARS_KEY,
+  opaque: null,
+};
+
+/**
+ * Whether a key the user typed is one this format's parser would read back. An
+ * editor that accepted a name the parser skips would store a secret that never
+ * appears in the file again.
+ */
+export function isValidKeyName(format: FileFormat, key: string): boolean {
+  const pattern = KEY_PATTERNS[format];
+  return pattern !== null && pattern.test(key);
+}
+
 /** Suffixes stripped when a whole-file secret is named after its basename. */
 const OPAQUE_SUFFIXES = ['.key', '.pem', '.txt', '.secret'];
 
@@ -56,8 +76,8 @@ function eachLine(content: string): Array<{ text: string; offset: number }> {
 
 /**
  * Read a value that starts at `from` within `line`, returning the span of the
- * value itself. Quotes are excluded from the span so a rewrite keeps whatever
- * quoting style the file already used.
+ * value itself. Quotes are part of the span: a quoted value is stored and
+ * restored with its quotes, so a rewrite cannot change what the shell reads.
  */
 function readValue(
   line: string,
@@ -76,7 +96,7 @@ function readValue(
         continue;
       }
       if (line[j] === quote) {
-        return { value: line.slice(i + 1, j), start: i + 1, end: j };
+        return { value: line.slice(i, j + 1), start: i, end: j + 1 };
       }
       j += 1;
     }
@@ -193,6 +213,17 @@ export const FORMAT_HANDLERS: Record<FileFormat, FormatHandler> = {
   opaque,
 };
 
+/**
+ * How a key Tiginal manages but the file no longer contains is written back.
+ * `null` means the format has no line to append to: an opaque file is one
+ * nameless value, so a key that is missing from it is the whole file missing.
+ */
+const APPEND_LINE: Record<FileFormat, ((key: string, value: string) => string) | null> = {
+  dotenv: (key, value) => `${key}=${value}`,
+  tfvars: (key, value) => `${key} = ${value}`,
+  opaque: null,
+};
+
 const DETECTION_ORDER: FormatHandler[] = [dotenv, tfvars, opaque];
 
 export function detectFormat(absolutePath: string): FileFormat {
@@ -203,15 +234,58 @@ export function detectFormat(absolutePath: string): FileFormat {
 }
 
 /**
+ * The form a value typed in the UI has to take on disk, or null when the
+ * format cannot carry it at all.
+ *
+ * A bare value is not always safe: ` #` starts a comment, trailing whitespace
+ * is trimmed, and a leading quote opens a quoted value the parser may never
+ * see closed, so storing what the user typed would let the next mask cycle
+ * read the secret back short. The candidates are checked by parsing them, so
+ * the answer is defined by the reader in this file rather than by a second
+ * copy of its rules that could drift away from it.
+ */
+export function storableValue(format: FileFormat, value: string): string | null {
+  const write = APPEND_LINE[format];
+  if (write === null) return value;
+
+  for (const candidate of [value, `"${value}"`, `'${value}'`]) {
+    const line = write('TIGINAL_PROBE', candidate);
+    const parsed = FORMAT_HANDLERS[format].parse(`${line}\n`);
+    if (parsed.some(entry => entry.key === 'TIGINAL_PROBE' && entry.value === candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+export interface RewriteOptions {
+  /**
+   * Append a line for every key that is missing from the file. Tiginal owns
+   * the set of managed keys, so a key deleted from the file by hand comes back
+   * on the next write rather than silently dropping out of the credential set.
+   */
+  appendMissing?: boolean;
+}
+
+export interface RewriteResult {
+  content: string;
+  /** Keys the file does not contain and that were not appended. */
+  missingKeys: string[];
+  appendedKeys: string[];
+}
+
+/**
  * Replace the value of every key in `values`, leaving every other byte of the
- * file untouched. Keys absent from the file are reported rather than invented,
- * which is how drift on a renamed or deleted key surfaces.
+ * file untouched. Comments, ordering, quoting and non-managed lines survive
+ * because each replacement is a splice over one recorded span, never a rebuild
+ * of the file.
  */
 export function rewriteValues(
   content: string,
   format: FileFormat,
   values: Map<string, string>,
-): { content: string; missingKeys: string[] } {
+  options: RewriteOptions = {},
+): RewriteResult {
   const entries = FORMAT_HANDLERS[format].parse(content);
   const wildcard = [...values.values()][0];
 
@@ -225,7 +299,8 @@ export function rewriteValues(
     replacements.push({ start: entry.valueStart, end: entry.valueEnd, text: replacement });
   }
 
-  const missingKeys = entries.some(e => e.key === '') && wildcard !== undefined
+  const wholeFileCovered = entries.some(e => e.key === '') && wildcard !== undefined;
+  const absent = wholeFileCovered
     ? []
     : [...values.keys()].filter(key => !seen.has(key));
 
@@ -235,5 +310,14 @@ export function rewriteValues(
     next = next.slice(0, start) + text + next.slice(end);
   }
 
-  return { content: next, missingKeys };
+  const line = APPEND_LINE[format];
+  if (!options.appendMissing || line === null || absent.length === 0) {
+    return { content: next, missingKeys: absent, appendedKeys: [] };
+  }
+
+  const eol = next.includes('\r\n') ? '\r\n' : '\n';
+  const head = next.length === 0 || next.endsWith('\n') ? next : next + eol;
+  const appended = absent.map(key => line(key, values.get(key) as string) + eol).join('');
+
+  return { content: head + appended, missingKeys: [], appendedKeys: absent };
 }

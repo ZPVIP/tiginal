@@ -24,6 +24,8 @@ const REAL = {
   redisPassword: 'r3dis-REAL-pw-4c1f',
   cloudflareToken: 'cf-REAL-token-9b2e',
   kamalPassword: 'kamal-REAL-registry-7a3d',
+  sshPrivateKey: 'ssh-REAL-private-body-5f8a',
+  addedToken: 'added-REAL-token-3e7b',
 };
 
 if (!process.env.TIGINAL_HARNESS_HOME) {
@@ -54,6 +56,8 @@ const CONFIG_HOME = process.env.HOME;
 const NODE_EXEC = process.env.TIGINAL_NODE_EXEC_PATH || process.execPath;
 const PROJECT = path.join(HOME, 'projects', 'acme-app');
 const SESSION_ROOT = path.join(os.tmpdir(), 'tiginal-cred');
+const SSH_KEY = path.join(HOME, '.ssh', 'id_ed25519');
+const SSH_PUB = `${SSH_KEY}.pub`;
 
 app.setPath('userData', path.join(HOME, `user-data-${process.pid}`));
 
@@ -91,6 +95,7 @@ function write(relative, content, mode) {
 }
 
 const readFile = (relative) => fs.readFileSync(path.join(PROJECT, relative), 'utf8');
+const writeFile = (relative, content) => fs.writeFileSync(path.join(PROJECT, relative), content, 'utf8');
 
 function assertNoRealSecret(label, text) {
   for (const [name, value] of Object.entries(REAL)) {
@@ -142,7 +147,9 @@ function buildFixture() {
     ].join('\n'),
   );
   write('.env.example', 'REDIS_PASSWORD=changeme\n');
+  write('.env.blank', '# nothing but a comment\n');
   write('.kamal/keys/KAMAL_REGISTRY_PASSWORD.key', `${REAL.kamalPassword}\n`, 0o600);
+  write('deploy_key', `-----BEGIN OPENSSH PRIVATE KEY-----\n${REAL.sshPrivateKey}\n`, 0o600);
   write(
     'infra/production/terraform.tfvars',
     [
@@ -152,6 +159,14 @@ function buildFixture() {
       '',
     ].join('\n'),
   );
+
+  fs.mkdirSync(path.dirname(SSH_KEY), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(
+    SSH_KEY,
+    `-----BEGIN OPENSSH PRIVATE KEY-----\n${REAL.sshPrivateKey}\n-----END OPENSSH PRIVATE KEY-----\n`,
+    { mode: 0o600 },
+  );
+  fs.writeFileSync(SSH_PUB, 'ssh-ed25519 AAAAPUBLICKEYBODY harness\n', { mode: 0o644 });
 }
 
 async function run() {
@@ -164,7 +179,6 @@ async function run() {
   const { getMaterializer } = require('../dist/main/main/services/credentials/Materializer.js');
   const { getCredentialRuntime } = require('../dist/main/main/services/credentials/CredentialRuntime.js');
   const socketModule = require('../dist/main/main/services/credentials/CredentialSocket.js');
-  const { scanProject } = require('../dist/main/main/services/credentials/discovery.js');
 
   const crypto = getCrypto();
   await crypto.initialize('harness-master-password', crypto.generateSalt());
@@ -211,50 +225,84 @@ async function run() {
     rootPath: null,
     allowedCommands: [],
   });
-
-  check('discovery finds the managed files and skips the Gemfile and .env.example', () => {
-    const found = scanProject(PROJECT).map((d) => d.relativePath).sort();
-    assert.deepEqual(found, [
-      '.env',
-      '.kamal/keys/KAMAL_REGISTRY_PASSWORD.key',
-      'infra/production/terraform.tfvars',
-    ]);
+  const workstation = store.createGroup({
+    parentId: null,
+    slug: 'workstation',
+    name: 'Workstation',
+    scope: 'system',
+    kind: 'ssh',
+    rootPath: null,
+    allowedCommands: [],
   });
 
-  check('discovery refuses to scan a home directory root', () => {
-    assert.throws(() => scanProject(os.homedir()));
-  });
-
-  const envFile = materializer.importFile(rails.id, path.join(PROJECT, '.env'), {});
+  const envFile = materializer.importFile(rails.id, path.join(PROJECT, '.env'), { kind: 'env' });
   const kamalFile = materializer.importFile(
     kamal.id,
     path.join(PROJECT, '.kamal/keys/KAMAL_REGISTRY_PASSWORD.key'),
-    {},
+    { kind: 'key' },
   );
   const tfFile = materializer.importFile(
     terraform.id,
     path.join(PROJECT, 'infra/production/terraform.tfvars'),
-    {},
+    { kind: 'env' },
   );
+  const sshFile = materializer.importFile(workstation.id, SSH_KEY, { kind: 'ssh-key' });
 
   check('importing the same path twice is refused', () => {
-    assert.throws(() => materializer.importFile(rails.id, path.join(PROJECT, '.env'), {}));
+    assert.throws(() => materializer.importFile(rails.id, path.join(PROJECT, '.env'), { kind: 'env' }));
+  });
+
+  check('a project group refuses a file outside its own root', () => {
+    assert.throws(
+      () => materializer.importFile(rails.id, SSH_PUB, { kind: 'key' }),
+      /project root/,
+    );
+  });
+
+  check('a system group accepts a path anywhere', () => {
+    assert.equal(store.getFile(sshFile.fileId).absolutePath, SSH_KEY);
+  });
+
+  check('an ENV file with no key=value pairs is refused', () => {
+    assert.throws(
+      () => materializer.importFile(rails.id, path.join(PROJECT, '.env.blank'), { kind: 'env' }),
+      /key=value/,
+    );
+  });
+
+  check('an SSH private key is refused outside a system-scope group', () => {
+    assert.throws(
+      () => materializer.importFile(rails.id, path.join(PROJECT, 'deploy_key'), { kind: 'ssh-key' }),
+      /system-scope/,
+    );
+  });
+
+  check('a public key is refused where a private key was declared', () => {
+    assert.throws(
+      () => materializer.importFile(workstation.id, SSH_PUB, { kind: 'ssh-key' }),
+      /private key/,
+    );
+  });
+
+  check('an SSH private key records its sibling public key and masks the private one', () => {
+    assert.equal(store.getFile(sshFile.fileId).publicKeyPath, SSH_PUB);
+    assertNoRealSecret('ssh private key', fs.readFileSync(SSH_KEY, 'utf8'));
+    assert.match(fs.readFileSync(SSH_PUB, 'utf8'), /^ssh-ed25519 /);
   });
 
   check('safe mode leaves no real secret in .env', () => {
     const content = readFile('.env');
     assertNoRealSecret('.env', content);
-    assert.match(content, /REDIS_PASSWORD=\*{8}/);
-    assert.match(content, /REDIS_URL=redis:\/\/:\*{8}@localhost:6379\/1/);
+    assert.match(content, /^REDIS_PASSWORD=\*{8}$/m);
+    assert.match(content, /^REDIS_URL=\*{8}$/m);
   });
 
-  check('safe mode preserves every non-secret line of .env verbatim', () => {
+  check('safe mode masks every value of a declared ENV file and keeps its comments', () => {
     const content = readFile('.env');
     assert.match(content, /^# Redis$/m);
-    assert.match(content, /^REDIS_HOST=localhost$/m);
-    assert.match(content, /^REDIS_PORT=6379$/m);
-    assert.match(content, /^REDIS_DB=1$/m);
-    assert.match(content, /^REDIS_SSL=false$/m);
+    for (const key of ['REDIS_HOST', 'REDIS_PORT', 'REDIS_DB', 'REDIS_SSL']) {
+      assert.match(content, new RegExp(`^${key}=\\*{8}$`, 'm'), `${key} must be masked`);
+    }
   });
 
   check('safe mode replaces a Kamal key file with FAKE_SECRET', () => {
@@ -263,12 +311,12 @@ async function run() {
     assert.match(content, /FAKE_SECRET/);
   });
 
-  check('safe mode masks only the secret tfvars field', () => {
+  check('safe mode masks every tfvars value in place of its quoted original', () => {
     const content = readFile('infra/production/terraform.tfvars');
     assertNoRealSecret('terraform.tfvars', content);
-    assert.match(content, /^aws_region = "us-west-2"$/m);
-    assert.match(content, /^domain_name = "example\.com"$/m);
-    assert.match(content, /^cloudflare_api_token = "\*{8}"$/m);
+    for (const key of ['aws_region', 'cloudflare_api_token', 'domain_name']) {
+      assert.match(content, new RegExp(`^${key} = \\*{8}$`, 'm'), `${key} must be masked`);
+    }
   });
 
   check('safe mode keeps the original file permissions', () => {
@@ -350,6 +398,146 @@ async function run() {
     assert.equal(materializer.inspect(tfFile.fileId).state.kind, 'safe');
   });
 
+  check('a key deleted from the file by hand is written back on the next safe write', () => {
+    const content = readFile('.env');
+    fs.writeFileSync(
+      path.join(PROJECT, '.env'),
+      content.split('\n').filter((line) => !line.startsWith('REDIS_DB=')).join('\n'),
+    );
+    materializer.materializeSafe(envFile.fileId, { force: true });
+
+    assert.match(readFile('.env'), /^REDIS_DB=\*{8}$/m);
+    assert.equal(materializer.inspect(envFile.fileId).state.kind, 'safe');
+  });
+
+  check('reveal hands the detail pane the real ENV values and their on-disk state', () => {
+    const revealed = runtime.revealFileForUi(envFile.fileId);
+    assert.equal(revealed.kind, 'env');
+
+    const byKey = Object.fromEntries(revealed.entries.map((e) => [e.keyName, e]));
+    assert.equal(byKey.REDIS_PASSWORD.value, REAL.redisPassword);
+    assert.equal(byKey.REDIS_PASSWORD.secretType, 'password');
+    assert.equal(revealed.entries.every((entry) => entry.onDisk), true);
+  });
+
+  check('reveal hands back a key file and an SSH pair verbatim', () => {
+    const key = runtime.revealFileForUi(kamalFile.fileId);
+    assert.equal(key.kind, 'key');
+    assert.equal(key.text.includes(REAL.kamalPassword), true);
+
+    const ssh = runtime.revealFileForUi(sshFile.fileId);
+    assert.equal(ssh.kind, 'ssh-key');
+    assert.equal(ssh.text.includes(REAL.sshPrivateKey), true);
+    assert.match(ssh.publicKeyText, /^ssh-ed25519 /);
+  });
+
+  check('a saved ENV entry lands in the file as its mask, never as the value', () => {
+    runtime.saveEnvEntry({
+      fileId: envFile.fileId,
+      previousKeyName: null,
+      keyName: 'ADDED_TOKEN',
+      value: REAL.addedToken,
+    });
+
+    assertNoRealSecret('.env after an added entry', readFile('.env'));
+    assert.match(readFile('.env'), /^ADDED_TOKEN=\*{8}$/m);
+    const added = runtime.revealFileForUi(envFile.fileId).entries
+      .find((entry) => entry.keyName === 'ADDED_TOKEN');
+    assert.equal(added.value, REAL.addedToken);
+    assert.equal(added.onDisk, true);
+  });
+
+  check('renaming an entry moves the line instead of leaving the old key behind', () => {
+    runtime.saveEnvEntry({
+      fileId: envFile.fileId,
+      previousKeyName: 'ADDED_TOKEN',
+      keyName: 'RENAMED_TOKEN',
+      value: REAL.addedToken,
+    });
+
+    const content = readFile('.env');
+    assertNoRealSecret('.env after a rename', content);
+    assert.match(content, /^RENAMED_TOKEN=\*{8}$/m);
+    assert.equal(/^ADDED_TOKEN=/m.test(content), false, 'the old key must be gone from the file');
+    assert.equal(materializer.inspect(envFile.fileId).state.kind, 'safe');
+  });
+
+  check('a typed value needing quotes survives masking instead of being truncated', () => {
+    // A bare `secret #1` would read back as `secret`, and the next mask cycle would then store the truncation over the real value.
+    const awkward = 'secret #1 with a trailing space ';
+    runtime.saveEnvEntry({
+      fileId: envFile.fileId,
+      previousKeyName: null,
+      keyName: 'AWKWARD_SECRET',
+      value: awkward,
+    });
+
+    assertNoRealSecret('.env after an awkward entry', readFile('.env'));
+    assert.match(readFile('.env'), /^AWKWARD_SECRET=\*{8}$/m);
+
+    const storedValue = () => runtime.revealFileForUi(envFile.fileId).entries
+      .find((entry) => entry.keyName === 'AWKWARD_SECRET').value;
+    assert.equal(storedValue(), `"${awkward}"`, 'the stored form carries the quotes the file needs');
+
+    // The loop that loses an unquoted value: a session writes the real line, the user edits the file, and the drift import reads it back. The quotes are what make that read exact.
+    writeFile('.env', readFile('.env').replace(
+      /^AWKWARD_SECRET=.*$/m,
+      `AWKWARD_SECRET="${awkward}"`,
+    ));
+    materializer.importDrift(envFile.fileId);
+    assert.equal(storedValue(), `"${awkward}"`, 'the drift import must not truncate the secret');
+    assertNoRealSecret('.env after the drift import', readFile('.env'));
+
+    runtime.deleteEnvEntry(envFile.fileId, 'AWKWARD_SECRET');
+    assert.equal(/^AWKWARD_SECRET=/m.test(readFile('.env')), false);
+  });
+
+  check('a key name the parser would not read back is refused', () => {
+    assert.throws(
+      () => runtime.saveEnvEntry({
+        fileId: envFile.fileId,
+        previousKeyName: null,
+        keyName: 'NOT A KEY',
+        value: 'anything',
+      }),
+      /key name/,
+    );
+  });
+
+  check('a mask cannot be saved as a real value, and a key file has no entries to edit', () => {
+    assert.throws(
+      () => runtime.saveEnvEntry({
+        fileId: envFile.fileId,
+        previousKeyName: null,
+        keyName: 'MASKED_BACK',
+        value: '********',
+      }),
+      /mask/,
+    );
+    assert.throws(
+      () => runtime.saveEnvEntry({
+        fileId: kamalFile.fileId,
+        previousKeyName: null,
+        keyName: 'KAMAL_REGISTRY_PASSWORD',
+        value: 'nope',
+      }),
+      /ENV/,
+    );
+  });
+
+  check('deleting an entry takes its whole line out of the file', () => {
+    runtime.deleteEnvEntry(envFile.fileId, 'RENAMED_TOKEN');
+
+    const content = readFile('.env');
+    assert.equal(/RENAMED_TOKEN/.test(content), false, 'no masked line may survive the delete');
+    assert.equal(
+      runtime.revealFileForUi(envFile.fileId).entries.some((e) => e.keyName === 'RENAMED_TOKEN'),
+      false,
+    );
+    assert.equal(materializer.inspect(envFile.fileId).state.kind, 'safe');
+    assert.throws(() => runtime.deleteEnvEntry(envFile.fileId, 'RENAMED_TOKEN'), /not managed/);
+  });
+
   check('an expired session stops counting as active', () => {
     const session = store.createSession({
       groupId: root.id,
@@ -409,6 +597,25 @@ async function run() {
         true,
       );
       assertNoRealSecret('UI file session grant', JSON.stringify(grant));
+      // Reading is allowed: this session already put these values on the disk the pane is describing. Writing is not, because it would lose the masked copy teardown puts back.
+      const duringSession = runtime.revealFileForUi(envFile.fileId);
+      assert.equal(
+        duringSession.entries.find((entry) => entry.keyName === 'REDIS_PASSWORD').value,
+        REAL.redisPassword,
+      );
+      assert.throws(
+        () => runtime.deleteEnvEntry(envFile.fileId, 'REDIS_PASSWORD'),
+        /live session/,
+      );
+      assert.throws(
+        () => runtime.saveEnvEntry({
+          fileId: envFile.fileId,
+          previousKeyName: null,
+          keyName: 'BLOCKED_WHILE_LIVE',
+          value: 'nope',
+        }),
+        /live session/,
+      );
     } finally {
       runtime.revoke(grant.sessionId);
     }

@@ -25,6 +25,7 @@ import type {
   CredentialSession,
   CredErrorCode,
   FileFormat,
+  FileKind,
   GroupKind,
   GroupScope,
   Injection,
@@ -93,12 +94,13 @@ export type UpdateGroupPatch = Partial<{
 
 export interface CreateFileInput {
   groupId: string;
+  kind: FileKind;
   absolutePath: string;
   relativePath: string;
   format: FileFormat;
   injection: Injection;
   fileMode: number | null;
-  swapDuringSession?: boolean;
+  publicKeyPath?: string | null;
 }
 
 export type UpdateFilePatch = Partial<{
@@ -108,7 +110,7 @@ export type UpdateFilePatch = Partial<{
   injection: Injection;
   safeFingerprint: string | null;
   fileMode: number | null;
-  swapDuringSession: boolean;
+  publicKeyPath: string | null;
 }>;
 
 /** An entry row. `valueEncrypted` is ciphertext and never leaves this layer. */
@@ -175,10 +177,7 @@ const FILE_PATCH_COLUMNS: Record<keyof UpdateFilePatch, ColumnBinding> = {
   injection: { column: 'injection', encode: value => value as string },
   safeFingerprint: { column: 'safe_fingerprint', encode: value => value as string | null },
   fileMode: { column: 'file_mode', encode: value => value as number | null },
-  swapDuringSession: {
-    column: 'swap_during_session',
-    encode: value => ((value as boolean) ? 1 : 0),
-  },
+  publicKeyPath: { column: 'public_key_path', encode: value => value as string | null },
 };
 
 /** A group chain deeper than this is a cycle, not a real tree. */
@@ -201,13 +200,14 @@ interface GroupRow {
 interface FileRow {
   id: string;
   group_id: string;
+  kind: string;
   absolute_path: string;
   relative_path: string;
   format: string;
   injection: string;
   safe_fingerprint: string | null;
   file_mode: number | null;
-  swap_during_session: number;
+  public_key_path: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -278,13 +278,14 @@ function toFile(row: FileRow): CredentialFile {
   return {
     id: row.id,
     groupId: row.group_id,
+    kind: row.kind as FileKind,
     absolutePath: row.absolute_path,
     relativePath: row.relative_path,
     format: row.format as FileFormat,
     injection: row.injection as Injection,
     safeFingerprint: row.safe_fingerprint,
     fileMode: row.file_mode,
-    swapDuringSession: row.swap_during_session === 1,
+    publicKeyPath: row.public_key_path,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -544,19 +545,20 @@ export class CredentialStore {
     this.db
       .prepare(
         `INSERT INTO credential_files
-           (id, group_id, absolute_path, relative_path, format, injection,
-            safe_fingerprint, file_mode, swap_during_session, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+           (id, group_id, kind, absolute_path, relative_path, format, injection,
+            safe_fingerprint, file_mode, public_key_path, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.groupId,
+        input.kind,
         input.absolutePath,
         input.relativePath,
         input.format,
         input.injection,
         input.fileMode,
-        input.swapDuringSession ? 1 : 0,
+        input.publicKeyPath ?? null,
         now,
         now,
       );
@@ -627,6 +629,13 @@ export class CredentialStore {
 
   deleteEntry(id: string): void {
     this.db.prepare('DELETE FROM credential_entries WHERE id = ?').run(id);
+  }
+
+  /** The ENV table addresses an entry by name, which is what the user sees. */
+  deleteEntryByKey(fileId: string, keyName: string): void {
+    this.db
+      .prepare('DELETE FROM credential_entries WHERE file_id = ? AND key_name = ?')
+      .run(fileId, keyName);
   }
 
   // --- sessions ---

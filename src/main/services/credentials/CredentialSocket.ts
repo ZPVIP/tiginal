@@ -357,7 +357,6 @@ export class CredentialSocket {
       `Duration: ${Math.round(ttlMs / 60_000)} minute(s)`,
       `Environment: ${exposure.env.join(', ') || 'none'}`,
       `Files: ${exposure.files.join(', ') || 'none'}`,
-      `Swapped in place: ${exposure.swapped.join(', ') || 'none'}`,
     ].join('\n');
 
     const options: MessageBoxOptions = {

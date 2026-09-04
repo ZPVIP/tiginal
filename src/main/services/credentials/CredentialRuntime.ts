@@ -14,6 +14,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { getCrypto } from '../../../services/ssh/CryptoService';
+import { classifyEnvValue, fakeValueFor } from '../../../shared/credentials/classify';
+import {
+  FORMAT_HANDLERS,
+  isValidKeyName,
+  storableValue,
+} from '../../../shared/credentials/formats';
 import { fingerprint } from '../../../shared/credentials/state';
 import {
   DEFAULT_TTL_MS,
@@ -27,7 +33,11 @@ import type {
   CredentialGroup,
   CredentialUiSessionGrant,
   CredentialUiSessionRequest,
+  EnvEntryEdit,
+  FileKind,
   GroupKind,
+  RevealedEnvEntry,
+  RevealedFileContent,
   SessionGrant,
   SessionStatus,
 } from '../../../shared/credentials/types';
@@ -42,6 +52,7 @@ import {
   getMaterializer,
   type Materializer,
   type RevealCapability,
+  type RevealedEntry,
 } from './Materializer';
 
 /** Claimed at module load, so no later module can claim it. */
@@ -84,6 +95,60 @@ const KIND_ADAPTERS: Record<GroupKind, KindAdapter> = {
       return env;
     },
   },
+};
+
+/**
+ * A dotenv value's quotes belong to the file, not to the variable: a shell
+ * reading `KEY="v"` exports `v`. The stored value keeps them so a rewrite
+ * cannot change the file's own quoting, so they come off here instead.
+ */
+function environmentValue(kind: FileKind, stored: string): string {
+  if (kind !== 'env') return stored;
+  const quote = stored[0];
+  const quoted = (quote === '"' || quote === "'") && stored.length > 1 && stored.endsWith(quote);
+  return quoted ? stored.slice(1, -1) : stored;
+}
+
+function readTextIfPossible(filePath: string | null): string | null {
+  if (!filePath) return null;
+  try {
+    return fs.statSync(filePath).isFile() ? fs.readFileSync(filePath, 'utf8') : null;
+  } catch {
+    return null;
+  }
+}
+
+/** An opaque file is one nameless value, so its whole body is that entry. */
+function wholeFileText(revealed: RevealedEntry[]): string {
+  return revealed[0]?.value ?? '';
+}
+
+function revealedEnvEntries(file: CredentialFile, revealed: RevealedEntry[]): RevealedEnvEntry[] {
+  const content = readTextIfPossible(file.absolutePath);
+  const onDisk = new Set(
+    content === null ? [] : FORMAT_HANDLERS[file.format].parse(content).map(entry => entry.key),
+  );
+
+  return revealed.map(entry => ({
+    keyName: entry.key,
+    secretType: entry.secretType,
+    value: entry.value,
+    onDisk: onDisk.has(entry.key),
+  }));
+}
+
+/** What the detail pane shows, per kind the user declared. */
+const REVEALED_CONTENT: Record<
+  FileKind,
+  (file: CredentialFile, revealed: RevealedEntry[]) => RevealedFileContent
+> = {
+  key: (_file, revealed) => ({ kind: 'key', text: wholeFileText(revealed) }),
+  'ssh-key': (file, revealed) => ({
+    kind: 'ssh-key',
+    text: wholeFileText(revealed),
+    publicKeyText: readTextIfPossible(file.publicKeyPath),
+  }),
+  env: (file, revealed) => ({ kind: 'env', entries: revealedEnvEntries(file, revealed) }),
 };
 
 const AUDIT_FOR_STATUS: Record<SessionStatus, AuditEvent> = {
@@ -408,7 +473,6 @@ export class CredentialRuntime {
         detail: auditDetail({
           envVars: Object.keys(grant.env).length,
           files: grant.files.length,
-          swapped: record.swapped.length,
           ttlMs,
         }),
       });
@@ -555,7 +619,12 @@ export class CredentialRuntime {
         event: 'session.started',
         groupId: scope[0].id,
         sessionId: session.id,
-        detail: auditDetail({ kind: 'original-files', swapped: record.swapped.length, ttlMs }),
+        detail: auditDetail({
+          kind: 'original-files',
+          swapped: record.swapped.length,
+          appended: realFiles.reduce((total, { real }) => total + real.appendedKeys.length, 0),
+          ttlMs,
+        }),
       });
 
       return { sessionId: session.id, expiresAt, mode: 'original-files' };
@@ -563,6 +632,131 @@ export class CredentialRuntime {
       this.finish(session.id, 'revoked', null);
       throw error;
     }
+  }
+
+  /**
+   * One managed file's real content, for the credential detail pane the user
+   * has open. This is the only method that hands plaintext to the renderer, so
+   * it needs the master key and records the reveal with a key count and no
+   * value. It does not refuse during a live session the way the editing paths
+   * do: that session has already put these same values on disk, so reading
+   * them here exposes nothing further, and refusing would blank the pane
+   * exactly when the user is most likely looking at it.
+   */
+  revealFileForUi(fileId: string): RevealedFileContent {
+    if (!getCrypto().isUnlocked()) {
+      throw new CredError('locked', 'unlock Tiginal to see a credential value');
+    }
+
+    const file = this.requireFile(fileId);
+
+    const revealed = this.materializer.revealForRuntime(fileId, REVEAL);
+    this.store.audit({
+      event: 'file.revealed',
+      groupId: file.groupId,
+      detail: auditDetail({
+        path: file.relativePath || path.basename(file.absolutePath),
+        kind: file.kind,
+        keys: revealed.length,
+      }),
+    });
+
+    return REVEALED_CONTENT[file.kind](file, revealed);
+  }
+
+  /**
+   * Add or edit one key in a declared ENV file. The file is re-masked before
+   * this returns, so a new key lands on disk as its mask and never as the
+   * value the user just typed.
+   *
+   * The file's new content comes back so the caller can tell a completed save
+   * from a refused one. A channel resolving void made both look alike in the
+   * renderer, which closed the dialog over a value the user then had to retype.
+   */
+  saveEnvEntry(edit: EnvEntryEdit): RevealedFileContent {
+    const crypto = getCrypto();
+    if (!crypto.isUnlocked()) {
+      throw new CredError('locked', 'unlock Tiginal to edit a credential value');
+    }
+
+    const file = this.requireEnvFile(edit.fileId);
+    this.assertPathIdle(file.absolutePath);
+
+    const keyName = edit.keyName.trim();
+    if (!isValidKeyName(file.format, keyName)) {
+      throw new CredError('bad-request', `"${keyName}" is not a key name this file's format accepts`);
+    }
+
+    // Stored in the form the file has to carry, not the form the user typed: a bare value ending in a space, or carrying ` #`, parses back short, and the next mask cycle would store the truncated secret over the real one. Classification then runs on the stored form so its span covers the quotes the file will hold.
+    const stored = storableValue(file.format, edit.value);
+    if (stored === null) {
+      throw new CredError('bad-request', 'that value cannot be written to this file format');
+    }
+
+    const classification = classifyEnvValue(keyName, stored);
+    if (classification.spans.length === 0) {
+      throw new CredError('bad-request', 'a value is required, and it cannot be a mask');
+    }
+
+    const previous = edit.previousKeyName?.trim() || null;
+    const renamed = previous !== null && previous !== keyName;
+
+    this.store.upsertEntry({
+      fileId: file.id,
+      keyName,
+      secretType: classification.secretType,
+      valueEncrypted: crypto.encrypt(stored),
+      fakeValue: fakeValueFor(stored, classification, file.format),
+    });
+    if (renamed) {
+      this.store.deleteEntryByKey(file.id, previous);
+      this.materializer.removeKeyLine(file.id, previous);
+    }
+    this.materializer.materializeSafe(file.id, { force: true });
+
+    this.store.audit({
+      event: 'entry.saved',
+      groupId: file.groupId,
+      detail: auditDetail({
+        path: file.relativePath || path.basename(file.absolutePath),
+        key: keyName,
+        renamed: String(renamed),
+      }),
+    });
+
+    return this.revealFileForUi(file.id);
+  }
+
+  /**
+   * Stop managing one key and take its line out of the file. Leaving
+   * `KEY=********` behind would hand the user a mask their tools would read as
+   * the value.
+   */
+  deleteEnvEntry(fileId: string, keyName: string): RevealedFileContent {
+    if (!getCrypto().isUnlocked()) {
+      throw new CredError('locked', 'unlock Tiginal to delete a credential value');
+    }
+
+    const file = this.requireEnvFile(fileId);
+    this.assertPathIdle(file.absolutePath);
+
+    const managed = this.store.listEntries(fileId).some(entry => entry.keyName === keyName);
+    if (!managed) throw new CredError('not-found', 'that key is not managed in this file');
+
+    this.store.deleteEntryByKey(fileId, keyName);
+    this.materializer.removeKeyLine(fileId, keyName);
+    this.materializer.materializeSafe(fileId, { force: true });
+
+    this.store.audit({
+      event: 'entry.deleted',
+      groupId: file.groupId,
+      detail: auditDetail({
+        path: file.relativePath || path.basename(file.absolutePath),
+        key: keyName,
+      }),
+    });
+
+    return this.revealFileForUi(fileId);
   }
 
   /** The TTL a request would actually get, so an approval dialog can state it. */
@@ -575,10 +769,9 @@ export class CredentialRuntime {
    * approval dialog and the UI's live-mode dialog both need this, and neither
    * may decrypt anything to get it.
    */
-  exposurePreview(groupId: string): { env: string[]; files: string[]; swapped: string[] } {
+  exposurePreview(groupId: string): { env: string[]; files: string[] } {
     const env = new Set<string>();
     const files: string[] = [];
-    const swapped: string[] = [];
 
     for (const group of this.store.descendantsOf(groupId)) {
       const adapter = KIND_ADAPTERS[group.kind];
@@ -597,11 +790,10 @@ export class CredentialRuntime {
           env.add(`TIGINAL_CRED_FILE_${envToken(basename)}`);
           for (const name of Object.keys(adapter.fileEnv(basename, ''))) env.add(name);
         }
-        if (file.swapDuringSession) swapped.push(file.absolutePath);
       }
     }
 
-    return { env: [...env].sort(), files, swapped };
+    return { env: [...env].sort(), files };
   }
 
   isPreauthorized(groupId: string): boolean {
@@ -690,6 +882,32 @@ export class CredentialRuntime {
       }
     }
     return subtree.filter(group => selected.has(group.id));
+  }
+
+  private requireFile(fileId: string): CredentialFile {
+    const file = this.store.getFile(fileId);
+    if (!file) throw new CredError('not-found', 'managed file does not exist');
+    return file;
+  }
+
+  private requireEnvFile(fileId: string): CredentialFile {
+    const file = this.requireFile(fileId);
+    if (file.kind !== 'env') {
+      throw new CredError('bad-request', 'only a file added as ENV has editable entries');
+    }
+    return file;
+  }
+
+  /**
+   * A path a live session has swapped holds real bytes right now, so writing
+   * over it would lose the masked copy the teardown puts back.
+   */
+  private assertPathIdle(absolutePath: string): void {
+    for (const session of this.live.values()) {
+      if (session.swapped.some(record => record.path === absolutePath)) {
+        throw new CredError('policy', 'a live session is using that file; end the session first');
+      }
+    }
   }
 
   private assertOriginalFilesReady(files: CredentialFile[]): void {
@@ -821,6 +1039,7 @@ export class CredentialRuntime {
     const files: Array<{ path: string; label: string }> = [];
     const notes: string[] = [];
     let absentKeys = 0;
+    let appendedKeys = 0;
     let ordinal = 0;
 
     for (const group of scope) {
@@ -828,16 +1047,18 @@ export class CredentialRuntime {
 
       for (const file of this.store.listFiles(group.id)) {
         const wantsFile = file.injection === 'file' || file.injection === 'both';
-        const real = wantsFile || file.swapDuringSession
-          ? this.materializer.realContentFor(file.id, REVEAL)
-          : null;
-        if (real) absentKeys += real.missingKeys.length;
+        const real = wantsFile ? this.materializer.realContentFor(file.id, REVEAL) : null;
+        if (real) {
+          absentKeys += real.missingKeys.length;
+          appendedKeys += real.appendedKeys.length;
+        }
 
         if (file.injection === 'env' || file.injection === 'both') {
           for (const entry of this.materializer.revealForRuntime(file.id, REVEAL)) {
-            env[entry.key] = entry.value;
+            const value = environmentValue(file.kind, entry.value);
+            env[entry.key] = value;
             for (const alias of adapter.envAliases(entry.key)) {
-              env[alias] = entry.value;
+              env[alias] = value;
             }
           }
         }
@@ -865,11 +1086,6 @@ export class CredentialRuntime {
           Object.assign(env, adapter.fileEnv(basename, ephemeral));
           ordinal++;
         }
-
-        if (file.swapDuringSession && real) {
-          this.swapIn(session, file.absolutePath, file.fileMode, real.content, expiresAt);
-          notes.push(`swapped in place, restored on exit: ${file.absolutePath}`);
-        }
       }
     }
 
@@ -878,6 +1094,9 @@ export class CredentialRuntime {
       `env: ${Object.keys(env).length} variable(s): ${Object.keys(env).sort().join(', ') || 'none'}`,
     );
     for (const file of files) notes.push(`file: ${file.path}`);
+    if (appendedKeys > 0) {
+      notes.push(`${appendedKeys} managed key(s) were missing from their file and were written back`);
+    }
     if (absentKeys > 0) {
       notes.push(`${absentKeys} managed key(s) are no longer present in their file`);
     }
