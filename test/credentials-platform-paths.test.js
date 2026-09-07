@@ -9,14 +9,14 @@ const {
   credentialSocketPathFor,
 } = require('../dist/main/shared/credentials/local-endpoint.js');
 
-test('POSIX credential paths keep every physical path segment', () => {
+test('POSIX credential paths omit the synthetic filesystem root', () => {
   assert.equal(
     toCredentialTreePath('/Users/alice/work/app/.env', 'darwin'),
-    'Filesystem/Users/alice/work/app/.env',
+    'Users/alice/work/app/.env',
   );
   assert.equal(
     toCredentialTreePath('/home/alice/work/app/.env', 'linux'),
-    'Filesystem/home/alice/work/app/.env',
+    'home/alice/work/app/.env',
   );
 });
 

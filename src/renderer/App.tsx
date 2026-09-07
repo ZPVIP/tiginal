@@ -10,14 +10,17 @@ import { CredentialsSettings } from './components/Settings/CredentialsSettings';
 
 // Platform detection
 const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+const CHAT_MIN_WIDTH = 600;
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'terminal' | 'credentials'>('terminal');
+  const [leftView, setLeftView] = useState<'chat' | 'credentials'>('chat');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Layout State
+  const [showLeft, setShowLeft] = useState(true);
   const [showTerminal, setShowTerminal] = useState(true);
-  const [showChat, setShowChat] = useState(true);
+  const showChat = showLeft && leftView === 'chat';
+  const showCredentials = showLeft && leftView === 'credentials';
   const [chatRatio, setChatRatio] = useState(0.5); // Default 50% for IDE mode
 
   // Resizing State
@@ -39,8 +42,20 @@ export default function App() {
       const savedLayout = localStorage.getItem('app-layout-config');
       if (savedLayout) {
         const config = JSON.parse(savedLayout);
-        if (typeof config.showTerminal === 'boolean') setShowTerminal(config.showTerminal);
-        if (typeof config.showChat === 'boolean') setShowChat(config.showChat);
+        if (config.leftView === 'chat' || config.leftView === 'credentials') {
+          setLeftView(config.leftView);
+          if (typeof config.showLeft === 'boolean') setShowLeft(config.showLeft);
+          if (typeof config.showTerminal === 'boolean') setShowTerminal(config.showTerminal);
+        } else if (config.activeTab === 'credentials' && config.showChat === false) {
+          // Migrate the layout saved before Credentials became a left-side view.
+          setLeftView('credentials');
+          setShowLeft(true);
+          setShowTerminal(false);
+        } else {
+          setLeftView('chat');
+          if (typeof config.showChat === 'boolean') setShowLeft(config.showChat);
+          if (typeof config.showTerminal === 'boolean') setShowTerminal(config.showTerminal);
+        }
         if (typeof config.chatRatio === 'number') setChatRatio(config.chatRatio);
         if (typeof config.isDrawerOpen === 'boolean') setIsDrawerOpen(config.isDrawerOpen);
       }
@@ -51,14 +66,14 @@ export default function App() {
 
   // Save Layout State
   useEffect(() => {
-    const config = { showTerminal, showChat, chatRatio, isDrawerOpen };
+    const config = { leftView, showLeft, showTerminal, chatRatio, isDrawerOpen };
     localStorage.setItem('app-layout-config', JSON.stringify(config));
-  }, [showTerminal, showChat, chatRatio, isDrawerOpen]);
+  }, [leftView, showLeft, showTerminal, chatRatio, isDrawerOpen]);
 
 
   // Clamp chatRatio when drawer opens/closes or layout changes to ensure chat min-width
   useEffect(() => {
-    if (!showChat || !showTerminal) return;
+    if (!showLeft || !showTerminal) return;
     // Use a rAF to read the actual content area width after layout settles
     const rafId = requestAnimationFrame(() => {
       const contentArea = contentAreaRef.current;
@@ -66,14 +81,13 @@ export default function App() {
       const availableWidth = contentArea.clientWidth;
       if (availableWidth <= 0) return;
 
-      const minChatWidth = 448;
-      const minChatRatio = minChatWidth / availableWidth;
+      const minChatRatio = CHAT_MIN_WIDTH / availableWidth;
       if (chatRatio < minChatRatio) {
         setChatRatio(minChatRatio);
       }
     });
     return () => cancelAnimationFrame(rafId);
-  }, [isDrawerOpen, showChat, showTerminal]);
+  }, [isDrawerOpen, showLeft, showTerminal]);
 
   const NavItem = ({ id, icon: Icon, title, onClick, isActive }: { id: string, icon: any, title: string, onClick?: () => void, isActive?: boolean }) => (
     <button
@@ -111,8 +125,7 @@ export default function App() {
       let newChatRatio = mouseX / availableWidth;
 
       // Constraint: Min 448px for AI Chat (w-md)
-      const minChatWidth = 448;
-      const minChatRatio = minChatWidth / availableWidth;
+      const minChatRatio = CHAT_MIN_WIDTH / availableWidth;
 
       // Terminal can shrink to give space to chat, but keep a small minimum
       const minTerminalWidth = 120;
@@ -137,24 +150,26 @@ export default function App() {
   }, [isResizing]);
 
   // View Switching Logic
-  const switchToChat = () => {
-    setShowChat(true);
+  const showAiChat = () => {
+    setLeftView('chat');
+    setShowLeft(true);
     setShowTerminal(false);
   };
 
-  const switchToTerminal = (tab?: 'terminal' | 'credentials') => {
-    setShowChat(false);
-    setShowTerminal(true);
-    if (tab) setActiveTab(tab);
-  };
-
-  const switchToIDE = () => {
-    setShowChat(true);
+  const showFullTerminal = () => {
+    setShowLeft(false);
     setShowTerminal(true);
   };
 
-  const handleNavClick = (id: 'terminal' | 'credentials') => {
-    switchToTerminal(id);
+  const openCredentials = () => {
+    setLeftView('credentials');
+    setShowLeft(true);
+    setShowTerminal(false);
+  };
+
+  const showSplitView = () => {
+    setShowLeft(true);
+    setShowTerminal(true);
   };
 
   // Global keyboard shortcuts for Chat
@@ -258,32 +273,32 @@ export default function App() {
             style={{ WebkitAppRegion: 'no-drag' } as any}
           >
             <NavItem
+              id="credentials"
+              icon={KeyRound}
+              title="Credentials"
+              isActive={showCredentials && !showTerminal}
+              onClick={openCredentials}
+            />
+            <NavItem
               id="chat"
               icon={MessageSquare}
               title="AI Chat"
               isActive={showChat && !showTerminal}
-              onClick={switchToChat}
+              onClick={showAiChat}
+            />
+            <NavItem
+              id="split-view"
+              icon={SquareSplitHorizontal}
+              title="Split View"
+              isActive={showLeft && showTerminal}
+              onClick={showSplitView}
             />
             <NavItem
               id="terminal"
               icon={TerminalSquare}
               title="Terminal"
-              isActive={!showChat && showTerminal && activeTab === 'terminal'}
-              onClick={() => switchToTerminal('terminal')}
-            />
-            <NavItem
-              id="ide"
-              icon={SquareSplitHorizontal}
-              title="IDE Mode"
-              isActive={showChat && showTerminal}
-              onClick={switchToIDE}
-            />
-            <NavItem
-              id="credentials"
-              icon={KeyRound}
-              title="Credentials"
-              isActive={!showChat && showTerminal && activeTab === 'credentials'}
-              onClick={() => switchToTerminal('credentials')}
+              isActive={!showLeft && showTerminal}
+              onClick={showFullTerminal}
             />
             <NavItem
               id="settings"
@@ -321,26 +336,29 @@ export default function App() {
           {/* Main Content Area */}
           <div ref={contentAreaRef} className="flex-1 flex overflow-hidden w-full">
 
-            {/* Left Pane: AI Chat (now on left) */}
+            {/* Left pane remembers either AI Chat or Credentials. */}
             <div
               className={clsx(
                 "bg-background shadow-2xl flex flex-col h-full relative",
-                !showChat && "hidden"
+                !showLeft && "hidden"
               )}
               style={{
                 flexGrow: showTerminal ? chatRatio : 1,
                 flexShrink: 0,
                 flexBasis: showTerminal ? '0%' : '100%',
-                minWidth: showTerminal ? 448 : undefined,
+                minWidth: showTerminal ? CHAT_MIN_WIDTH : undefined,
               }}
             >
               <ErrorBoundary>
-                <Chat ref={chatRef} onIncognitoChange={setIsIncognito} onConversationChange={setCurrentConversationId} />
+                <div className={clsx('h-full w-full', !showChat && 'hidden')}>
+                  <Chat ref={chatRef} onIncognitoChange={setIsIncognito} onConversationChange={setCurrentConversationId} />
+                </div>
+                {showCredentials && <CredentialsSettings />}
               </ErrorBoundary>
             </div>
 
             {/* Resizer */}
-            {showTerminal && showChat && (
+            {showTerminal && showLeft && (
               <div
                 className={clsx(
                   "w-px h-full z-20 shrink-0 relative transition-colors",
@@ -355,23 +373,21 @@ export default function App() {
               </div>
             )}
 
-            {/* Right Pane: Terminal/Credentials (now on right) */}
+            {/* Terminal is always the right side of a split view. */}
             <div
               className={clsx(
                 "overflow-hidden relative min-w-0",
                 !showTerminal && "hidden"
               )}
               style={{
-                flexGrow: showChat ? (1 - chatRatio) : 1,
+                flexGrow: showLeft ? (1 - chatRatio) : 1,
                 flexShrink: 1,
-                flexBasis: showChat ? '0%' : '100%'
+                flexBasis: showLeft ? '0%' : '100%'
               }}
             >
-              {/* Screens are always mounted to preserve state */}
-              <div className={clsx("h-full w-full", activeTab !== 'terminal' && "hidden")}>
+              <div className="h-full w-full">
                 <TerminalView onActivePathChange={setActiveTerminalPath} />
               </div>
-              {activeTab === 'credentials' && <CredentialsSettings />}
             </div>
           </div>
         </div>

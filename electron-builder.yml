@@ -15,6 +15,11 @@ files:
   - node_modules/**/*
   - package.json
 
+asarUnpack:
+  - bin/**/*
+  - dist/main/cli/**/*
+  - dist/main/shared/credentials/**/*
+
 extraResources:
   - from: resources/model-catalog/api.json
     to: model-catalog/api.json

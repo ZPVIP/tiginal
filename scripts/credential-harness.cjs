@@ -49,7 +49,7 @@ if (!process.env.TIGINAL_HARNESS_HOME) {
   process.exit(child.status === null ? 1 : child.status);
 }
 
-const { app } = require('electron');
+const { app, dialog } = require('electron');
 
 const HOME = process.env.TIGINAL_HARNESS_HOME;
 const CONFIG_HOME = process.env.HOME;
@@ -587,6 +587,7 @@ async function run() {
 
     try {
       assert.equal(grant.mode, 'original-files');
+      assert.equal(runtime.hasActiveOriginalFileSession(), true);
       assert.equal(readFile('.env').includes(REAL.redisPassword), true);
       assert.equal(
         readFile('.kamal/keys/KAMAL_REGISTRY_PASSWORD.key').includes(REAL.kamalPassword),
@@ -630,9 +631,41 @@ async function run() {
       readFile('infra/production/terraform.tfvars'),
     );
     assert.equal(store.getSession(grant.sessionId).status, 'revoked');
+    assert.equal(runtime.hasActiveOriginalFileSession(), false);
   });
 
   await socketModule.startCredentialSocket();
+
+  await checkAsync('a delayed desktop approval keeps the CLI connected and authorizes the duration', async () => {
+    const originalShowMessageBox = dialog.showMessageBox;
+    let approvalCount = 0;
+    dialog.showMessageBox = async () => {
+      approvalCount += 1;
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return { response: 1, checkboxChecked: false };
+    };
+
+    try {
+      const first = await runCli([
+        'cred', 'run', 'acme-app', '--ttl', '5m',
+        '--', NODE_EXEC, '-e', 'process.exit(0)',
+      ]);
+      assert.equal(first.status, 0, `approved run failed: ${first.stderr}`);
+
+      const second = await runCli([
+        'cred', 'run', 'acme-app',
+        '--', NODE_EXEC, '-e', 'process.exit(0)',
+      ]);
+      assert.equal(second.status, 0, `preauthorized run failed: ${second.stderr}`);
+      assert.equal(approvalCount, 1, 'the active authorization should suppress another prompt');
+    } finally {
+      dialog.showMessageBox = originalShowMessageBox;
+      const preauthorization = store.listSessions(null, 20).find(session => (
+        session.status === 'active' && session.approvedBy === 'ui'
+      ));
+      if (preauthorization) runtime.revoke(preauthorization.id);
+    }
+  });
 
   await checkAsync('the CLI lists the group tree', async () => {
     const out = await runCli(['cred', 'list']);
@@ -652,6 +685,16 @@ async function run() {
 
   await checkAsync('a run with no -- separator is rejected', async () => {
     assert.equal((await runCli(['cred', 'run', 'acme-app'])).status, 2);
+  });
+
+  await checkAsync('help explains commands, options, and shell expansion', async () => {
+    const out = await runCli(['--help']);
+    assert.equal(out.status, 0, `help failed: ${out.stderr}`);
+    assert.equal(out.stderr, '');
+    assert.match(out.stdout, /Commands:/);
+    assert.match(out.stdout, /-v, --verbose/);
+    assert.match(out.stdout, /sh -c/);
+    assert.match(out.stdout, /Shell variable expansion:/);
   });
 
   const dumpPath = path.join(HOME, 'child-env.json');
@@ -676,6 +719,7 @@ fs.writeFileSync(${JSON.stringify(dumpPath)}, JSON.stringify(out));
       '--', NODE_EXEC, dumpScript,
     ]);
     assert.equal(out.status, 0, `run failed: ${out.stderr}`);
+    assert.equal(out.stderr, '', 'a normal run should not print credential diagnostics');
 
     const seen = JSON.parse(fs.readFileSync(dumpPath, 'utf8'));
     assert.equal(seen.REDIS_PASSWORD, REAL.redisPassword, 'the child must receive the real password');
@@ -692,9 +736,9 @@ fs.writeFileSync(${JSON.stringify(dumpPath)}, JSON.stringify(out));
     grantedFiles = seen.__files || [];
   });
 
-  await checkAsync('the CLI prints env var names but never a value', async () => {
+  await checkAsync('-v prints env var names but never a value', async () => {
     const out = await runCli([
-      'cred', 'run', 'acme-app', '--yes',
+      'cred', 'run', 'acme-app', '--yes', '-v',
       '--', NODE_EXEC, '-e', 'process.exit(0)',
     ]);
     assertNoRealSecret('cred run output', out.stdout + out.stderr);

@@ -31,18 +31,32 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const ptyIdRef = useRef<number | null>(null);
+  const lastPtySizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const isActiveRef = useRef(isActive);
+  isActiveRef.current = isActive;
   const { currentTheme } = useTheme(); // Use Theme Context
+
+  const fitTerminal = () => {
+    const term = xtermRef.current;
+    const fitAddon = fitAddonRef.current;
+    if (!term || !fitAddon) return;
+
+    const wasAtBottom = term.buffer.active.viewportY === term.buffer.active.baseY;
+    fitAddon.fit();
+    if (wasAtBottom) term.scrollToBottom();
+
+    const ptyId = ptyIdRef.current;
+    const previous = lastPtySizeRef.current;
+    if (ptyId !== null && (previous?.cols !== term.cols || previous.rows !== term.rows)) {
+      lastPtySizeRef.current = { cols: term.cols, rows: term.rows };
+      send('pty:resize', ptyId, term.cols, term.rows);
+    }
+  };
 
   // Expose methods
   useImperativeHandle(ref, () => ({
     fit: () => {
-      if (fitAddonRef.current && xtermRef.current) {
-        // Ensure container has dimensions
-        fitAddonRef.current.fit();
-        if (ptyIdRef.current !== null) {
-           send('pty:resize', ptyIdRef.current, xtermRef.current.cols, xtermRef.current.rows);
-        }
-      }
+      fitTerminal();
     },
     focus: () => xtermRef.current?.focus(),
     write: (data: string) => xtermRef.current?.write(data),
@@ -54,10 +68,7 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
     setFontSize: (size: number) => {
         if (xtermRef.current) {
             xtermRef.current.options.fontSize = size;
-            fitAddonRef.current?.fit();
-            if (ptyIdRef.current !== null) {
-                send('pty:resize', ptyIdRef.current, xtermRef.current.cols, xtermRef.current.rows);
-            }
+            fitTerminal();
         }
     },
     getFontSize: () => xtermRef.current?.options.fontSize || 14,
@@ -92,7 +103,7 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
           if (parsed.fontSize) {
             xtermRef.current.options.fontSize = parsed.fontSize;
           }
-          fitAddonRef.current?.fit();
+          fitTerminal();
         }
       } catch (e) {
         console.error('Failed to update terminal font', e);
@@ -113,6 +124,7 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
     let cleanupData: (() => void) | undefined;
     let cleanupExit: (() => void) | undefined;
     let disposed = false;
+    let resizeFrame = 0;
 
     const init = async () => {
       // Load terminal settings
@@ -208,8 +220,7 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
         cleanupExit = window.electron!.on('pty:exit', exitHandler);
         
         setTimeout(() => {
-          fitAddon.fit();
-          send('pty:resize', myPtyId, term.cols, term.rows);
+          fitTerminal();
         }, 100);
       } catch (e) {
         console.error("Failed to setup PTY", e);
@@ -218,12 +229,9 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
 
       // Resize observer
       ro = new ResizeObserver(() => {
-        if (isActive && fitAddon && term) {
-          fitAddon.fit();
-          if (ptyIdRef.current !== null) {
-            send('pty:resize', ptyIdRef.current, term.cols, term.rows);
-          }
-        }
+        if (!isActiveRef.current) return;
+        cancelAnimationFrame(resizeFrame);
+        resizeFrame = requestAnimationFrame(fitTerminal);
       });
       ro.observe(container);
     };
@@ -232,6 +240,7 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
 
     return () => {
       disposed = true;
+      cancelAnimationFrame(resizeFrame);
       ro?.disconnect();
       cleanupData?.();
       cleanupExit?.();
@@ -245,11 +254,8 @@ export const TerminalInstance = forwardRef<TerminalRef, TerminalInstanceProps>((
       if (isActive && fitAddonRef.current && xtermRef.current) {
           // Give a small tick for layout to settle (display: none -> block)
           requestAnimationFrame(() => {
-              fitAddonRef.current?.fit();
+              fitTerminal();
               xtermRef.current?.focus();
-              if (ptyIdRef.current !== null && xtermRef.current) {
-                 send('pty:resize', ptyIdRef.current, xtermRef.current.cols, xtermRef.current.rows);
-              }
           });
       }
   }, [isActive]);

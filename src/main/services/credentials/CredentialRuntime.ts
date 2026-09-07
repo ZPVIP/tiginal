@@ -500,6 +500,11 @@ export class CredentialRuntime {
     this.finish(sessionId, 'revoked', null);
   }
 
+  /** Whether a UI session currently has real values at their original paths. */
+  hasActiveOriginalFileSession(): boolean {
+    return [...this.live.values()].some(session => session.swapped.length > 0);
+  }
+
   /**
    * Open an approval window from the UI. Grants nothing: no temp directory, no
    * decryption, no plaintext. A later CLI `session.begin` for a group in the

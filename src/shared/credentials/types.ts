@@ -256,6 +256,14 @@ export interface CredentialFileLocation {
   state: FileState;
 }
 
+/** Installation details shown wherever the renderer links users to the CLI. */
+export interface CredentialCliStatus {
+  socketPath: string;
+  installed: boolean;
+  listening: boolean;
+  binDirectory: string;
+}
+
 /** One managed key with its real value, for the credential detail pane only. */
 export interface RevealedEnvEntry {
   keyName: string;

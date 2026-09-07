@@ -1,18 +1,35 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { clsx } from 'clsx';
 import { ChevronLeft, ChevronRight, History } from 'lucide-react';
 import { EMPTY, GREEN_PILL, MUTED_PILL, PILL } from './credentialStyles';
-import type { AuditRecord, CredentialSession } from '../../../shared/credentials/types';
+import type {
+  AuditRecord, CredentialCliStatus, CredentialSession, SessionStatus,
+} from '../../../shared/credentials/types';
+import {
+  formatTimestamp,
+  parseDateFormat,
+  parseTimeZonePreference,
+  type DateFormat,
+  type TimeZonePreference,
+} from '../../../shared/date-time';
 
 interface CredentialActivityPaneProps {
   sessions: CredentialSession[];
   audit: AuditRecord[];
-  cli: { socketPath: string; installed: boolean } | null;
+  cli: CredentialCliStatus | null;
   /** Group id to group path, so a session or audit row can show the path instead of the id. */
   pathById: Map<string, string>;
 }
 
 const PAGE_SIZE = 10;
+const invoke = window.electron?.invoke || (async () => {});
+
+const SESSION_PILLS: Record<SessionStatus, string> = {
+  active: GREEN_PILL,
+  completed: 'bg-blue-500/10 border-blue-500/30 text-blue-400',
+  expired: MUTED_PILL,
+  revoked: 'bg-red-500/10 border-red-500/30 text-red-400',
+};
 
 function paginate<T>(items: T[], page: number): T[] {
   return items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -48,6 +65,33 @@ export const CredentialActivityPane = React.forwardRef<HTMLElement, CredentialAc
   function CredentialActivityPane({ sessions, audit, cli, pathById }, ref): React.JSX.Element {
     const [sessionPage, setSessionPage] = useState(0);
     const [auditPage, setAuditPage] = useState(0);
+    const [dateFormat, setDateFormat] = useState<DateFormat>('iso');
+    const [timeZone, setTimeZone] = useState<TimeZonePreference>({ kind: 'system' });
+
+    useEffect(() => {
+      let active = true;
+      const loadDateTimeSettings = async () => {
+        try {
+          const [savedDateFormat, savedTimeZone] = await Promise.all([
+            invoke('settings:get', 'dateFormat'),
+            invoke('settings:get', 'timeZone'),
+          ]);
+          if (!active) return;
+          setDateFormat(parseDateFormat(savedDateFormat));
+          setTimeZone(parseTimeZonePreference(savedTimeZone));
+        } catch (error) {
+          console.error('Failed to load credential timestamp settings', error);
+        }
+      };
+      const handleSettingsUpdate = () => void loadDateTimeSettings();
+
+      void loadDateTimeSettings();
+      window.addEventListener('settings-general-updated', handleSettingsUpdate);
+      return () => {
+        active = false;
+        window.removeEventListener('settings-general-updated', handleSettingsUpdate);
+      };
+    }, []);
 
     const pagedSessions = paginate(sessions, sessionPage);
     const pagedAudit = paginate(audit, auditPage);
@@ -63,7 +107,7 @@ export const CredentialActivityPane = React.forwardRef<HTMLElement, CredentialAc
         </div>
 
         <div className="space-y-1.5 rounded-lg border border-border bg-background p-3 text-[11px] text-text-muted">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span>CLI</span>
             <span className={clsx(PILL, cli?.installed ? GREEN_PILL : MUTED_PILL)}>
               {cli?.installed ? 'INSTALLED' : 'NOT INSTALLED'}
@@ -77,13 +121,12 @@ export const CredentialActivityPane = React.forwardRef<HTMLElement, CredentialAc
             <div className={EMPTY}>No sessions yet. Start a file session or authorize a CLI command.</div>
           ) : pagedSessions.map((session) => (
             <div key={session.id} className="space-y-1 rounded-lg border border-border bg-background p-3 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate font-mono text-text-main">
-                  {pathById.get(session.groupId) || session.groupId}
-                </span>
-                <span className="shrink-0 text-text-muted">{session.status}</span>
-              </div>
-              <p className="text-[11px] text-text-muted">{new Date(session.createdAt).toLocaleString()}</p>
+              <p className="truncate font-mono text-text-main">
+                {pathById.get(session.groupId) || session.groupId}
+              </p>
+              <p className="text-[11px] text-text-muted">
+                {formatTimestamp(session.createdAt, dateFormat, timeZone)}
+              </p>
               <p className="truncate font-mono text-[11px] text-text-muted">
                 {session.approvedBy === 'ui-original-files'
                   ? 'original file paths'
@@ -92,6 +135,11 @@ export const CredentialActivityPane = React.forwardRef<HTMLElement, CredentialAc
               <div className="flex items-center justify-between text-[11px] text-text-muted">
                 <span>{Math.round((session.expiresAt - session.createdAt) / 60000)} minutes</span>
                 {typeof session.exitCode === 'number' && <span>exit {session.exitCode}</span>}
+              </div>
+              <div className="pt-1">
+                <span className={clsx(PILL, SESSION_PILLS[session.status])}>
+                  {session.status.toUpperCase()}
+                </span>
               </div>
             </div>
           ))}
@@ -104,12 +152,10 @@ export const CredentialActivityPane = React.forwardRef<HTMLElement, CredentialAc
             <div className={EMPTY}>No credential history recorded yet.</div>
           ) : pagedAudit.map((record) => (
             <div key={record.id} className="space-y-1 rounded-lg border border-border bg-background p-3 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate font-mono text-text-main">{record.event}</span>
-                <span className="shrink-0 text-[11px] text-text-muted">
-                  {new Date(record.at).toLocaleString()}
-                </span>
-              </div>
+              <p className="truncate font-mono text-text-main">{record.event}</p>
+              <p className="text-[11px] text-text-muted">
+                {formatTimestamp(record.at, dateFormat, timeZone)}
+              </p>
               {record.groupId && (
                 <p className="truncate font-mono text-[11px] text-text-muted">
                   {pathById.get(record.groupId) || record.groupId}

@@ -1,4 +1,6 @@
-import { app, BrowserWindow, Menu, MenuItemConstructorOptions } from 'electron';
+import {
+  app, BrowserWindow, dialog, Menu, MenuItemConstructorOptions, type MessageBoxOptions,
+} from 'electron';
 
 // Polyfill global File object for undici (used by cheerio/fetch) in Node 18 environments
 if (typeof global.File === 'undefined') {
@@ -29,6 +31,7 @@ import { setupStatisticsHandlers } from './statistics-handlers';
 import { setupProfileHandlers } from './profile-handlers';
 import { setupMcpHandlers } from './mcp-handlers';
 import { setupCredentialHandlers } from './credential-handlers';
+import { getCredentialRuntime } from './services/credentials/CredentialRuntime';
 import { registerImageScheme, setupImageHandlers } from './image-handlers';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
@@ -85,6 +88,41 @@ function initializeDefaults(): void {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let credentialQuitConfirmationOpen = false;
+let credentialSessionRevokedForQuit = false;
+
+function hasActiveOriginalFileSession(): boolean {
+  return getCredentialRuntime().hasActiveOriginalFileSession();
+}
+
+async function confirmQuitDuringOriginalFileSession(): Promise<void> {
+  if (credentialQuitConfirmationOpen) return;
+  credentialQuitConfirmationOpen = true;
+
+  const options: MessageBoxOptions = {
+    type: 'warning',
+    title: 'Credential session is active',
+    message: 'Real credential values are currently present at their original file paths.',
+    detail: 'Quitting will revoke the session and restore the files to FAKE_SECRET first.',
+    buttons: ['Cancel', 'Quit Tiginal'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  };
+
+  try {
+    const result = mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showMessageBox(mainWindow, options)
+      : await dialog.showMessageBox(options);
+    if (result.response !== 1) return;
+
+    getCredentialRuntime().disposeAll();
+    credentialSessionRevokedForQuit = true;
+    app.quit();
+  } finally {
+    credentialQuitConfirmationOpen = false;
+  }
+}
 
 /**
  * Background for the native window, taken from the saved theme. The frame is
@@ -148,6 +186,12 @@ function createWindow(): void {
 
   ['resize', 'move', 'close'].forEach(event => {
     mainWindow?.on(event as any, saveState);
+  });
+
+  mainWindow.on('close', event => {
+    if (credentialSessionRevokedForQuit || !hasActiveOriginalFileSession()) return;
+    event.preventDefault();
+    void confirmQuitDuringOriginalFileSession();
   });
 
   // In production (built with Vite), point to dist/renderer/index.html
@@ -327,6 +371,12 @@ app.on('window-all-closed', () => {
   }
 });
 
+app.on('before-quit', event => {
+  if (credentialSessionRevokedForQuit || !hasActiveOriginalFileSession()) return;
+  event.preventDefault();
+  void confirmQuitDuringOriginalFileSession();
+});
+
 // Stdio MCP servers are child processes; stop them so they don't outlive the app
 app.on('will-quit', () => {
   const { getMcpService } = require('./services/mcp/McpService');
@@ -335,7 +385,6 @@ app.on('will-quit', () => {
   // Live credential sessions have decrypted material in temporary files. This
   // is one of three cleanup layers: the startup orphan sweep is what covers a
   // crash that never reaches this handler.
-  const { getCredentialRuntime } = require('./services/credentials/CredentialRuntime');
   getCredentialRuntime().disposeAll();
   const { stopCredentialSocket } = require('./services/credentials/CredentialSocket');
   stopCredentialSocket();

@@ -1,9 +1,11 @@
 import React from 'react';
 import { clsx } from 'clsx';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Terminal } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { BTN_MODAL, BTN_MODAL_PRIMARY, FIELD, NEUTRAL_PILL, PILL } from './credentialStyles';
-import type { CredentialUiSessionMode, GroupSummary } from '../../../shared/credentials/types';
+import type {
+  CredentialCliStatus, CredentialUiSessionMode, GroupSummary,
+} from '../../../shared/credentials/types';
 
 export interface ActivateDraft {
   rootId: string;
@@ -19,6 +21,7 @@ interface AuthorizeSessionDialogProps {
   descendants: GroupSummary[];
   unrecognizedOpaqueCount: number;
   busy: boolean;
+  cli: CredentialCliStatus | null;
   onChange: (draft: ActivateDraft) => void;
   onClose: () => void;
   onConfirm: (draft: ActivateDraft) => void;
@@ -39,6 +42,7 @@ export function AuthorizeSessionDialog({
   descendants,
   unrecognizedOpaqueCount,
   busy,
+  cli,
   onChange,
   onClose,
   onConfirm,
@@ -48,15 +52,16 @@ export function AuthorizeSessionDialog({
       isOpen={draft !== null && root !== null}
       onClose={onClose}
       title="Authorize credential session"
-      width="max-w-lg"
+      width="max-w-2xl"
     >
       {draft && root && (
         <div>
           <div className="p-4 space-y-4">
             <div>
               <div className="text-[11px] text-text-sec mb-1">Project</div>
-              <div className="text-sm text-text-main">{root.name}</div>
-              <div className="text-[11px] font-mono text-text-muted">{root.path}</div>
+              <div className="text-sm text-text-main">
+                {root.name} <span className="font-mono text-[11px] text-text-muted">({root.path})</span>
+              </div>
             </div>
 
             <div>
@@ -145,6 +150,40 @@ export function AuthorizeSessionDialog({
               </select>
             </div>
 
+            {draft.mode === 'cli-authorization' && (
+              <div className={clsx(
+                'space-y-2 rounded-lg border p-3 text-[11px] leading-5',
+                cli?.installed
+                  ? 'border-green-500/30 bg-green-500/10 text-text-muted'
+                  : 'border-amber-500/40 bg-amber-500/10 text-text-muted',
+              )}>
+                <div className="flex items-center gap-2 font-medium text-text-main">
+                  {cli?.installed
+                    ? <CheckCircle2 size={13} className="text-green-400" />
+                    : <AlertTriangle size={13} className="text-amber-400" />}
+                  {cli === null
+                    ? 'Checking the Tiginal CLI'
+                    : cli.installed
+                      ? 'Tiginal CLI is available on PATH'
+                      : 'Tiginal CLI is not on PATH'}
+                </div>
+
+                {cli && !cli.installed && (
+                  <div className="space-y-2">
+                    <p>Add this line to the end of your shell configuration:</p>
+                    <pre className="overflow-x-auto rounded bg-background px-2 py-1 font-mono text-text-main">{`export PATH="${cli.binDirectory}:$PATH"`}</pre>
+                    <p>
+                      Use <span className="font-mono">~/.zshrc</span> for zsh or{' '}
+                      <span className="font-mono">~/.bashrc</span> for bash. Then open a new terminal, or reload it with{' '}
+                      <span className="font-mono">source ~/.zshrc</span> or{' '}
+                      <span className="font-mono">source ~/.bashrc</span>.
+                    </p>
+                    <p>Verify the setup with <span className="font-mono">tiginal cred list</span>.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             <p className="rounded-lg border border-border bg-background p-3 text-[11px] leading-5 text-text-muted">
               {draft.mode === 'original-files' ? (
                 <>
@@ -152,10 +191,22 @@ export function AuthorizeSessionDialog({
                   Tiginal restores the masked copies on revoke, timeout, normal app exit, or next startup after a crash.
                 </>
               ) : (
-                <>
-                  This only authorizes the next matching <span className="font-mono">tiginal cred run</span> command.
-                  It does not rewrite the managed files now.
-                </>
+                <span className="block space-y-2">
+                  <span className="flex items-center gap-2 text-text-main">
+                    <Terminal size={13} /> Run an authorized command
+                  </span>
+                  <code className="block whitespace-pre-wrap break-words rounded bg-surface px-2 py-1 text-text-main">
+                    tiginal cred run {root.path} [-v|--verbose] -- &lt;command&gt; [args...]
+                  </code>
+                  <span className="block">
+                    Tiginal injects the selected credentials into that command while keeping the managed files masked.
+                    This authorization applies only to the next matching command.
+                  </span>
+                  <span className="block">For several commands, start an authorized shell:</span>
+                  <code className="block whitespace-nowrap rounded bg-surface px-2 py-1 text-text-main">
+                    tiginal cred shell {root.path}
+                  </code>
+                </span>
               )}
             </p>
 

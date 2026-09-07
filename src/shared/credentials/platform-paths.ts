@@ -26,5 +26,5 @@ export function toCredentialTreePath(
 
   const normalized = path.posix.normalize(absolutePath);
   const segments = normalized.split('/').filter(Boolean);
-  return ['Filesystem', ...segments].join('/');
+  return segments.join('/');
 }

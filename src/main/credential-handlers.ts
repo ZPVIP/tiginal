@@ -19,7 +19,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { ipcMain, dialog } from 'electron';
+import { app, ipcMain, dialog } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { IS_WINDOWS } from './utils/paths';
 import { slugify } from '../shared/credentials/group-path';
@@ -245,6 +245,12 @@ function isCliInstalled(): boolean {
     .split(path.delimiter)
     .filter(entry => entry.length > 0)
     .some(dir => names.some(name => fs.existsSync(path.join(dir, name))));
+}
+
+function cliBinDirectory(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'bin')
+    : path.join(app.getAppPath(), 'bin');
 }
 
 export function setupCredentialHandlers(): void {
@@ -475,6 +481,7 @@ export function setupCredentialHandlers(): void {
       socketPath: credentialSocketPath(),
       installed: isCliInstalled(),
       listening: getCredentialSocket().isListening(),
+      binDirectory: cliBinDirectory(),
     })),
   );
 }

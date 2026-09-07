@@ -51,7 +51,9 @@ function sendRequest(request: CredRequest): Promise<unknown> {
 
     socket.setTimeout(SOCKET_TIMEOUT_MS, () => fail('Tiginal did not answer the credential request'));
     socket.on('error', () => fail('Tiginal is not running or its credential service is unavailable'));
-    socket.on('connect', () => socket.end(`${JSON.stringify(request)}\n`));
+    // Keep the connection open while the desktop app waits for approval.
+    // The server closes it after writing the response.
+    socket.on('connect', () => socket.write(`${JSON.stringify(request)}\n`));
     socket.on('data', chunk => {
       if (settled) return;
       bytes += chunk.length;
@@ -187,6 +189,7 @@ interface RunOptions {
   group: string;
   ttlMs?: number;
   autoApprove: boolean;
+  verbose: boolean;
 }
 
 function parseRunOptions(args: string[]): { options: RunOptions; commandIndex: number } {
@@ -195,11 +198,17 @@ function parseRunOptions(args: string[]): { options: RunOptions; commandIndex: n
 
   let ttlMs: number | undefined;
   let autoApprove = false;
+  let verbose = false;
   let index = 1;
   while (index < args.length && args[index] !== '--') {
     const arg = args[index];
     if (arg === '--yes') {
       autoApprove = true;
+      index += 1;
+      continue;
+    }
+    if (arg === '--verbose' || arg === '-v') {
+      verbose = true;
       index += 1;
       continue;
     }
@@ -214,7 +223,7 @@ function parseRunOptions(args: string[]): { options: RunOptions; commandIndex: n
     throw new CliError(`Unknown option: ${arg}`, 2);
   }
 
-  return { options: { group, ttlMs, autoApprove }, commandIndex: index };
+  return { options: { group, ttlMs, autoApprove, verbose }, commandIndex: index };
 }
 
 async function closeSession(sessionId: string, exitCode: number | null): Promise<void> {
@@ -243,7 +252,9 @@ async function runCommand(options: RunOptions, command: string[], accessMode: Ac
     cwd: process.cwd(),
   }));
 
-  for (const note of grant.notes) process.stderr.write(`tiginal: ${note}\n`);
+  if (options.verbose) {
+    for (const note of grant.notes) process.stderr.write(`tiginal: ${note}\n`);
+  }
 
   const child = spawn(command[0], command.slice(1), {
     cwd: process.cwd(),
@@ -277,17 +288,51 @@ async function runCommand(options: RunOptions, command: string[], accessMode: Ac
 
 function usage(): string {
   return [
+    'Tiginal credential CLI',
+    '',
+    'Run commands with credentials managed by the Tiginal desktop app.',
+    'Tiginal must be running and unlocked before you use credential commands.',
+    '',
     'Usage:',
+    '  tiginal cred <command> [options]',
+    '',
+    'Commands:',
+    '  list                         List credential groups and their current state.',
+    '  status <group>               Show managed files and masked credential names.',
+    '  safe <group>                 Write safe placeholders to the group\'s managed files.',
+    '  run <group> [options] -- <command> [args...]',
+    '                               Run one command with credentials injected.',
+    '  shell <group> [options]      Start an interactive shell with credentials injected.',
+    '',
+    'Options for run and shell:',
+    '  --ttl <duration>             Set the session lifetime, such as 30s, 15m, or 1h.',
+    '  --yes                        Skip desktop approval when the active policy permits it.',
+    '  -v, --verbose                Print session expiry and injected variable names.',
+    '  -h, --help                   Show this help.',
+    '',
+    'Examples:',
     '  tiginal cred list',
-    '  tiginal cred status <group>',
-    '  tiginal cred safe <group>',
-    '  tiginal cred run <group> [--ttl 15m] [--yes] -- <command> [args...]',
-    '  tiginal cred shell <group> [--ttl 15m] [--yes]',
+    '  tiginal cred status ioaire-cloud',
+    '  tiginal cred run ioaire-cloud -- sh -c \'printf "%s\\n" "$AWS_ACCESS_KEY_ID"\'',
+    '  tiginal cred run ioaire-cloud -v -- bundle exec rails console',
+    '  tiginal cred shell ioaire-cloud --ttl 30m',
+    '',
+    'Shell variable expansion:',
+    '  Your current shell expands $VARIABLE before Tiginal starts the child command.',
+    '  Use sh -c as shown above, or start tiginal cred shell <group> for several commands.',
   ].join('\n');
 }
 
 export async function runCli(argv: string[]): Promise<number> {
   try {
+    const helpRequested = argv[0] === '--help'
+      || argv[0] === '-h'
+      || (argv[0] === 'cred' && (argv[1] === '--help' || argv[1] === '-h'))
+      || (argv[0] === 'cred' && (argv[2] === '--help' || argv[2] === '-h'));
+    if (helpRequested) {
+      process.stdout.write(`${usage()}\n`);
+      return 0;
+    }
     if (argv[0] !== 'cred') throw new CliError(usage(), 2);
     const command = argv[1];
 

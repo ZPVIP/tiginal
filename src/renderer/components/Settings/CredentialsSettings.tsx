@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { clsx } from 'clsx';
 import {
-  KeyRound, FolderTree, Plus, FileCode, Fingerprint, Zap, Trash2, ShieldCheck, AlertTriangle,
+  KeyRound, FolderTree, Plus, FileCode, Fingerprint, Zap, Trash2, AlertTriangle, X,
 } from 'lucide-react';
 import { SettingsPageHeader } from './SettingsPageHeader';
 import { CredentialLocationTree } from './CredentialLocationTree';
@@ -19,7 +19,7 @@ import type { NewProjectInput } from './AddProjectDialog';
 import type { CredentialCall, ManagedFile } from './FileContentPanel';
 import type { ActivateDraft } from './AuthorizeSessionDialog';
 import type {
-  AuditRecord, CredentialFileLocation, CredentialSession, CredentialUiSessionGrant,
+  AuditRecord, CredentialCliStatus, CredentialFileLocation, CredentialSession, CredentialUiSessionGrant,
   CredentialUiSessionMode, CredentialUiSessionRequest, FileKind, FileState,
   GroupStatusReport, GroupSummary,
 } from '../../../shared/credentials/types';
@@ -50,7 +50,7 @@ interface DriftDraft {
 
 const CREDENTIALS_LAYOUT_KEY = 'credentials-layout-config-v1';
 const DIVIDER_WIDTH = 1;
-const COLUMN_MINIMUMS = { tree: 220, details: 320, activity: 280 };
+const COLUMN_MINIMUMS = { tree: 220, details: 320, activity: 140 };
 const MIN_WORKSPACE_WIDTH = COLUMN_MINIMUMS.tree
   + COLUMN_MINIMUMS.details
   + COLUMN_MINIMUMS.activity
@@ -161,7 +161,7 @@ export function CredentialsSettings() {
   const [activate, setActivate] = useState<ActivateDraft | null>(null);
   const [drift, setDrift] = useState<DriftDraft | null>(null);
   const [addingProject, setAddingProject] = useState(false);
-  const [cli, setCli] = useState<{ socketPath: string; installed: boolean } | null>(null);
+  const [cli, setCli] = useState<CredentialCliStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
   const [preferredRatios, setPreferredRatios] = useState<ColumnRatios>(readColumnRatios);
@@ -191,7 +191,7 @@ export function CredentialsSettings() {
     const [rows, records, cliStatus] = await Promise.all([
       call<CredentialSession[]>('credentials:list-sessions'),
       call<AuditRecord[]>('credentials:list-audit', 200),
-      call<{ socketPath: string; installed: boolean }>('credentials:cli-status'),
+      call<CredentialCliStatus>('credentials:cli-status'),
     ]);
     const ordered = [...(rows || [])].sort((a, b) => b.createdAt - a.createdAt);
     setSessions(ordered);
@@ -242,6 +242,10 @@ export function CredentialsSettings() {
     void load();
   }, []);
 
+  useEffect(() => window.electron?.on('credentials:changed', () => {
+    void load();
+  }), []);
+
   useEffect(() => {
     window.localStorage.setItem(CREDENTIALS_LAYOUT_KEY, JSON.stringify(preferredRatios));
   }, [preferredRatios]);
@@ -263,6 +267,20 @@ export function CredentialsSettings() {
     ),
     [preferredRatios, workspaceWidth],
   );
+
+  const columnWidths = useMemo(() => {
+    const usableWidth = Math.max(
+      workspaceWidth - DIVIDER_WIDTH * 2,
+      COLUMN_MINIMUMS.tree + COLUMN_MINIMUMS.details + COLUMN_MINIMUMS.activity,
+    );
+    const tree = usableWidth * fittedRatios.tree;
+    const details = usableWidth * fittedRatios.details;
+    return {
+      tree,
+      details,
+      activity: usableWidth - tree - details,
+    };
+  }, [fittedRatios, workspaceWidth]);
 
   const startResizing = useCallback((
     divider: CredentialDivider,
@@ -401,7 +419,7 @@ export function CredentialsSettings() {
 
   const removeGroup = async (group: GroupSummary) => {
     if (!confirm(
-      `Delete the credential group "${group.name}"? Its managed files, including files in subgroups, will be restored to their original contents first.`,
+      `Delete the credential group "${group.name}"? Tiginal will restore all managed files in this group and its subgroups before deleting it.`,
     )) return;
     const removed = await call<boolean>('credentials:delete-group', group.id);
     if (!removed) return;
@@ -450,22 +468,9 @@ export function CredentialsSettings() {
     await refresh(groupId);
   };
 
-  const materializeSafe = async (groupId: string) => {
-    const result = await call<unknown>('credentials:materialize-safe', groupId);
-    if (result) {
-      setBanner({
-        kind: 'info',
-        text: Array.isArray(result)
-          ? `Safe values written for ${result.length} file(s)`
-          : 'Safe values written',
-      });
-    }
-    await refresh(groupId);
-  };
-
   const removeFile = async (file: ManagedFile) => {
     if (!confirm(
-      `Stop managing "${file.relativePath}"? The file will be restored to its original contents first.`,
+      `Stop managing "${file.relativePath}"? Tiginal will restore the file's original contents before removing it from credential management.`,
     )) return;
     const removed = await call<boolean>('credentials:remove-file', file.id);
     if (!removed) return;
@@ -548,51 +553,58 @@ export function CredentialsSettings() {
 
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
-      <div className="shrink-0 space-y-3 border-b border-border px-5 py-4">
-        <SettingsPageHeader icon={<KeyRound size={24} />} title="Credentials" />
+      <div className="shrink-0 border-b border-border px-5 py-4">
+        <SettingsPageHeader
+          icon={<KeyRound size={24} />}
+          title="Credentials"
+          actions={(banner || (live && live.expiresAt > now)) && (
+            <div className="flex min-w-0 w-full flex-col gap-2">
+              {live && live.expiresAt > now && (
+                <div className="flex h-8 min-w-0 w-full items-center gap-3 rounded-lg border border-green-500/30 bg-green-500/10 px-3 text-xs">
+                  <Zap size={14} className="shrink-0 text-green-400" />
+                  <span className="min-w-0 flex-1 truncate text-text-main">
+                    {live.mode === 'original-files' ? 'Real values active for ' : 'CLI session authorized for '}
+                    <span className="font-mono">{live.groupPath}</span>
+                    {live.mode === 'original-files' ? (
+                      <>. Passwords are present at their original file paths.</>
+                    ) : (
+                      <>. Run <span className="font-mono">tiginal cred run {live.groupPath} -- &lt;command&gt;</span> to use this authorization.</>
+                    )}
+                  </span>
+                  <span className="shrink-0 font-mono text-xs text-green-400">{countdown(live.expiresAt - now)}</span>
+                  <button
+                    onClick={() => revokeSession(live)}
+                    disabled={busy}
+                    className="h-6 shrink-0 rounded-md border border-border bg-surface px-2 text-xs text-text-main transition-colors hover:border-red-500/50 hover:text-red-400 disabled:opacity-50"
+                  >
+                    Revoke
+                  </button>
+                </div>
+              )}
 
-        {live && live.expiresAt > now && (
-          <div className="flex items-center gap-3 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-2.5">
-            <Zap size={14} className="shrink-0 text-green-400" />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm text-text-main">
-                {live.mode === 'original-files' ? 'Real values active for ' : 'CLI session authorized for '}
-                <span className="font-mono">{live.groupPath}</span>
-              </div>
-              <p className="text-[11px] text-text-muted">
-                {live.mode === 'original-files' ? (
-                  <>Passwords are present at their original file paths. Revoke or let the timer expire to restore FAKE_SECRET.</>
-                ) : (
-                  <>Run <span className="font-mono">tiginal cred run {live.groupPath} -- &lt;command&gt;</span> to use this authorization.</>
-                )}
-              </p>
+              {banner && (
+                <div
+                  className={clsx(
+                    'flex h-8 min-w-0 w-full items-center justify-between gap-3 rounded-lg border px-3 text-xs',
+                    banner.kind === 'info'
+                      ? 'border-primary/30 bg-primary/10 text-text-main'
+                      : 'border-red-500/30 bg-red-500/10 text-red-400',
+                  )}
+                >
+                  <span className="min-w-0 truncate" title={banner.text}>{banner.text}</span>
+                  <button
+                    onClick={() => setBanner(null)}
+                    aria-label="Dismiss message"
+                    title="Dismiss"
+                    className="shrink-0 text-text-muted hover:text-text-main"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
             </div>
-            <span className="shrink-0 font-mono text-sm text-green-400">{countdown(live.expiresAt - now)}</span>
-            <button
-              onClick={() => revokeSession(live)}
-              disabled={busy}
-              className="shrink-0 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-main transition-colors hover:border-red-500/50 hover:text-red-400 disabled:opacity-50"
-            >
-              Revoke
-            </button>
-          </div>
-        )}
-
-        {banner && (
-          <div
-            className={clsx(
-              'flex items-start justify-between gap-3 rounded-lg border px-4 py-2 text-xs',
-              banner.kind === 'info'
-                ? 'border-primary/30 bg-primary/10 text-text-main'
-                : 'border-red-500/30 bg-red-500/10 text-red-400',
-            )}
-          >
-            <span className="min-w-0 break-words">{banner.text}</span>
-            <button onClick={() => setBanner(null)} className="shrink-0 text-text-muted hover:text-text-main">
-              Dismiss
-            </button>
-          </div>
-        )}
+          )}
+        />
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto">
@@ -601,7 +613,7 @@ export function CredentialsSettings() {
           className="grid h-full min-h-0 w-full"
           style={{
             minWidth: MIN_WORKSPACE_WIDTH,
-            gridTemplateColumns: `minmax(${COLUMN_MINIMUMS.tree}px, ${fittedRatios.tree}fr) ${DIVIDER_WIDTH}px minmax(${COLUMN_MINIMUMS.details}px, ${fittedRatios.details}fr) ${DIVIDER_WIDTH}px minmax(${COLUMN_MINIMUMS.activity}px, ${fittedRatios.activity}fr)`,
+            gridTemplateColumns: `${columnWidths.tree}px ${DIVIDER_WIDTH}px ${columnWidths.details}px ${DIVIDER_WIDTH}px ${columnWidths.activity}px`,
           }}
         >
           <aside ref={treePaneRef} className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden bg-surface p-3">
@@ -709,9 +721,6 @@ export function CredentialsSettings() {
                         <Fingerprint size={14} /> Add SSH Private Key
                       </button>
                     )}
-                    <button onClick={() => materializeSafe(detail.group.id)} disabled={busy || originalFileSessionActive} className={BTN_SUBTLE}>
-                      <ShieldCheck size={14} /> Materialize Safe
-                    </button>
                     {unrecognizedOpaqueCount > 0 && (
                       <button
                         onClick={() => repairUnrecognizedOpaque(detail.group.id)}
@@ -814,6 +823,7 @@ export function CredentialsSettings() {
         descendants={activateDescendants}
         unrecognizedOpaqueCount={unrecognizedOpaqueCount}
         busy={busy}
+        cli={cli}
         onChange={setActivate}
         onClose={() => setActivate(null)}
         onConfirm={(draft) => void beginSession(draft)}

@@ -383,6 +383,11 @@ export class CredentialSocket {
       });
       throw new CredError('denied', 'the credential request was denied');
     }
+
+    this.runtime.preauthorize({ groupId: group.id, ttlMs });
+    for (const appWindow of BrowserWindow.getAllWindows()) {
+      appWindow.webContents.send('credentials:changed');
+    }
     return 'ui';
   }
 }
