@@ -664,6 +664,51 @@ export class CredentialRuntime {
     return REVEALED_CONTENT[file.kind](file, revealed);
   }
 
+  /** Restore one file to its original contents, then discard its managed copy. */
+  removeManagedFile(fileId: string): void {
+    if (!getCrypto().isUnlocked()) {
+      throw new CredError('locked', 'unlock Tiginal to stop managing a credential file');
+    }
+
+    const file = this.requireFile(fileId);
+    this.assertPathIdle(file.absolutePath);
+    this.materializer.restoreOriginal(file.id, REVEAL);
+    this.store.deleteFile(file.id);
+    this.store.audit({
+      event: 'file.removed',
+      groupId: file.groupId,
+      detail: auditDetail({
+        path: file.relativePath || path.basename(file.absolutePath),
+        restored: 'true',
+      }),
+    });
+  }
+
+  /** Restore every file in a group subtree, then delete its stored credentials and groups. */
+  deleteCredentialGroup(groupId: string): void {
+    const group = this.store.getGroup(groupId);
+    if (!group) throw new CredError('not-found', 'group does not exist');
+
+    const groupPath = this.store.groupPathOf(groupId);
+    const subtree = this.store.descendantsOf(groupId);
+    const files = subtree.flatMap(item => this.store.listFiles(item.id));
+
+    for (const file of files) this.assertPathIdle(file.absolutePath);
+    for (const file of files) this.materializer.realContentFor(file.id, REVEAL);
+    for (const file of files) this.removeManagedFile(file.id);
+
+    this.store.deleteGroup(groupId);
+    this.store.audit({
+      event: 'group.deleted',
+      detail: auditDetail({
+        path: groupPath,
+        groups: subtree.length,
+        files: files.length,
+        restored: 'true',
+      }),
+    });
+  }
+
   /**
    * Add or edit one key in a declared ENV file. The file is re-masked before
    * this returns, so a new key lands on disk as its mask and never as the

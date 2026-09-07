@@ -712,6 +712,15 @@ export class Materializer {
     return rewriteValues(content, file.format, values, { appendMissing: file.kind === 'env' });
   }
 
+  /** Restore a managed file at its original path before its encrypted values are discarded. */
+  restoreOriginal(fileId: string, capability: RevealCapability): void {
+    this.assertCapability(capability);
+
+    const file = this.requireFile(fileId);
+    const original = this.realContentFor(fileId, capability);
+    atomicWrite(file.absolutePath, original.content, file.fileMode);
+  }
+
   /**
    * Take `keyName`'s line out of the file. The caller re-masks afterwards,
    * which is what restores the fingerprint the state check compares against.

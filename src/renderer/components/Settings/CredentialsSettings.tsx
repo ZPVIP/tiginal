@@ -12,7 +12,7 @@ import { AuthorizeSessionDialog } from './AuthorizeSessionDialog';
 import { DriftReviewDialog } from './DriftReviewDialog';
 import { CredentialActivityPane } from './CredentialActivityPane';
 import {
-  PILL, NEUTRAL_PILL, MUTED_PILL, GREEN_PILL, GROUP_PILLS, FILE_PILLS,
+  PILL, NEUTRAL_PILL, GREEN_PILL, GROUP_PILLS, FILE_PILLS,
   BTN_SUBTLE, EMPTY,
 } from './credentialStyles';
 import type { NewProjectInput } from './AddProjectDialog';
@@ -21,7 +21,7 @@ import type { ActivateDraft } from './AuthorizeSessionDialog';
 import type {
   AuditRecord, CredentialFileLocation, CredentialSession, CredentialUiSessionGrant,
   CredentialUiSessionMode, CredentialUiSessionRequest, FileKind, FileState,
-  GroupStatusReport, GroupSummary, SecretType,
+  GroupStatusReport, GroupSummary,
 } from '../../../shared/credentials/types';
 
 type CredentialDivider = 'tree-details' | 'details-activity';
@@ -34,11 +34,6 @@ interface ColumnRatios {
   tree: number;
   details: number;
   activity: number;
-}
-
-interface InspectResult {
-  state: FileState;
-  keys: Array<{ key: string; secretType: SecretType; masked: true }>;
 }
 
 interface LiveSession {
@@ -405,8 +400,11 @@ export function CredentialsSettings() {
   };
 
   const removeGroup = async (group: GroupSummary) => {
-    if (!confirm(`Delete the credential group "${group.name}"? Its files stay on disk in whatever form they are in now.`)) return;
-    await call('credentials:delete-group', group.id);
+    if (!confirm(
+      `Delete the credential group "${group.name}"? Its managed files, including files in subgroups, will be restored to their original contents first.`,
+    )) return;
+    const removed = await call<boolean>('credentials:delete-group', group.id);
+    if (!removed) return;
     const nextSelected = selectedId === group.id ? null : selectedId;
     if (nextSelected === null) {
       setSelectedId(null);
@@ -465,27 +463,12 @@ export function CredentialsSettings() {
     await refresh(groupId);
   };
 
-  const inspectFile = async (file: ManagedFile) => {
-    const result = await call<InspectResult>('credentials:inspect-file', file.id);
-    if (!result) return;
-    setDetail((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        files: prev.files.map((f) => f.id !== file.id ? f : {
-          ...f,
-          state: result.state || f.state,
-          entries: result.keys
-            ? result.keys.map((k) => ({ id: `${f.id}:${k.key}`, keyName: k.key, secretType: k.secretType }))
-            : f.entries,
-        }),
-      };
-    });
-  };
-
   const removeFile = async (file: ManagedFile) => {
-    if (!confirm(`Stop managing "${file.relativePath}"? The file is left on disk in its safe form, with placeholders where the secrets were.`)) return;
-    await call('credentials:remove-file', file.id, true);
+    if (!confirm(
+      `Stop managing "${file.relativePath}"? The file will be restored to its original contents first.`,
+    )) return;
+    const removed = await call<boolean>('credentials:remove-file', file.id);
+    if (!removed) return;
     if (selectedFileId === file.id) setSelectedFileId(null);
     await refresh(selectedId);
   };
@@ -749,7 +732,7 @@ export function CredentialsSettings() {
                   <div className={EMPTY}>No files in this group yet. Add files to put their secrets under management.</div>
                 ) : (
                   <>
-                    <div className="space-y-4 rounded-lg border border-primary/50 bg-surface p-4">
+                    <div className="rounded-lg border border-primary/50 bg-surface p-4">
                       <div className="flex items-start gap-2">
                         <div className="min-w-0 flex-1">
                           <h4 className="break-all font-mono text-sm text-text-main">{selectedFile.relativePath}</h4>
@@ -757,44 +740,30 @@ export function CredentialsSettings() {
                         </div>
                         <span className={clsx(PILL, NEUTRAL_PILL)}>{selectedFile.kind}</span>
                         {filePill(selectedFile.state)}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button onClick={() => inspectFile(selectedFile)} disabled={busy} className={BTN_SUBTLE}>Inspect</button>
-                        {selectedFile.state.kind === 'drifted' && !originalFileSessionActive && (
-                          <>
-                            <button onClick={() => setDrift({ fileId: selectedFile.id, armed: false })} className={BTN_SUBTLE}>
-                              Review Changes
-                            </button>
-                            <button onClick={() => restoreSafe(selectedFile)} disabled={busy || originalFileSessionActive} className={BTN_SUBTLE}>
-                              Restore Safe
-                            </button>
-                            <button onClick={() => setDrift({ fileId: selectedFile.id, armed: true })} disabled={originalFileSessionActive} className={BTN_SUBTLE}>
-                              Import Changes
-                            </button>
-                          </>
-                        )}
                         <button
                           onClick={() => removeFile(selectedFile)}
                           disabled={busy || originalFileSessionActive}
-                          className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-text-main transition-colors hover:border-red-500/50 hover:text-red-400 disabled:opacity-50"
+                          title={`Stop managing ${selectedFile.relativePath}`}
+                          aria-label={`Stop managing ${selectedFile.relativePath}`}
+                          className="p-1 text-text-muted transition-colors hover:text-red-400 disabled:opacity-50"
                         >
-                          Remove
+                          <Trash2 size={14} />
                         </button>
                       </div>
 
-                      <div className="space-y-1.5 border-t border-border pt-3">
-                        <h4 className="text-xs font-medium text-text-sec">Masked entries</h4>
-                        {selectedFile.entries.length === 0 ? (
-                          <p className="text-[11px] text-text-muted">Inspect this file to load its key names.</p>
-                        ) : selectedFile.entries.map((entry) => (
-                          <div key={entry.id} className="flex items-center gap-2 text-[11px]">
-                            <span className="min-w-0 flex-1 truncate font-mono text-text-main">{entry.keyName}</span>
-                            <span className={clsx(PILL, MUTED_PILL)}>{entry.secretType}</span>
-                            <span className="font-mono text-text-muted">********</span>
-                          </div>
-                        ))}
-                      </div>
+                      {selectedFile.state.kind === 'drifted' && !originalFileSessionActive && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                          <button onClick={() => setDrift({ fileId: selectedFile.id, armed: false })} className={BTN_SUBTLE}>
+                            Review Changes
+                          </button>
+                          <button onClick={() => restoreSafe(selectedFile)} disabled={busy || originalFileSessionActive} className={BTN_SUBTLE}>
+                            Restore Safe
+                          </button>
+                          <button onClick={() => setDrift({ fileId: selectedFile.id, armed: true })} disabled={originalFileSessionActive} className={BTN_SUBTLE}>
+                            Import Changes
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <FileContentPanel

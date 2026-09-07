@@ -305,20 +305,8 @@ export function setupCredentialHandlers(): void {
   ipcMain.handle(
     'credentials:delete-group',
     guard((id: unknown) => {
-      const groupId = requireId(id, 'id');
-      const group = store.getGroup(groupId);
-      if (!group) throw new CredError('not-found', 'group does not exist');
-
-      const groupPath = store.groupPathOf(groupId);
-      const subtree = store.descendantsOf(groupId);
-      // Deleting the metadata leaves each file exactly as it is on disk, which
-      // is masked. The encrypted real values go with it, so this is the one
-      // destructive action in the tree.
-      store.deleteGroup(groupId);
-      store.audit({
-        event: 'group.deleted',
-        detail: auditDetail({ path: groupPath, groups: subtree.length }),
-      });
+      runtime.deleteCredentialGroup(requireId(id, 'id'));
+      return true;
     }),
   );
 
@@ -404,26 +392,9 @@ export function setupCredentialHandlers(): void {
 
   ipcMain.handle(
     'credentials:remove-file',
-    guard((fileId: unknown, restoreSafe: unknown) => {
-      const id = requireId(fileId, 'fileId');
-      const file = store.getFile(id);
-      if (!file) throw new CredError('not-found', 'managed file does not exist');
-
-      // `restoreSafe` re-masks the file before its rows go away. There is no
-      // option that writes the real value back: unmanaging must not be a way
-      // around invariant 3.
-      const remask = restoreSafe === true;
-      if (remask) materializer.materializeSafe(id, { force: true });
-
-      store.deleteFile(id);
-      store.audit({
-        event: 'file.removed',
-        groupId: file.groupId,
-        detail: auditDetail({
-          path: file.relativePath || path.basename(file.absolutePath),
-          remasked: String(remask),
-        }),
-      });
+    guard((fileId: unknown) => {
+      runtime.removeManagedFile(requireId(fileId, 'fileId'));
+      return true;
     }),
   );
 
@@ -443,11 +414,6 @@ export function setupCredentialHandlers(): void {
     guard((fileId: unknown, keyName: unknown) =>
       runtime.deleteEnvEntry(requireId(fileId, 'fileId'), requireText(keyName, 'keyName')),
     ),
-  );
-
-  ipcMain.handle(
-    'credentials:inspect-file',
-    guard((fileId: unknown) => materializer.inspect(requireId(fileId, 'fileId'))),
   );
 
   ipcMain.handle(

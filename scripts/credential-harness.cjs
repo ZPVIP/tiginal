@@ -748,6 +748,54 @@ fs.writeFileSync(${JSON.stringify(dumpPath)}, JSON.stringify(out));
     assert.deepEqual(sessionDirs(), [], 'SIGTERM must leave no session directory behind');
   });
 
+  check('stopping management restores the original file before deleting its stored copy', () => {
+    const original = 'REMOVE_ME=single-file-original\n';
+    const target = write('.env.remove-file', original);
+    const managed = materializer.importFile(rails.id, target, { kind: 'env' });
+
+    assert.match(fs.readFileSync(target, 'utf8'), /^REMOVE_ME=\*{8}$/m);
+    runtime.removeManagedFile(managed.fileId);
+
+    assert.equal(fs.readFileSync(target, 'utf8'), original);
+    assert.equal(store.getFile(managed.fileId), null);
+  });
+
+  check('deleting a group restores files in the full subtree before deleting stored copies', () => {
+    const parent = store.createGroup({
+      parentId: null,
+      slug: 'remove-project',
+      name: 'Remove Project',
+      scope: 'project',
+      kind: 'generic',
+      rootPath: PROJECT,
+      allowedCommands: [],
+    });
+    const child = store.createGroup({
+      parentId: parent.id,
+      slug: 'child',
+      name: 'Child',
+      scope: 'project',
+      kind: 'generic',
+      rootPath: null,
+      allowedCommands: [],
+    });
+    const parentOriginal = 'PARENT_TOKEN=parent-original\n';
+    const childOriginal = 'child-key-original\n';
+    const parentPath = write('.env.remove-group', parentOriginal);
+    const childPath = write('remove-group.key', childOriginal);
+    const parentFile = materializer.importFile(parent.id, parentPath, { kind: 'env' });
+    const childFile = materializer.importFile(child.id, childPath, { kind: 'key' });
+
+    runtime.deleteCredentialGroup(parent.id);
+
+    assert.equal(fs.readFileSync(parentPath, 'utf8'), parentOriginal);
+    assert.equal(fs.readFileSync(childPath, 'utf8'), childOriginal);
+    assert.equal(store.getFile(parentFile.fileId), null);
+    assert.equal(store.getFile(childFile.fileId), null);
+    assert.equal(store.getGroup(parent.id), null);
+    assert.equal(store.getGroup(child.id), null);
+  });
+
   await checkAsync('a locked master key denies a new session', async () => {
     crypto.lock();
     const out = await runCli([
