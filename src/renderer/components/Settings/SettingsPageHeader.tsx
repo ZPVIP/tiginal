@@ -23,7 +23,7 @@ export function SettingsPageHeader({
         </div>
       </div>
       {actions && (
-        <div className="flex min-h-8 items-center gap-3 shrink-0">
+        <div className="flex min-h-8 min-w-0 flex-1 items-center justify-end gap-3">
           {actions}
         </div>
       )}

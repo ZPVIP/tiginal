@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 26;
+const SCHEMA_VERSION = 28;
 
 /**
  * Database service for Tiginal
@@ -169,6 +169,14 @@ export class DatabaseService {
 
     if (currentVersion < 26) {
       this.migrateV26();
+    }
+
+    if (currentVersion < 27) {
+      this.migrateV27();
+    }
+
+    if (currentVersion < 28) {
+      this.migrateV28();
     }
 
     // Update schema version
@@ -791,6 +799,144 @@ export class DatabaseService {
       this.db.exec(`ALTER TABLE ai_providers ADD COLUMN catalog_provider TEXT DEFAULT NULL`);
     } catch {
       // Column might already exist.
+    }
+  }
+
+  /**
+   * Migration v27: Developer Credential Manager metadata.
+   *
+   * Only `credential_entries.value_encrypted` holds a secret, and it holds
+   * ciphertext from the existing CryptoService. The session and audit tables
+   * record names, counts, and outcomes so a deployment can be traced without
+   * the trail itself becoming a place secrets leak to.
+   *
+   * `parent_id` is `''` rather than NULL for a root group: SQLite treats NULLs
+   * as distinct in a unique index, so two roots could otherwise share a slug
+   * and break CLI addressing.
+   */
+  private migrateV27(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS credential_groups (
+        id TEXT PRIMARY KEY,
+        parent_id TEXT NOT NULL DEFAULT '',
+        slug TEXT NOT NULL,
+        name TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT 'project',
+        kind TEXT NOT NULL DEFAULT 'generic',
+        root_path TEXT,
+        allowed_commands TEXT NOT NULL DEFAULT '[]',
+        rank INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_credential_groups_slug
+        ON credential_groups(parent_id, slug);
+      CREATE INDEX IF NOT EXISTS idx_credential_groups_parent
+        ON credential_groups(parent_id, rank);
+
+      CREATE TABLE IF NOT EXISTS credential_files (
+        id TEXT PRIMARY KEY,
+        group_id TEXT NOT NULL,
+        absolute_path TEXT NOT NULL UNIQUE,
+        relative_path TEXT NOT NULL DEFAULT '',
+        format TEXT NOT NULL,
+        injection TEXT NOT NULL DEFAULT 'env',
+        safe_fingerprint TEXT,
+        file_mode INTEGER,
+        swap_during_session INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (group_id) REFERENCES credential_groups(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_credential_files_group
+        ON credential_files(group_id);
+
+      CREATE TABLE IF NOT EXISTS credential_entries (
+        id TEXT PRIMARY KEY,
+        file_id TEXT NOT NULL,
+        key_name TEXT NOT NULL,
+        secret_type TEXT NOT NULL,
+        value_encrypted TEXT NOT NULL,
+        fake_value TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (file_id) REFERENCES credential_files(id) ON DELETE CASCADE
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_credential_entries_key
+        ON credential_entries(file_id, key_name);
+
+      CREATE TABLE IF NOT EXISTS credential_sessions (
+        id TEXT PRIMARY KEY,
+        group_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        access_mode TEXT NOT NULL,
+        approved_by TEXT,
+        tmp_dir TEXT,
+        pid INTEGER,
+        command_summary TEXT,
+        exit_code INTEGER,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        ended_at INTEGER
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_credential_sessions_group
+        ON credential_sessions(group_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_credential_sessions_status
+        ON credential_sessions(status);
+
+      CREATE TABLE IF NOT EXISTS credential_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at INTEGER NOT NULL,
+        group_id TEXT,
+        session_id TEXT,
+        event TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_credential_audit_at
+        ON credential_audit(at DESC);
+    `);
+  }
+
+  /**
+   * Migration v28: the user declares what a managed credential file is.
+   *
+   * `kind` records which add action created the row. A path cannot say whether
+   * a file is a whole-file secret, a key/value file, or an SSH private key,
+   * and the value rules differ for each, so guessing from the name was the
+   * thing to remove. Existing rows are backfilled from their format, which is
+   * exactly what the old detection produced.
+   *
+   * `swap_during_session` goes with it. The session dialog already chooses
+   * between writing real values at the original paths and authorizing the CLI,
+   * so a per-file opt-in was a second place to say the same thing.
+   */
+  private migrateV28(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE credential_files ADD COLUMN kind TEXT NOT NULL DEFAULT 'env'`);
+    } catch {
+      // Column might already exist.
+    }
+    try {
+      this.db.exec(`ALTER TABLE credential_files ADD COLUMN public_key_path TEXT`);
+    } catch {
+      // Column might already exist.
+    }
+
+    this.db.exec(`UPDATE credential_files SET kind = 'key' WHERE format = 'opaque'`);
+
+    try {
+      this.db.exec(`ALTER TABLE credential_files DROP COLUMN swap_during_session`);
+    } catch {
+      // An older SQLite cannot drop a column. Nothing reads it either way.
     }
   }
 

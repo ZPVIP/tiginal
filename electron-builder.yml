@@ -8,11 +8,17 @@ directories:
 publish: null
 
 files:
+  - bin/**/*
   - dist/**/*
   - src/renderer/index.html
   - src/renderer/styles.css
   - node_modules/**/*
   - package.json
+
+asarUnpack:
+  - bin/**/*
+  - dist/main/cli/**/*
+  - dist/main/shared/credentials/**/*
 
 extraResources:
   - from: resources/model-catalog/api.json

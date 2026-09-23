@@ -9,13 +9,12 @@ interface ProviderLogoProps {
 
 export function ProviderLogo({ providerId, className }: ProviderLogoProps) {
   const [failed, setFailed] = useState(false);
-  const hasCatalogLogo = Boolean(providerId && providerId !== 'custom');
 
   useEffect(() => {
     setFailed(false);
   }, [providerId]);
 
-  if (!hasCatalogLogo || failed) {
+  if (!providerId || providerId === 'custom' || failed) {
     return (
       <span
         aria-hidden="true"

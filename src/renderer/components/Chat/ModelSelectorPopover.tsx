@@ -222,9 +222,9 @@ export const ModelSelectorPopover: React.FC<ModelSelectorPopoverProps> = ({
                                                              {compactTokens(m.maxOutputTokens)} out
                                                          </span>
                                                      )}
-                                                     {m.supportsImages && <Eye size={12} aria-label="Image input" title="Image input" />}
-                                                     {m.supportsReasoning && <Brain size={12} aria-label="Reasoning" title="Reasoning" />}
-                                                     {m.supportsToolCalls && <Wrench size={12} aria-label="Tool calls" title="Tool calls" />}
+                                                     {m.supportsImages && <span title="Image input"><Eye size={12} aria-label="Image input" /></span>}
+                                                     {m.supportsReasoning && <span title="Reasoning"><Brain size={12} aria-label="Reasoning" /></span>}
+                                                     {m.supportsToolCalls && <span title="Tool calls"><Wrench size={12} aria-label="Tool calls" /></span>}
                                                      {isSelected && <Check size={14} className="ml-0.5 text-primary" />}
                                                  </span>
                                              </button>

@@ -118,7 +118,7 @@ test('the single-server editor accepts a full mcpServers wrapper', () => {
     name: '',
     config: {
       mcpServers: {
-        pelco: {
+        demo: {
           type: 'http',
           url: 'http://localhost:3000/mcp',
           headers: { Authorization: 'Bearer test-token' },
@@ -127,7 +127,7 @@ test('the single-server editor accepts a full mcpServers wrapper', () => {
     },
   });
 
-  assert.equal(server.name, 'pelco');
+  assert.equal(server.name, 'demo');
   assert.deepEqual(server.config, {
     type: 'streamableHttp',
     url: 'http://localhost:3000/mcp',
