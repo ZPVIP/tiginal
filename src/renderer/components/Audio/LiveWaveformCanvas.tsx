@@ -14,11 +14,21 @@ export function LiveWaveformCanvas({ peaks, active }: LiveWaveformCanvasProps) {
     const context = canvas.getContext('2d');
     if (!context) return;
 
+    let animationFrameId: number | null = null;
+
     const draw = () => {
       const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
       const scale = window.devicePixelRatio || 1;
-      canvas.width = Math.max(1, Math.round(rect.width * scale));
-      canvas.height = Math.max(1, Math.round(rect.height * scale));
+      const targetWidth = Math.max(1, Math.round(rect.width * scale));
+      const targetHeight = Math.max(1, Math.round(rect.height * scale));
+
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+      }
+
       context.setTransform(scale, 0, 0, scale, 0, 0);
       context.clearRect(0, 0, rect.width, rect.height);
 
@@ -47,10 +57,17 @@ export function LiveWaveformCanvas({ peaks, active }: LiveWaveformCanvasProps) {
       }
     };
 
-    draw();
-    const observer = new ResizeObserver(draw);
+    animationFrameId = requestAnimationFrame(draw);
+
+    const observer = new ResizeObserver(() => {
+      draw();
+    });
     observer.observe(canvas);
-    return () => observer.disconnect();
+
+    return () => {
+      if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
+      observer.disconnect();
+    };
   }, [active, peaks]);
 
   return (

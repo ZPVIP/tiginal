@@ -7,18 +7,23 @@ import type {
   CreateAudioSessionInput,
   TranscriptEvent,
 } from '../../shared/audio/types';
+import { R2T2_SAMPLE_RATE } from '../../shared/audio/r2t2';
 import { createAudioRecordingPath, defaultAudioDirectory } from './AudioFilename';
 import { AudioSessionRepository } from './AudioSessionRepository';
 import { PcmWavWriter } from './PcmWavWriter';
-import { R2T2Client } from './R2T2Client';
+import { SpeechStreamClient } from './SpeechStreamClient';
 import type { SpeechProviderStore } from './SpeechProviderStore';
+import type { TranslationService } from './TranslationService';
+import type { T3POStreamingTranslator } from './T3POStreamingTranslator';
 
 type SessionState = 'recording' | 'finalizing';
 
 interface ActiveSession {
   snapshot: AudioSessionSnapshot;
-  writer: PcmWavWriter;
-  client: R2T2Client;
+  writer: PcmWavWriter | null;
+  totalSamples: number;
+  client: SpeechStreamClient;
+  translator?: T3POStreamingTranslator | null;
   emit: (event: AudioSessionEvent) => void;
   state: SessionState;
   limitTimer: NodeJS.Timeout | null;
@@ -35,7 +40,15 @@ export class AudioService {
     private readonly providers: SpeechProviderStore,
     private readonly repository: AudioSessionRepository,
     private readonly audioDirectory = defaultAudioDirectory(),
+    private readonly translationService?: TranslationService,
   ) {}
+
+  private getSessionDurationMs(session: ActiveSession): number {
+    if (session.writer) {
+      return session.writer.durationMs();
+    }
+    return Math.round((session.totalSamples / R2T2_SAMPLE_RATE) * 1000);
+  }
 
   async createSession(
     input: CreateAudioSessionInput,
@@ -44,9 +57,12 @@ export class AudioService {
     const resolved = this.providers.require(input.providerId);
     if (!resolved.provider.enabled) throw new Error('Speech provider is disabled');
 
+    const isMicrophone = input.source?.kind !== 'file';
     const startedAt = new Date();
-    const recordingPath = createAudioRecordingPath(this.audioDirectory, startedAt);
-    const writer = new PcmWavWriter(recordingPath);
+    const recordingPath = isMicrophone
+      ? createAudioRecordingPath(this.audioDirectory, startedAt)
+      : null;
+    const writer = recordingPath ? new PcmWavWriter(recordingPath) : null;
     const id = crypto.randomUUID();
     const language = input.language?.trim() || resolved.provider.defaultLanguage;
     const provider = input.bookedWords
@@ -61,7 +77,19 @@ export class AudioService {
       recordingPath,
       startedAt: startedAt.getTime(),
       maxSessionSeconds: provider.maxSessionSeconds,
+      translation: input.translation,
     };
+
+    let translator: T3POStreamingTranslator | null = null;
+    if (input.translation && this.translationService) {
+      translator = this.translationService.createStreamingTranslator(
+        input.translation,
+        language,
+        translationEvent => {
+          emit({ kind: 'translation-event', sessionId: id, event: translationEvent });
+        },
+      );
+    }
 
     this.repository.insert({
       id,
@@ -71,13 +99,15 @@ export class AudioService {
       language,
       startedAt,
     });
-    const client = new R2T2Client(provider, resolved.credential, event => {
+    const client = new SpeechStreamClient(provider, resolved.credential, event => {
       this.handleProviderEvent(id, event);
     });
     const session: ActiveSession = {
       snapshot,
       writer,
+      totalSamples: 0,
       client,
+      translator,
       emit,
       state: 'recording',
       limitTimer: null,
@@ -103,7 +133,8 @@ export class AudioService {
   pushPcmFrame(sessionId: string, frame: Int16Array): void {
     const session = this.requireRecordingSession(sessionId);
     try {
-      session.writer.write(frame);
+      session.writer?.write(frame);
+      session.totalSamples += frame.length;
       session.client.sendFrame(frame);
     } catch (error) {
       void this.failSession(sessionId, errorMessage(error));
@@ -116,13 +147,21 @@ export class AudioService {
     if (!session || session.state === 'finalizing') return;
     session.state = 'finalizing';
     this.clearLimitTimer(session);
-    this.repository.updateStatus(sessionId, 'finalizing', session.writer.durationMs());
+    this.repository.updateStatus(sessionId, 'finalizing', this.getSessionDurationMs(session));
     try {
       await session.client.finish();
-      const durationMs = session.writer.durationMs();
-      const recordingPath = session.writer.finalize();
+      let translationResult: string | undefined;
+      if (session.translator) {
+        try {
+          translationResult = await session.translator.flush();
+        } catch (err) {
+          console.error('Translation flush failed:', err);
+        }
+      }
+      const durationMs = this.getSessionDurationMs(session);
+      const recordingPath = session.writer ? session.writer.finalize() : null;
       this.repository.updateStatus(sessionId, 'completed', durationMs);
-      session.emit({ kind: 'completed', sessionId, recordingPath, durationMs });
+      session.emit({ kind: 'completed', sessionId, recordingPath, durationMs, translation: translationResult });
       this.sessions.delete(sessionId);
     } catch (error) {
       await this.failSession(sessionId, errorMessage(error), session);
@@ -135,9 +174,10 @@ export class AudioService {
     if (!session) return;
     session.state = 'finalizing';
     this.clearLimitTimer(session);
+    session.translator?.abort();
     session.client.close();
-    const durationMs = session.writer.durationMs();
-    session.writer.finalize();
+    const durationMs = this.getSessionDurationMs(session);
+    session.writer?.finalize();
     this.repository.updateStatus(sessionId, 'aborted', durationMs);
     this.sessions.delete(sessionId);
   }
@@ -152,7 +192,7 @@ export class AudioService {
     if (!target.startsWith(`${root}${path.sep}`) || path.extname(target).toLowerCase() !== '.wav') {
       throw new Error('Recording path is outside the Tiginal audio directory');
     }
-    if ([...this.sessions.values()].some(session => path.resolve(session.snapshot.recordingPath) === target)) {
+    if ([...this.sessions.values()].some(session => session.snapshot.recordingPath && path.resolve(session.snapshot.recordingPath) === target)) {
       throw new Error('An active recording cannot be deleted');
     }
     if (fs.existsSync(target)) fs.unlinkSync(target);
@@ -168,8 +208,11 @@ export class AudioService {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     session.emit({ kind: 'provider-event', sessionId, event });
-    if (event.kind === 'committed' || event.kind === 'final') {
-      this.repository.updateTranscript(sessionId, event.kind === 'committed' ? event.fullText : event.text);
+    if (event.kind === 'committed') {
+      this.repository.updateTranscript(sessionId, event.fullText);
+      session.translator?.pushCommittedText(event.text);
+    } else if (event.kind === 'final') {
+      this.repository.updateTranscript(sessionId, event.text);
     }
     if (event.kind === 'error' && session.state === 'recording') {
       void this.failSession(sessionId, event.message);
@@ -185,11 +228,14 @@ export class AudioService {
     if (!session) return;
     session.state = 'finalizing';
     this.clearLimitTimer(session);
+    session.translator?.abort();
     session.client.close();
-    const durationMs = session.writer.durationMs();
+    const durationMs = this.getSessionDurationMs(session);
     let recordingPath = session.snapshot.recordingPath;
     try {
-      recordingPath = session.writer.finalize();
+      if (session.writer) {
+        recordingPath = session.writer.finalize();
+      }
     } finally {
       this.repository.updateStatus(sessionId, 'failed', durationMs);
       session.emit({ kind: 'failed', sessionId, recordingPath, message });

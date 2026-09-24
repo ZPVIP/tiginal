@@ -456,7 +456,7 @@ export function setupChatHandlers(): void {
  * Used by analyzeCommand, searchToolsWithCurrentModel, and generateConversationTitle.
  * Returns the response content string, or null on failure.
  */
-interface NonStreamingAPIConfig {
+export interface NonStreamingAPIConfig {
   type: 'openai-compatible' | 'copilot';
   endpoint: string;
   apiKey: string | null;
@@ -467,11 +467,11 @@ interface NonStreamingAPIConfig {
   useMaxCompletionTokens?: boolean;
 }
 
-async function callNonStreamingChatCompletion(
+export async function callNonStreamingChatCompletion(
   config: NonStreamingAPIConfig,
   messages: Array<{ role: string; content: string }>,
   options?: { temperature?: number; maxTokens?: number; label?: string }
-): Promise<{ content: string | null; usage?: unknown }> {
+): Promise<{ content: string | null; usage?: unknown; error?: string }> {
   const apiFormat = config.type === 'copilot'
     ? 'chat-completions'
     : normalizeApiFormat(config.apiFormat);
@@ -573,7 +573,7 @@ async function callNonStreamingChatCompletion(
   if (!response.ok) {
     const errorText = responseErrorText ?? await response.text();
     console.error(`${label} API failed: ${response.status} - ${errorText}`);
-    return { content: null, usage: undefined };
+    return { content: null, usage: undefined, error: errorText || `${response.status} ${response.statusText}` };
   }
 
   const data: unknown = await response.json();

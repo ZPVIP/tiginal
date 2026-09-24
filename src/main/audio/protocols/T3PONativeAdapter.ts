@@ -1,9 +1,4 @@
-import {
-  R2T2_NATIVE_EOS,
-  tailSilenceSamples,
-  type SpeechProtocolState,
-  type SpeechSessionOptions,
-} from '../../../shared/audio/r2t2';
+import type { SpeechProtocolState, SpeechSessionOptions } from '../../../shared/audio/r2t2';
 import type { SpeechProvider, TranscriptEvent } from '../../../shared/audio/types';
 import {
   isRecord,
@@ -14,8 +9,10 @@ import {
   type SpeechProtocolAdapter,
 } from './SpeechProtocolAdapter';
 
-export class R2T2NativeAdapter implements SpeechProtocolAdapter {
-  readonly protocolName = 'R2T2';
+export const T3PO_NATIVE_EOS = 'YOUDAO_T3PO_NATIVE_EOS';
+
+export class T3PONativeAdapter implements SpeechProtocolAdapter {
+  readonly protocolName = 'T3PO';
 
   buildUrl(provider: SpeechProvider, _credential: string | null): URL {
     return new URL(provider.endpoint);
@@ -23,13 +20,15 @@ export class R2T2NativeAdapter implements SpeechProtocolAdapter {
 
   buildOpeningMessage(input: SpeechSessionOptions): string {
     return JSON.stringify({
+      action: 'handshake',
+      service: 't3po-native',
       requestId: input.requestId,
       channels: 1,
       sample_rate: 16_000,
       language: input.language,
-      use_vad: input.options.useVad,
       secret_key: input.credential ?? '',
       mode: input.options.mode,
+      use_vad: input.options.useVad,
       ...(input.options.systemPrompt ? { system_prompt: input.options.systemPrompt } : {}),
     });
   }
@@ -39,11 +38,11 @@ export class R2T2NativeAdapter implements SpeechProtocolAdapter {
   }
 
   eosMarker(): string {
-    return R2T2_NATIVE_EOS;
+    return T3PO_NATIVE_EOS;
   }
 
   tailSilenceSamples(): number {
-    return tailSilenceSamples('r2t2-native');
+    return 0;
   }
 
   readMessage(raw: string, state: SpeechProtocolState): TranscriptEvent[] {
@@ -61,7 +60,7 @@ export class R2T2NativeAdapter implements SpeechProtocolAdapter {
       events.push({ kind: 'segment-reset' });
     }
 
-    const delta = stringField(message, ['text', 'delta_text', 'delta']);
+    const delta = stringField(message, ['text', 'delta_text', 'delta', 'segment']);
     if (delta) {
       state.committedText += delta;
       events.push({ kind: 'committed', text: delta, fullText: state.committedText });

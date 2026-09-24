@@ -7,11 +7,14 @@ import {
   BUILT_IN_R2T2_TRIAL_ENDPOINT,
   BUILT_IN_R2T2_TRIAL_ID,
   BUILT_IN_R2T2_TRIAL_MAX_SECONDS,
+  BUILT_IN_T3PO_TRIAL_ENDPOINT,
+  BUILT_IN_T3PO_TRIAL_ID,
+  BUILT_IN_T3PO_TRIAL_MAX_SECONDS,
 } from '../../shared/audio/types';
 import { defaultR2T2ProviderOptions } from '../../shared/audio/r2t2';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 33;
+const SCHEMA_VERSION = 34;
 
 /**
  * Database service for Tiginal
@@ -203,6 +206,10 @@ export class DatabaseService {
 
     if (currentVersion < 33) {
       this.migrateV33();
+    }
+
+    if (currentVersion < 34) {
+      this.migrateV34();
     }
 
     // Update schema version
@@ -974,11 +981,11 @@ export class DatabaseService {
       CREATE TABLE IF NOT EXISTS speech_providers (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        protocol TEXT NOT NULL CHECK (protocol IN ('r2t2-rstream', 'r2t2-native')),
+        protocol TEXT NOT NULL CHECK (protocol IN ('r2t2-rstream', 'r2t2-native', 't3po-rstream', 't3po-native')),
         endpoint TEXT NOT NULL,
         auth_mode TEXT NOT NULL CHECK (auth_mode IN ('none', 'query-token', 'handshake-secret')),
         credential_encrypted TEXT,
-        built_in_kind TEXT CHECK (built_in_kind IS NULL OR built_in_kind = 'r2t2-online-trial'),
+        built_in_kind TEXT CHECK (built_in_kind IS NULL OR built_in_kind IN ('r2t2-online-trial', 't3po-online-trial')),
         user_modified INTEGER NOT NULL DEFAULT 0,
         max_session_seconds INTEGER,
         default_language TEXT NOT NULL,
@@ -1125,6 +1132,61 @@ export class DatabaseService {
         updated_at INTEGER NOT NULL
       );
     `);
+  }
+
+  /** Migration v34: Support T3PO protocols and seed T3PO Online Demo trial provider. */
+  private migrateV34(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS speech_providers_v34 (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          protocol TEXT NOT NULL CHECK (protocol IN ('r2t2-rstream', 'r2t2-native', 't3po-rstream', 't3po-native')),
+          endpoint TEXT NOT NULL,
+          auth_mode TEXT NOT NULL CHECK (auth_mode IN ('none', 'query-token', 'handshake-secret')),
+          credential_encrypted TEXT,
+          built_in_kind TEXT CHECK (built_in_kind IS NULL OR built_in_kind IN ('r2t2-online-trial', 't3po-online-trial')),
+          user_modified INTEGER NOT NULL DEFAULT 0,
+          max_session_seconds INTEGER,
+          default_language TEXT NOT NULL,
+          options_json TEXT NOT NULL DEFAULT '{}',
+          enabled INTEGER NOT NULL DEFAULT 1,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        INSERT OR IGNORE INTO speech_providers_v34 SELECT * FROM speech_providers;
+        DROP TABLE speech_providers;
+        ALTER TABLE speech_providers_v34 RENAME TO speech_providers;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_speech_providers_built_in
+          ON speech_providers(built_in_kind)
+          WHERE built_in_kind IS NOT NULL;
+      `);
+    } catch {
+      // Recreate may fail if table already has constraints or under lock; continue.
+    }
+
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT OR IGNORE INTO speech_providers (
+        id, name, protocol, endpoint, auth_mode, credential_encrypted,
+        built_in_kind, user_modified, max_session_seconds, default_language,
+        options_json, enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, NULL, ?, 0, ?, ?, ?, 1, ?, ?)
+    `).run(
+      BUILT_IN_T3PO_TRIAL_ID,
+      'T3PO Online Demo',
+      't3po-rstream',
+      BUILT_IN_T3PO_TRIAL_ENDPOINT,
+      'query-token',
+      't3po-online-trial',
+      BUILT_IN_T3PO_TRIAL_MAX_SECONDS,
+      'zh',
+      JSON.stringify(defaultR2T2ProviderOptions()),
+      now,
+      now,
+    );
   }
 
   /**

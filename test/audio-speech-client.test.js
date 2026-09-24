@@ -7,9 +7,9 @@ const { WebSocketServer } = require('ws');
 
 const { AudioService } = require('../dist/main/main/audio/AudioService.js');
 const {
-  R2T2Client,
-  testR2T2Connection,
-} = require('../dist/main/main/audio/R2T2Client.js');
+  SpeechStreamClient,
+  testSpeechConnection,
+} = require('../dist/main/main/audio/SpeechStreamClient.js');
 
 const options = {
   bookedWords: [],
@@ -87,7 +87,7 @@ test('fake rstream server receives PCM and returns stable transcript prefixes', 
   });
 
   const events = [];
-  const client = new R2T2Client(provider(mock.endpoint), 'local-token', event => events.push(event));
+  const client = new SpeechStreamClient(provider(mock.endpoint), 'local-token', event => events.push(event));
   try {
     await client.connect('en');
     await client.waitForProtocolReady();
@@ -129,7 +129,7 @@ test('connection test sends PCM before waiting for an rstream response', async (
   });
 
   try {
-    await testR2T2Connection(provider(mock.endpoint), 'local-token');
+    await testSpeechConnection(provider(mock.endpoint), 'local-token');
     assert.equal(audioFrames, 3);
     assert.equal(receivedEos, true);
   } finally {
@@ -185,3 +185,89 @@ test('AudioService keeps a finalized WAV after the recognition socket disconnect
     await closeServer(mock.server);
   }
 });
+
+test('SpeechStreamClient T3PO protocol error labeling', async () => {
+
+  const t3poProvider = {
+    id: 't3po-test',
+    name: 'T3PO Test',
+    protocol: 't3po-rstream',
+    endpoint: 'ws://127.0.0.1:59999/non-existent',
+    authMode: 'none',
+    hasCredential: false,
+    builtInKind: null,
+    userModified: true,
+    maxSessionSeconds: null,
+    defaultLanguage: 'en',
+    options,
+    enabled: true,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  const client = new SpeechStreamClient(t3poProvider, null, () => undefined);
+  await assert.rejects(
+    () => client.connect('en'),
+    /T3PO connection failed:/
+  );
+});
+
+test('AudioService does not create WAV file when source is file', async () => {
+  const mock = await fakeServer(ws => {
+    ws.on('message', (data, isBinary) => {
+      if (isBinary) return;
+      const text = data.toString();
+      if (text === 'YOUDAO_ASR_EOS') {
+        ws.send(JSON.stringify({ final: true }));
+      } else {
+        ws.send(JSON.stringify({ status: 'connected' }));
+      }
+    });
+  });
+
+  const recordingDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'tiginal-audio-file-'));
+  const statuses = [];
+  const repository = {
+    insert(record) { statuses.push({ kind: 'insert', record }); },
+    updateStatus(id, status, durationMs) { statuses.push({ kind: 'status', id, status, durationMs }); },
+    updateTranscript() {},
+  };
+  const speechProvider = provider(mock.endpoint);
+  const providers = {
+    require() { return { provider: speechProvider, credential: 'local-token' }; },
+  };
+  const service = new AudioService(providers, repository, recordingDirectory);
+  let completedEvent;
+  const donePromise = eventWithin(resolve => { completedEvent = resolve; });
+
+  try {
+    const session = await service.createSession(
+      {
+        providerId: speechProvider.id,
+        language: 'en',
+        source: { kind: 'file', name: 'uploaded-speech.mp3' },
+      },
+      event => {
+        if (event.kind === 'completed') completedEvent(event);
+      },
+    );
+
+    assert.equal(session.recordingPath, null);
+    assert.equal(fs.readdirSync(recordingDirectory).length, 0);
+
+    // Push 1600 samples = 100ms at 16kHz
+    service.pushPcmFrame(session.id, new Int16Array(1600).fill(100));
+    await service.finishSession(session.id);
+
+    const completed = await donePromise;
+    assert.equal(completed.recordingPath, null);
+    assert.equal(completed.durationMs, 100);
+    // Crucial check: No file should exist in the audios directory
+    assert.equal(fs.readdirSync(recordingDirectory).length, 0);
+  } finally {
+    await service.disposeAll();
+    await closeServer(mock.server);
+    fs.rmSync(recordingDirectory, { recursive: true, force: true });
+  }
+});
+

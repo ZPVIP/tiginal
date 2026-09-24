@@ -49,13 +49,13 @@ export function SpeechProviders() {
           if (event.event.kind === 'partial') setRecordingStatus(event.event.text || 'Listening...');
           if (event.event.kind === 'committed') setRecordingStatus(event.event.fullText);
         } else if (event.kind === 'completed') {
-          setRecordingStatus(`Saved to ${event.recordingPath}`);
+          if (event.recordingPath) setRecordingStatus(`Saved to ${event.recordingPath}`);
           setRecordingPath(event.recordingPath);
           captureRef.current = null;
           setRecordingProviderId(null);
         } else if (event.kind === 'failed') {
           setError(event.message);
-          setRecordingStatus(`Recording saved to ${event.recordingPath}`);
+          if (event.recordingPath) setRecordingStatus(`Recording saved to ${event.recordingPath}`);
           setRecordingPath(event.recordingPath);
           captureRef.current = null;
           setRecordingProviderId(null);

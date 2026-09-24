@@ -13,7 +13,7 @@ export interface NewAudioSessionRecord {
   source:
     | { kind: 'microphone' }
     | { kind: 'file'; name: string };
-  recordingPath: string;
+  recordingPath: string | null;
   providerId: string;
   language: string;
   startedAt: Date;

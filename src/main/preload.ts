@@ -6,6 +6,7 @@ import type {
   PushPcmFrameInput,
   SpeechProviderInput,
   SpeechProviderTestInput,
+  TranslationRequest,
 } from '../shared/audio/types';
 import type {
   DefaultEngineKind,
@@ -32,6 +33,8 @@ const audio: AudioRendererApi = {
   testSpeechProvider: (input: SpeechProviderTestInput) => (
     ipcRenderer.invoke('audio:test-speech-provider', input)
   ),
+  listTranslationCandidates: () => ipcRenderer.invoke('audio:list-translation-candidates'),
+  translateStatic: (request: TranslationRequest) => ipcRenderer.invoke('audio:translate-static', request),
   createSession: (input: CreateAudioSessionInput) => ipcRenderer.invoke('audio:create-session', input),
   pushPcmFrame: (input: PushPcmFrameInput) => ipcRenderer.send('audio:push-pcm-frame', input),
   finishSession: (sessionId: string) => ipcRenderer.invoke('audio:finish-session', sessionId),

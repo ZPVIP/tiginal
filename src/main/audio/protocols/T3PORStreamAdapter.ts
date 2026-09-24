@@ -1,21 +1,20 @@
 import {
   formatR2T2BookedWords,
   mapR2T2RStreamLanguage,
-  R2T2_SAMPLE_RATE,
-  R2T2_RSTREAM_EOS,
   type SpeechProtocolState,
   type SpeechSessionOptions,
 } from '../../../shared/audio/r2t2';
 import type { SpeechProvider, TranscriptEvent } from '../../../shared/audio/types';
 import {
   isRecord,
-  numberField,
   parseProtocolPayload,
   protocolError,
   rawPcmFrame,
   stringField,
   type SpeechProtocolAdapter,
 } from './SpeechProtocolAdapter';
+
+export const T3PO_RSTREAM_EOS = 'YOUDAO_T3PO_STREAM_EOS';
 
 function recognitionText(value: unknown): string {
   if (typeof value === 'string') {
@@ -30,6 +29,8 @@ function recognitionText(value: unknown): string {
   if (Array.isArray(value)) return value.map(recognitionText).join('');
   if (!isRecord(value)) return '';
   if (typeof value.sentence === 'string') return value.sentence;
+  if (typeof value.translation === 'string') return value.translation;
+  if (typeof value.text === 'string') return value.text;
   if (value.text !== undefined) return recognitionText(value.text);
   return '';
 }
@@ -54,8 +55,8 @@ function appendRecognitionText(state: SpeechProtocolState, incoming: string): Tr
   return { kind: 'committed', text: delta, fullText };
 }
 
-export class R2T2RStreamAdapter implements SpeechProtocolAdapter {
-  readonly protocolName = 'R2T2';
+export class T3PORStreamAdapter implements SpeechProtocolAdapter {
+  readonly protocolName = 'T3PO';
 
   buildUrl(provider: SpeechProvider, credential: string | null): URL {
     const url = new URL(provider.endpoint);
@@ -65,8 +66,10 @@ export class R2T2RStreamAdapter implements SpeechProtocolAdapter {
 
   buildOpeningMessage(input: SpeechSessionOptions): string {
     return JSON.stringify({
+      action: 'start',
+      service: 't3po-simultaneous-translation',
       lang: mapR2T2RStreamLanguage(input.language),
-      booked_words: formatR2T2BookedWords(input.options.bookedWords),
+      booked_words: formatR2T2BookedWords(input.options.bookedWords ?? []),
       use_vad: input.options.useVad,
       smooth: input.options.smooth,
       requestId: input.requestId,
@@ -78,7 +81,7 @@ export class R2T2RStreamAdapter implements SpeechProtocolAdapter {
   }
 
   eosMarker(): string {
-    return R2T2_RSTREAM_EOS;
+    return T3PO_RSTREAM_EOS;
   }
 
   tailSilenceSamples(): number {
@@ -101,30 +104,27 @@ export class R2T2RStreamAdapter implements SpeechProtocolAdapter {
       events.push({ kind: 'segment-reset' });
     }
 
-    const incomingText = firstRecognitionText(message, ['delta_text', 'delta', 'text', 'sentence']);
-    const committed = appendRecognitionText(state, incomingText);
-    if (committed) events.push(committed);
+    const delta = stringField(message, ['delta_text', 'delta', 'segment']);
+    if (delta) {
+      state.committedText += delta;
+      events.push({ kind: 'committed', text: delta, fullText: state.committedText });
+    } else {
+      const fullText = firstRecognitionText(message, ['text', 'sentence', 'translation']);
+      const committed = appendRecognitionText(state, fullText);
+      if (committed) events.push(committed);
+    }
 
-    const partial = stringField(message, ['partial', 'partial_text']);
+    const partial = firstRecognitionText(message, ['partial', 'partial_text']);
     if (partial !== state.partialText) {
       state.partialText = partial;
       events.push({ kind: 'partial', text: partial });
     }
 
-    const ackedSamples = numberField(message, ['acked_samples', 'ackedSamples']);
-    const serverBufferedMs = numberField(message, ['server_buffered_ms', 'serverBufferedMs']);
-    const audioMs = numberField(message, ['audio_ms', 'audioMs']);
-    const acknowledgedSamples = ackedSamples
-      ?? (audioMs === undefined ? undefined : Math.round(audioMs * R2T2_SAMPLE_RATE / 1_000));
-    if (acknowledgedSamples !== undefined || serverBufferedMs !== undefined) {
-      events.push({ kind: 'metrics', ackedSamples: acknowledgedSamples, serverBufferedMs });
-    }
-
-    if (payload.is_final === true || payload.final === true
-      || message.is_final === true || message.final === true) {
+    if (payload.is_final === true || payload.final === true || message.final === true) {
       state.partialText = '';
       events.push({ kind: 'final', text: state.committedText });
     }
+
     return events;
   }
 }

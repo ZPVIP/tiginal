@@ -3,26 +3,49 @@ import { getDatabase } from '../../services/database/database';
 import { getCrypto } from '../../services/ssh/CryptoService';
 import type {
   AudioSessionEvent,
+  AudioSessionTranslationConfig,
   CreateAudioSessionInput,
   SpeechProviderTestInput,
+  TranslationRequest,
 } from '../../shared/audio/types';
 import { R2T2_FRAME_SAMPLES } from '../../shared/audio/r2t2';
 import { toRecordingUrl } from './AudioMediaProtocol';
 import { AudioService } from './AudioService';
 import { AudioSessionRepository } from './AudioSessionRepository';
-import { testR2T2Connection } from './R2T2Client';
+import { testSpeechConnection } from './SpeechStreamClient';
 import { parseSpeechProviderInput, SpeechProviderStore } from './SpeechProviderStore';
+import { TranslationService } from './TranslationService';
+import { getModelRuntimeSupervisor } from '../models/model-handlers';
 
 let audioService: AudioService | null = null;
+let translationService: TranslationService | null = null;
 
 function providerStore(): SpeechProviderStore {
   return new SpeechProviderStore(getDatabase().getDb(), getCrypto());
 }
 
+export function getTranslationService(): TranslationService {
+  if (!translationService) {
+    const db = getDatabase().getDb();
+    translationService = new TranslationService(
+      db,
+      getCrypto(),
+      providerStore(),
+      () => getModelRuntimeSupervisor(),
+    );
+  }
+  return translationService;
+}
+
 export function getAudioService(): AudioService {
   if (!audioService) {
     const db = getDatabase().getDb();
-    audioService = new AudioService(providerStore(), new AudioSessionRepository(db));
+    audioService = new AudioService(
+      providerStore(),
+      new AudioSessionRepository(db),
+      undefined,
+      getTranslationService(),
+    );
   }
   return audioService;
 }
@@ -30,6 +53,24 @@ export function getAudioService(): AudioService {
 function requireId(value: unknown, label: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} ID is required`);
   return value;
+}
+
+function parseSessionTranslation(value: unknown): AudioSessionTranslationConfig | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const engineId = Reflect.get(value, 'engineId');
+  const targetLanguage = Reflect.get(value, 'targetLanguage');
+  const latencyMode = Reflect.get(value, 'latencyMode');
+  const instructions = Reflect.get(value, 'instructions');
+  const terminology = Reflect.get(value, 'terminology');
+  if (typeof engineId !== 'string' || !engineId.trim()) return undefined;
+
+  return {
+    engineId: engineId.trim(),
+    targetLanguage: typeof targetLanguage === 'string' && targetLanguage.trim() ? targetLanguage.trim() : 'en',
+    latencyMode: latencyMode === 'low' || latencyMode === 'high' ? latencyMode : 'native',
+    ...(typeof instructions === 'string' ? { instructions } : {}),
+    ...(Array.isArray(terminology) ? { terminology: terminology.filter((t): t is string => typeof t === 'string') } : {}),
+  };
 }
 
 function parseCreateSessionInput(value: unknown): CreateAudioSessionInput {
@@ -40,6 +81,7 @@ function parseCreateSessionInput(value: unknown): CreateAudioSessionInput {
   const language = Reflect.get(value, 'language');
   const bookedWords = Reflect.get(value, 'bookedWords');
   const source = parseAudioSource(Reflect.get(value, 'source'));
+  const translation = parseSessionTranslation(Reflect.get(value, 'translation'));
   if (typeof providerId !== 'string' || !providerId.trim()) {
     throw new Error('Speech provider ID is required');
   }
@@ -50,6 +92,7 @@ function parseCreateSessionInput(value: unknown): CreateAudioSessionInput {
       ? { bookedWords: bookedWords.filter((word): word is string => typeof word === 'string') }
       : {}),
     ...(source ? { source } : {}),
+    ...(translation ? { translation } : {}),
   };
 }
 
@@ -86,6 +129,32 @@ function parsePcmFrame(value: unknown): Int16Array {
   throw new Error('PCM frame must be an ArrayBuffer');
 }
 
+function parseTranslationRequest(value: unknown): TranslationRequest {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Translation request must be an object');
+  }
+  const engineId = Reflect.get(value, 'engineId');
+  const text = Reflect.get(value, 'text');
+  const sourceLanguage = Reflect.get(value, 'sourceLanguage');
+  const targetLanguage = Reflect.get(value, 'targetLanguage');
+  const instructions = Reflect.get(value, 'instructions');
+  const latencyMode = Reflect.get(value, 'latencyMode');
+  const terminology = Reflect.get(value, 'terminology');
+
+  if (typeof engineId !== 'string' || !engineId.trim()) throw new Error('Translation engineId is required');
+  if (typeof text !== 'string') throw new Error('Text is required');
+
+  return {
+    engineId: engineId.trim(),
+    text,
+    sourceLanguage: typeof sourceLanguage === 'string' && sourceLanguage.trim() ? sourceLanguage.trim() : 'zh',
+    targetLanguage: typeof targetLanguage === 'string' && targetLanguage.trim() ? targetLanguage.trim() : 'en',
+    ...(typeof instructions === 'string' ? { instructions } : {}),
+    latencyMode: latencyMode === 'low' || latencyMode === 'high' ? latencyMode : 'native',
+    ...(Array.isArray(terminology) ? { terminology } : {}),
+  };
+}
+
 export function setupAudioHandlers(): void {
   ipcMain.handle('audio:list-speech-providers', () => providerStore().list());
   ipcMain.handle('audio:get-speech-provider-credential', (_event, value: unknown) => {
@@ -110,12 +179,18 @@ export function setupAudioHandlers(): void {
     try {
       const input: SpeechProviderTestInput = parseSpeechProviderInput(value);
       const resolved = providerStore().resolveForTest(input);
-      await testR2T2Connection(resolved.provider, resolved.credential);
+      await testSpeechConnection(resolved.provider, resolved.credential);
       return { success: true };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
+  ipcMain.handle('audio:list-translation-candidates', () => (
+    getTranslationService().listCandidates()
+  ));
+  ipcMain.handle('audio:translate-static', (_event, value: unknown) => (
+    getTranslationService().translateStatic(parseTranslationRequest(value))
+  ));
   ipcMain.handle('audio:create-session', async (event, value: unknown) => {
     const emit = (audioEvent: AudioSessionEvent) => {
       if (!event.sender.isDestroyed()) event.sender.send('audio:session-event', audioEvent);

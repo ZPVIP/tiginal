@@ -5,6 +5,8 @@ import {
   BUILT_IN_R2T2_TRIAL_ENDPOINT,
   BUILT_IN_R2T2_TRIAL_MAX_SECONDS,
   BUILT_IN_R2T2_TRIAL_TOKEN,
+  BUILT_IN_T3PO_TRIAL_ENDPOINT,
+  BUILT_IN_T3PO_TRIAL_TOKEN,
   SPEECH_AUTH_MODES,
   SPEECH_PROVIDER_PROTOCOLS,
   type R2T2ProviderOptions,
@@ -22,7 +24,7 @@ interface SpeechProviderRow {
   endpoint: string;
   authMode: SpeechAuthMode;
   credentialEncrypted: string | null;
-  builtInKind: 'r2t2-online-trial' | null;
+  builtInKind: 'r2t2-online-trial' | 't3po-online-trial' | null;
   userModified: boolean;
   maxSessionSeconds: number | null;
   defaultLanguage: string;
@@ -134,11 +136,17 @@ export function parseSpeechProviderInput(value: unknown, requireId = false): Spe
   if (requireId && !id) throw new Error('Speech provider ID is required');
   if (!isSpeechProviderProtocol(value.protocol)) throw new Error('Unsupported speech protocol');
   if (!isSpeechAuthMode(value.authMode)) throw new Error('Unsupported speech authentication mode');
-  if (value.protocol === 'r2t2-rstream' && value.authMode === 'handshake-secret') {
-    throw new Error('R2T2 rstream supports query-token or no authentication');
+  if (
+    (value.protocol === 'r2t2-rstream' || value.protocol === 't3po-rstream')
+    && value.authMode === 'handshake-secret'
+  ) {
+    throw new Error(`${value.protocol} supports query-token or no authentication`);
   }
-  if (value.protocol === 'r2t2-native' && value.authMode === 'query-token') {
-    throw new Error('R2T2 native supports handshake-secret or no authentication');
+  if (
+    (value.protocol === 'r2t2-native' || value.protocol === 't3po-native')
+    && value.authMode === 'query-token'
+  ) {
+    throw new Error(`${value.protocol} supports handshake-secret or no authentication`);
   }
 
   return {
@@ -162,8 +170,8 @@ function parseSpeechProviderRow(value: unknown): SpeechProviderRow {
   if (!isSpeechProviderProtocol(protocol) || !isSpeechAuthMode(authMode)) {
     throw new Error('Speech provider row has an unsupported protocol or authentication mode');
   }
-  const builtInKind = value.built_in_kind === 'r2t2-online-trial'
-    ? 'r2t2-online-trial'
+  const builtInKind = value.built_in_kind === 'r2t2-online-trial' || value.built_in_kind === 't3po-online-trial'
+    ? value.built_in_kind
     : null;
   return {
     id: requiredString(value, 'id'),
@@ -207,11 +215,20 @@ function publicProvider(row: SpeechProviderRow): SpeechProvider {
 }
 
 function usesBundledTrialCredential(row: SpeechProviderRow): boolean {
-  return row.builtInKind === 'r2t2-online-trial'
-    && row.credentialEncrypted === null
+  if (row.credentialEncrypted !== null) return false;
+  if (
+    row.builtInKind === 'r2t2-online-trial'
     && row.protocol === 'r2t2-rstream'
     && row.authMode === 'query-token'
-    && row.endpoint === BUILT_IN_R2T2_TRIAL_ENDPOINT;
+    && row.endpoint === BUILT_IN_R2T2_TRIAL_ENDPOINT
+  ) return true;
+  if (
+    row.builtInKind === 't3po-online-trial'
+    && row.protocol === 't3po-rstream'
+    && row.authMode === 'query-token'
+    && row.endpoint === BUILT_IN_T3PO_TRIAL_ENDPOINT
+  ) return true;
+  return false;
 }
 
 export class SpeechProviderStore {
@@ -314,7 +331,7 @@ export class SpeechProviderStore {
       credential = this.decryptCredential(existingRow.credentialEncrypted);
     } else {
       credential = proposedRow && usesBundledTrialCredential(proposedRow)
-        ? BUILT_IN_R2T2_TRIAL_TOKEN
+        ? (proposedRow.builtInKind === 't3po-online-trial' ? BUILT_IN_T3PO_TRIAL_TOKEN : BUILT_IN_R2T2_TRIAL_TOKEN)
         : null;
     }
     const now = Date.now();
@@ -343,7 +360,7 @@ export class SpeechProviderStore {
     const row = this.requireRow(id);
     let credential: string | null = null;
     if (usesBundledTrialCredential(row)) {
-      credential = BUILT_IN_R2T2_TRIAL_TOKEN;
+      credential = row.builtInKind === 't3po-online-trial' ? BUILT_IN_T3PO_TRIAL_TOKEN : BUILT_IN_R2T2_TRIAL_TOKEN;
     } else if (row.credentialEncrypted) {
       credential = this.decryptCredential(row.credentialEncrypted);
     }
