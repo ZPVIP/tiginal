@@ -63,7 +63,14 @@ export class AudioService {
       maxSessionSeconds: provider.maxSessionSeconds,
     };
 
-    this.repository.insert({ id, recordingPath, providerId: provider.id, language, startedAt });
+    this.repository.insert({
+      id,
+      source: input.source ?? { kind: 'microphone' },
+      recordingPath,
+      providerId: provider.id,
+      language,
+      startedAt,
+    });
     const client = new R2T2Client(provider, resolved.credential, event => {
       this.handleProviderEvent(id, event);
     });

@@ -64,6 +64,9 @@ export interface CreateAudioSessionInput {
   providerId: string;
   language?: string;
   bookedWords?: string[];
+  source?:
+    | { kind: 'microphone' }
+    | { kind: 'file'; name: string };
 }
 
 export interface AudioSessionSnapshot {
@@ -102,5 +105,6 @@ export interface AudioRendererApi {
   finishSession(sessionId: string): Promise<void>;
   abortSession(sessionId: string): Promise<void>;
   deleteRecording(recordingPath: string): Promise<void>;
+  getRecordingUrl(recordingPath: string): Promise<string>;
   onSessionEvent(listener: (event: AudioSessionEvent) => void): () => void;
 }

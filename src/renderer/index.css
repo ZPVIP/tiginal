@@ -101,6 +101,18 @@
   
 }
 
+.audio-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 330px) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .audio-workspace-grid {
+    grid-template-columns: 280px minmax(360px, 1fr) minmax(360px, 1fr);
+    overflow-x: auto;
+  }
+}
+
 /* Override prose typography colors to use theme variables */
 .prose,
 .prose-invert {

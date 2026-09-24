@@ -7,6 +7,7 @@ import type {
   SpeechProviderTestInput,
 } from '../../shared/audio/types';
 import { R2T2_FRAME_SAMPLES } from '../../shared/audio/r2t2';
+import { toRecordingUrl } from './AudioMediaProtocol';
 import { AudioService } from './AudioService';
 import { AudioSessionRepository } from './AudioSessionRepository';
 import { testR2T2Connection } from './R2T2Client';
@@ -38,6 +39,7 @@ function parseCreateSessionInput(value: unknown): CreateAudioSessionInput {
   const providerId = Reflect.get(value, 'providerId');
   const language = Reflect.get(value, 'language');
   const bookedWords = Reflect.get(value, 'bookedWords');
+  const source = parseAudioSource(Reflect.get(value, 'source'));
   if (typeof providerId !== 'string' || !providerId.trim()) {
     throw new Error('Speech provider ID is required');
   }
@@ -47,7 +49,23 @@ function parseCreateSessionInput(value: unknown): CreateAudioSessionInput {
     ...(Array.isArray(bookedWords)
       ? { bookedWords: bookedWords.filter((word): word is string => typeof word === 'string') }
       : {}),
+    ...(source ? { source } : {}),
   };
+}
+
+function parseAudioSource(value: unknown): CreateAudioSessionInput['source'] | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Audio source must be an object');
+  }
+  const kind = Reflect.get(value, 'kind');
+  if (kind === 'microphone') return { kind };
+  if (kind === 'file') {
+    const name = Reflect.get(value, 'name');
+    if (typeof name !== 'string' || !name.trim()) throw new Error('Audio file name is required');
+    return { kind, name: name.trim() };
+  }
+  throw new Error('Audio source is invalid');
 }
 
 function parsePcmFrame(value: unknown): Int16Array {
@@ -123,5 +141,9 @@ export function setupAudioHandlers(): void {
   ipcMain.handle('audio:delete-recording', (_event, value: unknown) => {
     if (typeof value !== 'string' || !value.trim()) throw new Error('Recording path is required');
     getAudioService().deleteRecording(value);
+  });
+  ipcMain.handle('audio:get-recording-url', (_event, value: unknown) => {
+    if (typeof value !== 'string' || !value.trim()) throw new Error('Recording path is required');
+    return toRecordingUrl(value);
   });
 }

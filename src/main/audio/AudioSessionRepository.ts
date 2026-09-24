@@ -10,6 +10,9 @@ export type AudioSessionStatus =
 
 export interface NewAudioSessionRecord {
   id: string;
+  source:
+    | { kind: 'microphone' }
+    | { kind: 'file'; name: string };
   recordingPath: string;
   providerId: string;
   language: string;
@@ -23,11 +26,13 @@ export class AudioSessionRepository {
     const timestamp = record.startedAt.getTime();
     this.db.prepare(`
       INSERT INTO audio_sessions (
-        id, source_kind, recording_path, speech_provider_id, recognition_language,
+        id, source_kind, source_path, recording_path, speech_provider_id, recognition_language,
         status, started_at_iso, timezone_offset_minutes, created_at, updated_at
-      ) VALUES (?, 'microphone', ?, ?, ?, 'connecting', ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, 'connecting', ?, ?, ?, ?)
     `).run(
       record.id,
+      record.source.kind,
+      record.source.kind === 'file' ? record.source.name : null,
       record.recordingPath,
       record.providerId,
       record.language,

@@ -9,6 +9,8 @@ const FLUSH_TIMEOUT_MS = 2_000;
 
 export interface PcmCaptureCallbacks {
   onPeak?(peak: number): void;
+  onPermissionGranted?(): void;
+  onDevice?(label: string): void;
   onSessionEvent?(event: AudioSessionEvent): void;
 }
 
@@ -71,6 +73,9 @@ export class PcmCapture {
           autoGainControl: true,
         },
       });
+      this.callbacks.onPermissionGranted?.();
+      const deviceLabel = this.stream.getAudioTracks()[0]?.label;
+      if (deviceLabel) this.callbacks.onDevice?.(deviceLabel);
       this.context = new AudioContext();
       await this.context.audioWorklet.addModule(workletUrl);
       this.worklet = new AudioWorkletNode(this.context, 'tiginal-pcm-capture', {
@@ -82,7 +87,7 @@ export class PcmCapture {
       this.mutedOutput = this.context.createGain();
       this.mutedOutput.gain.value = 0;
       this.worklet.port.onmessage = event => this.handleWorkletMessage(event.data);
-      this.session = await audio.createSession(input);
+      this.session = await audio.createSession({ ...input, source: { kind: 'microphone' } });
       this.source.connect(this.worklet);
       this.worklet.connect(this.mutedOutput);
       this.mutedOutput.connect(this.context.destination);
