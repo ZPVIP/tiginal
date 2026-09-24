@@ -57,6 +57,14 @@ app.name = 'Tiginal';
 registerImageScheme();
 registerAudioScheme();
 
+// Disable Electron development security warning spam in console
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+
+// Prevent Chromium Skia buffer queue/overlay crashes on macOS (SharedImageManager invalid mailbox)
+if (process.platform === 'darwin') {
+  app.commandLine.appendSwitch('disable-features', 'WidgetLayering,CalculateNativeWinOcclusion');
+}
+
 // Override userData path to ~/.config/tiginal/support on macOS/Linux
 if (process.platform !== 'win32') {
   const customUserDataPath = path.join(os.homedir(), '.config', 'tiginal', 'support');
@@ -229,10 +237,26 @@ function createWindow(): void {
     mainWindow = null;
   });
 
-  // Only open DevTools in development mode
-  // if (!app.isPackaged) {
-  //   mainWindow.webContents.openDevTools();
-  // }
+  // Forward renderer console errors and warnings to terminal
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    if (message.includes('Electron Security Warning')) return;
+    if (level >= 2) {
+      console.error(`[Renderer Error] ${message} (${sourceId}:${line})`);
+    } else if (level === 1) {
+      console.warn(`[Renderer Warn] ${message} (${sourceId}:${line})`);
+    }
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[WebContents] render-process-gone:', details);
+  });
+
+  // Toggle DevTools with F12 or Cmd+Option+I in development
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown' && (input.key === 'F12' || (input.meta && input.alt && input.key.toLowerCase() === 'i'))) {
+      mainWindow?.webContents.toggleDevTools();
+    }
+  });
 }
 
 function createMenu(): void {

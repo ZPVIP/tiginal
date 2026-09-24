@@ -65,7 +65,7 @@ function rawText(data: RawData): string | null {
   return null;
 }
 
-export class R2T2Client {
+export class SpeechStreamClient {
   private readonly adapter: SpeechProtocolAdapter;
   private readonly protocolState: SpeechProtocolState = { committedText: '', partialText: '' };
   private readonly completion = deferred();
@@ -88,8 +88,12 @@ export class R2T2Client {
     void this.protocolReady.promise.catch(() => undefined);
   }
 
+  private get protocolLabel(): string {
+    return this.adapter.protocolName;
+  }
+
   async connect(language = this.provider.defaultLanguage): Promise<void> {
-    if (this.state !== 'idle') throw new Error('R2T2 client has already been started');
+    if (this.state !== 'idle') throw new Error(`${this.protocolLabel} client has already been started`);
     this.state = 'connecting';
     const socket = new WebSocket(this.adapter.buildUrl(this.provider, this.credential));
     this.socket = socket;
@@ -109,7 +113,7 @@ export class R2T2Client {
     });
     socket.on('message', data => this.handleMessage(data));
     socket.once('error', error => {
-      const wrapped = new Error(`R2T2 connection failed: ${error.message}`);
+      const wrapped = new Error(`${this.protocolLabel} connection failed: ${error.message}`);
       opened.reject(wrapped);
       this.protocolReady.reject(wrapped);
       this.completion.reject(wrapped);
@@ -117,7 +121,7 @@ export class R2T2Client {
     socket.once('close', (code, reason) => this.handleClose(code, reason.toString()));
 
     try {
-      await withTimeout(opened.promise, CONNECT_TIMEOUT_MS, 'R2T2 connection timed out');
+      await withTimeout(opened.promise, CONNECT_TIMEOUT_MS, `${this.protocolLabel} connection timed out`);
     } catch (error) {
       this.close();
       throw error;
@@ -125,13 +129,13 @@ export class R2T2Client {
   }
 
   async waitForProtocolReady(): Promise<void> {
-    await withTimeout(this.protocolReady.promise, PROBE_TIMEOUT_MS, 'R2T2 handshake timed out');
+    await withTimeout(this.protocolReady.promise, PROBE_TIMEOUT_MS, `${this.protocolLabel} handshake timed out`);
   }
 
   sendFrame(frame: Int16Array): void {
-    if (this.state !== 'open' || !this.socket) throw new Error('R2T2 connection is not open');
+    if (this.state !== 'open' || !this.socket) throw new Error(`${this.protocolLabel} connection is not open`);
     if (this.queuedBytes + frame.byteLength > MAX_QUEUED_BYTES) {
-      throw new Error('R2T2 audio queue exceeded 2 MiB');
+      throw new Error(`${this.protocolLabel} audio queue exceeded 2 MiB`);
     }
     const copy = frame.slice();
     this.pendingFrames.push(copy);
@@ -141,9 +145,9 @@ export class R2T2Client {
 
   async finish(): Promise<void> {
     if (this.state === 'closed') return;
-    if (this.state !== 'open' || !this.socket) throw new Error('R2T2 connection is not open');
+    if (this.state !== 'open' || !this.socket) throw new Error(`${this.protocolLabel} connection is not open`);
     this.state = 'finishing';
-    await withTimeout(this.drainPendingFrames(), FINAL_TIMEOUT_MS, 'R2T2 audio queue did not drain');
+    await withTimeout(this.drainPendingFrames(), FINAL_TIMEOUT_MS, `${this.protocolLabel} audio queue did not drain`);
     const socket = this.socket;
     if (!socket) {
       await this.completion.promise;
@@ -156,7 +160,7 @@ export class R2T2Client {
     }
     socket.send(this.adapter.eosMarker());
     try {
-      await withTimeout(this.completion.promise, FINAL_TIMEOUT_MS, 'R2T2 final response timed out');
+      await withTimeout(this.completion.promise, FINAL_TIMEOUT_MS, `${this.protocolLabel} final response timed out`);
     } finally {
       this.closeSocket();
     }
@@ -191,7 +195,7 @@ export class R2T2Client {
       }
     } catch (error) {
       const message = errorMessage(error);
-      this.onEvent({ kind: 'error', code: 'INVALID_R2T2_MESSAGE', message });
+      this.onEvent({ kind: 'error', code: `INVALID_${this.protocolLabel}_MESSAGE`, message });
       this.completion.reject(new Error(message));
     }
   }
@@ -206,48 +210,37 @@ export class R2T2Client {
       this.completion.resolve();
       return;
     }
-    const message = `R2T2 connection closed (${code}${reason ? `: ${reason}` : ''})`;
-    this.onEvent({ kind: 'error', code: 'R2T2_CLOSED', message });
+    const message = `${this.protocolLabel} connection closed (${code}${reason ? `: ${reason}` : ''})`;
+    this.onEvent({ kind: 'error', code: `${this.protocolLabel}_CLOSED`, message });
     this.protocolReady.reject(new Error(message));
     this.completion.reject(new Error(message));
   }
 
   private flushPendingFrames(): void {
-    this.clearFlushTimer();
     const socket = this.socket;
-    if (!socket || (this.state !== 'open' && this.state !== 'finishing')) return;
-    while (this.pendingFrames.length > 0 && socket.bufferedAmount <= MAX_BUFFERED_BYTES) {
+    if (this.state !== 'open' && this.state !== 'finishing') return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+    while (this.pendingFrames.length > 0) {
+      if (socket.bufferedAmount >= MAX_BUFFERED_BYTES) {
+        this.scheduleQueuePoll();
+        return;
+      }
       const frame = this.pendingFrames.shift();
       if (!frame) break;
-      this.queuedBytes -= frame.byteLength;
+      this.queuedBytes = Math.max(0, this.queuedBytes - frame.byteLength);
       socket.send(this.adapter.encodeAudioFrame(frame, this.sequence));
       this.sequence += 1;
     }
-    if (this.pendingFrames.length > 0) {
-      this.flushTimer = setTimeout(() => {
-        try {
-          this.flushPendingFrames();
-        } catch (error) {
-          this.handleSendFailure(error);
-        }
-      }, QUEUE_POLL_MS);
-    }
+    this.clearFlushTimer();
   }
 
-  private async drainPendingFrames(): Promise<void> {
-    while (this.pendingFrames.length > 0) {
+  private scheduleQueuePoll(): void {
+    if (this.flushTimer) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
       this.flushPendingFrames();
-      if (this.pendingFrames.length > 0) {
-        await new Promise(resolve => setTimeout(resolve, QUEUE_POLL_MS));
-      }
-    }
-  }
-
-  private handleSendFailure(error: unknown): void {
-    const message = `R2T2 audio send failed: ${errorMessage(error)}`;
-    this.onEvent({ kind: 'error', code: 'R2T2_SEND_FAILED', message });
-    this.completion.reject(new Error(message));
-    this.closeSocket();
+    }, QUEUE_POLL_MS);
   }
 
   private clearFlushTimer(): void {
@@ -256,12 +249,26 @@ export class R2T2Client {
     this.flushTimer = null;
   }
 
+  private async drainPendingFrames(): Promise<void> {
+    this.flushPendingFrames();
+    const socket = this.socket;
+    while (
+      (this.pendingFrames.length > 0 || (socket && socket.bufferedAmount > 0))
+      && socket
+      && socket.readyState === WebSocket.OPEN
+    ) {
+      this.flushPendingFrames();
+      await new Promise(resolve => setTimeout(resolve, QUEUE_POLL_MS));
+    }
+  }
+
   private closeSocket(): void {
     this.clearAudioQueue();
     const socket = this.socket;
     this.socket = null;
-    this.state = 'closed';
     if (!socket) return;
+    socket.removeAllListeners();
+    socket.on('error', () => undefined);
     if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
       socket.close(1000);
     }
@@ -274,11 +281,11 @@ export class R2T2Client {
   }
 }
 
-export async function testR2T2Connection(
+export async function testSpeechConnection(
   provider: SpeechProvider,
   credential: string | null,
 ): Promise<void> {
-  const client = new R2T2Client(provider, credential, () => undefined);
+  const client = new SpeechStreamClient(provider, credential, () => undefined);
   try {
     await client.connect();
     const protocolReady = client.waitForProtocolReady();

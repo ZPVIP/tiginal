@@ -1,7 +1,12 @@
-import { FileAudio, Mic, Square, X } from 'lucide-react';
-import type { SpeechProvider } from '../../../shared/audio/types';
+import { FileAudio, Mic, RotateCcw, Square, X } from 'lucide-react';
+import type {
+  SpeechProvider,
+  TranslationEngineCandidate,
+  TranslationLatencyMode,
+} from '../../../shared/audio/types';
 import type { AudioFileMetadata } from '../../audio/AudioFileTranscriber';
 import { FancySelect } from '../ui/FancySelect';
+import { Toggle } from '../ui/Toggle';
 
 export type AudioInputSource = 'microphone' | 'file';
 
@@ -19,6 +24,18 @@ interface AudioControlsPanelProps {
   onProviderChange(providerId: string): void;
   technicalTerms: string;
   onTechnicalTermsChange(value: string): void;
+  translationCandidates: readonly TranslationEngineCandidate[];
+  translationEngineId: string;
+  onTranslationEngineChange(id: string): void;
+  targetLanguage: string;
+  onTargetLanguageChange(lang: string): void;
+  realtimeTranslation: boolean;
+  onRealtimeTranslationChange(enabled: boolean): void;
+  translationLatency: TranslationLatencyMode;
+  onTranslationLatencyChange(mode: TranslationLatencyMode): void;
+  translationInstructions: string;
+  onTranslationInstructionsChange(value: string): void;
+  onResetTranslationInstructions(): void;
   isActive: boolean;
   canStart: boolean;
   isFinalizing: boolean;
@@ -43,6 +60,26 @@ const languageOptions = [
   { value: 'ar', label: 'Arabic' },
 ];
 
+const targetLanguageOptions = [
+  { value: 'en', label: 'English' },
+  { value: 'zh', label: 'Chinese' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'ko', label: 'Korean' },
+  { value: 'fr', label: 'French' },
+  { value: 'de', label: 'German' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'ru', label: 'Russian' },
+  { value: 'it', label: 'Italian' },
+  { value: 'pt', label: 'Portuguese' },
+  { value: 'ar', label: 'Arabic' },
+];
+
+const latencyOptions: { value: TranslationLatencyMode; label: string; description: string }[] = [
+  { value: 'low', label: 'Low', description: 'Low latency (faster commits)' },
+  { value: 'native', label: 'Native', description: 'Native latency policy' },
+  { value: 'high', label: 'High', description: 'High quality (waits for more context)' },
+];
+
 function fileSize(size: number): string {
   if (size < 1_024) return `${size} B`;
   if (size < 1_024 * 1_024) return `${(size / 1_024).toFixed(1)} KB`;
@@ -62,7 +99,29 @@ function formatLabel(file: File): string {
 
 export function AudioControlsPanel(props: AudioControlsPanelProps) {
   const provider = props.providers.find(item => item.id === props.providerId);
+  const selectedEngine = props.translationCandidates.find(c => c.id === props.translationEngineId);
+  const isWsEngine = Boolean(
+    selectedEngine?.endpoint?.startsWith('ws://') ||
+    selectedEngine?.endpoint?.startsWith('wss://') ||
+    selectedEngine?.protocol?.startsWith('t3po-')
+  );
+  const isT3PO = Boolean(selectedEngine && (isWsEngine || selectedEngine.label.toLowerCase().includes('t3po')));
   const actionLabel = props.source === 'microphone' ? 'Start' : 'Transcribe';
+
+  const isCandidateStreaming = (cand: TranslationEngineCandidate) =>
+    Boolean(
+      cand.endpoint?.startsWith('ws://') ||
+      cand.endpoint?.startsWith('wss://') ||
+      cand.protocol?.startsWith('ws') ||
+      cand.protocol?.startsWith('t3po-') ||
+      cand.isSimultaneous
+    );
+
+  const hasStreamingEngine = props.translationCandidates.some(isCandidateStreaming);
+
+  const visibleCandidates = props.realtimeTranslation
+    ? props.translationCandidates.filter(isCandidateStreaming)
+    : props.translationCandidates;
 
   return (
     <aside className="audio-setup-panel flex min-h-0 flex-col border-r border-border bg-surface/40">
@@ -162,6 +221,114 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
                 : `${provider.maxSessionSeconds} second session limit`}
             </p>
           )}
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-text-sec">Target Language</label>
+          <FancySelect
+            value={props.targetLanguage}
+            onChange={props.onTargetLanguageChange}
+            options={targetLanguageOptions}
+            buttonClassName="h-9"
+            disabled={props.isActive}
+          />
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-border/80 bg-surface/50 p-3">
+          <div className="flex items-center justify-between">
+            <div className="min-w-0 pr-2">
+              <span className="block text-xs font-medium text-text-main">Real-time Translation</span>
+              <span className={`text-[10px] leading-tight block ${!hasStreamingEngine ? 'text-amber-400 font-medium' : 'text-text-muted'}`}>
+                {!hasStreamingEngine
+                  ? 'No streaming translation engine (ws/wss) available'
+                  : props.realtimeTranslation
+                    ? 'Translate incremental text as you speak'
+                    : 'Stream translations incrementally (requires ws/wss)'}
+              </span>
+            </div>
+            <Toggle
+              checked={props.realtimeTranslation && hasStreamingEngine}
+              onChange={val => {
+                if (hasStreamingEngine) {
+                  props.onRealtimeTranslationChange(val);
+                }
+              }}
+              disabled={props.isActive || !hasStreamingEngine}
+              label="Real-time Translation"
+              size="small"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-text-sec">
+              Translation Engine
+            </label>
+            <FancySelect
+              value={props.translationEngineId}
+              onChange={props.onTranslationEngineChange}
+              options={[
+                { value: '', label: 'None (Disabled)' },
+                ...visibleCandidates.map(cand => ({
+                  value: cand.id,
+                  label: cand.label,
+                  description: cand.description,
+                })),
+              ]}
+              placeholder={props.realtimeTranslation ? 'Select streaming engine' : 'Select translation engine'}
+              buttonClassName="h-9"
+              disabled={props.isActive}
+            />
+          </div>
+
+          {isT3PO && (
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-text-sec">Translation Latency</label>
+              <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-surface p-1">
+                {latencyOptions.map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={props.isActive}
+                    onClick={() => props.onTranslationLatencyChange(opt.value)}
+                    title={opt.description}
+                    className={`rounded px-2 py-1 text-center text-xs font-medium transition-colors ${
+                      props.translationLatency === opt.value
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-text-muted hover:bg-surface-light hover:text-text-main'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <details className="group rounded-lg border border-border bg-surface p-2.5">
+            <summary className="flex cursor-pointer items-center justify-between text-xs font-medium text-text-sec outline-none">
+              <span>Translation Instructions</span>
+              <button
+                type="button"
+                onClick={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  props.onResetTranslationInstructions();
+                }}
+                title="Reset to default prompt"
+                className="rounded p-1 text-text-muted hover:bg-surface-light hover:text-text-main"
+              >
+                <RotateCcw size={12} />
+              </button>
+            </summary>
+            <textarea
+              value={props.translationInstructions}
+              disabled={props.isActive}
+              onChange={e => props.onTranslationInstructionsChange(e.target.value)}
+              rows={4}
+              placeholder="Optional custom translation constraints or prompt"
+              className="mt-2 w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-text-main placeholder:text-text-muted outline-none focus:border-primary disabled:opacity-60"
+            />
+          </details>
         </div>
 
         <div>

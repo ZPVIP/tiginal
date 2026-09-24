@@ -51,11 +51,18 @@ export function AudioWaveformPlayer({ audioUrl }: AudioWaveformPlayerProps) {
       waveSurfer.on('play', () => setIsPlaying(true)),
       waveSurfer.on('pause', () => setIsPlaying(false)),
       waveSurfer.on('finish', () => setIsPlaying(false)),
+      waveSurfer.on('error', err => console.warn('[WaveSurfer error]', err)),
     ];
 
     return () => {
-      subscriptions.forEach(unsubscribe => unsubscribe());
-      waveSurfer.destroy();
+      subscriptions.forEach(unsubscribe => {
+        try {
+          unsubscribe();
+        } catch {}
+      });
+      try {
+        waveSurfer.destroy();
+      } catch {}
       waveSurferRef.current = null;
     };
   }, [audioUrl]);

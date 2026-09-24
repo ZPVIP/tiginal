@@ -46,7 +46,10 @@ function messageFromError(error: unknown): string {
 }
 
 function speechProtocol(value: string): SpeechProviderProtocol {
-  return value === 'r2t2-native' ? 'r2t2-native' : 'r2t2-rstream';
+  if (value === 'r2t2-native') return 'r2t2-native';
+  if (value === 't3po-rstream') return 't3po-rstream';
+  if (value === 't3po-native') return 't3po-native';
+  return 'r2t2-rstream';
 }
 
 function speechAuthMode(value: string): SpeechAuthMode {
@@ -155,12 +158,14 @@ export function SpeechProviderModal({
                 setForm(current => ({
                   ...current,
                   protocol,
-                  authMode: protocol === 'r2t2-native' ? 'handshake-secret' : 'query-token',
+                  authMode: (protocol === 'r2t2-native' || protocol === 't3po-native') ? 'handshake-secret' : 'query-token',
                 }));
               }}
             >
               <option value="r2t2-rstream">R2T2 rstream</option>
               <option value="r2t2-native">R2T2 native</option>
+              <option value="t3po-rstream">T3PO rstream</option>
+              <option value="t3po-native">T3PO native</option>
             </select>
           </label>
         </div>
@@ -171,7 +176,7 @@ export function SpeechProviderModal({
             required
             className={inputClass}
             value={form.endpoint}
-            placeholder="wss://example.com/asr"
+            placeholder={form.protocol.startsWith('t3po') ? 'wss://t3po.youdao.com/stream' : 'wss://example.com/asr'}
             onChange={event => update('endpoint', event.target.value)}
           />
         </label>
@@ -184,8 +189,8 @@ export function SpeechProviderModal({
               value={form.authMode}
               onChange={event => update('authMode', speechAuthMode(event.target.value))}
             >
-              {form.protocol === 'r2t2-rstream' && <option value="query-token">Query token</option>}
-              {form.protocol === 'r2t2-native' && <option value="handshake-secret">Handshake secret</option>}
+              {(form.protocol === 'r2t2-rstream' || form.protocol === 't3po-rstream') && <option value="query-token">Query token</option>}
+              {(form.protocol === 'r2t2-native' || form.protocol === 't3po-native') && <option value="handshake-secret">Handshake secret</option>}
               <option value="none">None</option>
             </select>
           </label>
