@@ -3,9 +3,15 @@ import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import {
+  BUILT_IN_R2T2_TRIAL_ENDPOINT,
+  BUILT_IN_R2T2_TRIAL_ID,
+  BUILT_IN_R2T2_TRIAL_MAX_SECONDS,
+} from '../../shared/audio/types';
+import { defaultR2T2ProviderOptions } from '../../shared/audio/r2t2';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 28;
+const SCHEMA_VERSION = 33;
 
 /**
  * Database service for Tiginal
@@ -177,6 +183,26 @@ export class DatabaseService {
 
     if (currentVersion < 28) {
       this.migrateV28();
+    }
+
+    if (currentVersion < 29) {
+      this.migrateV29();
+    }
+
+    if (currentVersion < 30) {
+      this.migrateV30();
+    }
+
+    if (currentVersion < 31) {
+      this.migrateV31();
+    }
+
+    if (currentVersion < 32) {
+      this.migrateV32();
+    }
+
+    if (currentVersion < 33) {
+      this.migrateV33();
     }
 
     // Update schema version
@@ -938,6 +964,167 @@ export class DatabaseService {
     } catch {
       // An older SQLite cannot drop a column. Nothing reads it either way.
     }
+  }
+
+  /** Migration v29: speech providers and persisted audio sessions. */
+  private migrateV29(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS speech_providers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        protocol TEXT NOT NULL CHECK (protocol IN ('r2t2-rstream', 'r2t2-native')),
+        endpoint TEXT NOT NULL,
+        auth_mode TEXT NOT NULL CHECK (auth_mode IN ('none', 'query-token', 'handshake-secret')),
+        credential_encrypted TEXT,
+        built_in_kind TEXT CHECK (built_in_kind IS NULL OR built_in_kind = 'r2t2-online-trial'),
+        user_modified INTEGER NOT NULL DEFAULT 0,
+        max_session_seconds INTEGER,
+        default_language TEXT NOT NULL,
+        options_json TEXT NOT NULL DEFAULT '{}',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_speech_providers_built_in
+        ON speech_providers(built_in_kind)
+        WHERE built_in_kind IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS audio_sessions (
+        id TEXT PRIMARY KEY,
+        source_kind TEXT NOT NULL CHECK (source_kind IN ('microphone', 'file')),
+        source_path TEXT,
+        recording_path TEXT,
+        speech_provider_id TEXT,
+        recognition_language TEXT NOT NULL,
+        transcript TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL CHECK (status IN ('connecting', 'recording', 'finalizing', 'completed', 'failed', 'aborted')),
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        started_at_iso TEXT NOT NULL,
+        timezone_offset_minutes INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (speech_provider_id) REFERENCES speech_providers(id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_audio_sessions_created
+        ON audio_sessions(created_at DESC);
+    `);
+
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT OR IGNORE INTO speech_providers (
+        id, name, protocol, endpoint, auth_mode, credential_encrypted,
+        built_in_kind, user_modified, max_session_seconds, default_language,
+        options_json, enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, NULL, ?, 0, ?, ?, ?, 1, ?, ?)
+    `).run(
+      BUILT_IN_R2T2_TRIAL_ID,
+      'R2T2 Online Demo',
+      'r2t2-rstream',
+      BUILT_IN_R2T2_TRIAL_ENDPOINT,
+      'query-token',
+      'r2t2-online-trial',
+      BUILT_IN_R2T2_TRIAL_MAX_SECONDS,
+      'zh',
+      JSON.stringify(defaultR2T2ProviderOptions()),
+      now,
+      now,
+    );
+  }
+
+  /** Migration v30: local model library, downloads, favorites, and run profiles. */
+  private migrateV30(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS model_directories (
+        path TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('user')),
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS model_favorites (
+        source TEXT NOT NULL CHECK (source IN ('huggingface', 'modelscope')),
+        repo_id TEXT NOT NULL,
+        revision TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (source, repo_id, revision)
+      );
+
+      CREATE TABLE IF NOT EXISTS model_downloads (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL CHECK (source IN ('huggingface', 'modelscope')),
+        repo_id TEXT NOT NULL,
+        revision TEXT NOT NULL,
+        target_path TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('queued', 'downloading', 'completed', 'failed', 'cancelled')),
+        downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+        total_bytes INTEGER,
+        error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS model_run_profiles (
+        id TEXT PRIMARY KEY,
+        engine_id TEXT NOT NULL,
+        model_path TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        parameters_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_model_downloads_updated
+        ON model_downloads(updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_model_run_profiles_updated
+        ON model_run_profiles(updated_at DESC);
+    `);
+  }
+
+  /** Migration v31: identify an individual file within a model download. */
+  private migrateV31(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE model_downloads ADD COLUMN file_path TEXT`);
+    } catch {
+      // Column might already exist.
+    }
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_model_downloads_file
+        ON model_downloads(source, repo_id, revision, file_path, updated_at DESC);
+    `);
+  }
+
+  /** Migration v32: retain the exact command shown for a local model service. */
+  private migrateV32(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE model_run_profiles ADD COLUMN command_line TEXT`);
+    } catch {
+      // Column might already exist.
+    }
+  }
+
+  /** Migration v33: persist user-defined names for downloaded models. */
+  private migrateV33(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS model_aliases (
+        storage_path TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
   }
 
   /**

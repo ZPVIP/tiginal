@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Edit2, RotateCw, CheckCircle2, AlertCircle, DownloadCloud, Bot } from 'lucide-react';
+import { Plus, Trash2, Edit2, RotateCw, CheckCircle2, AlertCircle, DownloadCloud, Bot, Mic2 } from 'lucide-react';
 import { ProviderModal } from './ProviderModal';
 import { ModelManagerModal } from './ModelManagerModal';
 import {
@@ -8,6 +8,8 @@ import {
 } from '../../settings/ai-constants';
 import { ICONS } from '../../settings/icons';
 import { ProviderLogo } from './ProviderLogo';
+import { SpeechProviders } from './SpeechProviders';
+import { HorizontalTabs } from '../Shared/HorizontalTabs';
 
 // Mock ipc invoke
 const invoke = window.electron?.invoke || (async () => {});
@@ -31,6 +33,7 @@ import { CopilotAuthModal } from './CopilotAuthModal';
 import { SettingsPageHeader } from './SettingsPageHeader';
 
 export function AIProviders() {
+  const [activeProviderTab, setActiveProviderTab] = useState<'general' | 'speech'>('general');
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCopilotModalOpen, setIsCopilotModalOpen] = useState(false);
@@ -125,6 +128,18 @@ export function AIProviders() {
 
   return (
     <div className="space-y-4 animate-in fade-in duration-500">
+      <HorizontalTabs
+        tabs={[
+          { id: 'general', label: 'General', icon: <Bot size={15} /> },
+          { id: 'speech', label: 'Speech', icon: <Mic2 size={15} /> },
+        ]}
+        activeTab={activeProviderTab}
+        onChange={setActiveProviderTab}
+        ariaLabel="AI provider categories"
+      />
+
+      {activeProviderTab === 'general' ? (
+        <>
       <SettingsPageHeader
         icon={<Bot size={24} />}
         title="AI Providers"
@@ -209,6 +224,11 @@ export function AIProviders() {
             </div>
         )}
       </div>
+
+        </>
+      ) : (
+        <SpeechProviders />
+      )}
 
       {isModalOpen && (
           <ProviderModal 

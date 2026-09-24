@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Tabs } from '../ui/Tabs';
-import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench, FileText, BarChart3, UserCircle } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Shield, Palette, Terminal, Wand2, Wrench, FileText, BarChart3, UserCircle, BookOpen, PlaySquare, Cpu, SlidersHorizontal } from 'lucide-react';
 import { McpIcon } from '../icons/McpIcon';
 import { GeneralSettings } from './GeneralSettings';
 import { AIProviders } from './AIProviders';
@@ -14,6 +14,10 @@ import { SystemPromptSettings } from './SystemPromptSettings';
 import { StatisticsSettings } from './StatisticsSettings';
 import { ChatProfilesSettings } from './ChatProfilesSettings';
 import { SettingsPageHeader } from './SettingsPageHeader';
+import { ModelLibrarySettings } from './ModelLibrarySettings';
+import { RunModelsSettings } from './RunModelsSettings';
+import { ModelEnginesSettings } from './ModelEnginesSettings';
+import { DefaultEnginesSettings } from './DefaultEnginesSettings';
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState('general');
@@ -21,6 +25,10 @@ export function Settings() {
   const tabs = [
     { id: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
     { id: 'providers', label: 'AI Providers', icon: <Database size={16} /> },
+    { id: 'model-library', label: 'Model Library', icon: <BookOpen size={16} /> },
+    { id: 'run-models', label: 'Run Models', icon: <PlaySquare size={16} /> },
+    { id: 'model-engines', label: 'Model Engines', icon: <Cpu size={16} /> },
+    { id: 'default-engines', label: 'Default Engines', icon: <SlidersHorizontal size={16} /> },
     { id: 'system-prompt', label: 'System Prompts', icon: <FileText size={16} /> },
     { id: 'tools', label: 'Tools', icon: <Wrench size={16} /> },
     { id: 'mcp', label: 'MCP Servers', icon: <McpIcon size={16} /> },
@@ -54,6 +62,10 @@ export function Settings() {
         <div className="max-w-3xl mx-auto w-full">
           {activeTab === 'general' && <GeneralSettings />}
           {activeTab === 'providers' && <AIProviders />}
+          {activeTab === 'model-library' && <ModelLibrarySettings />}
+          {activeTab === 'run-models' && <RunModelsSettings />}
+          {activeTab === 'model-engines' && <ModelEnginesSettings />}
+          {activeTab === 'default-engines' && <DefaultEnginesSettings />}
           {activeTab === 'system-prompt' && <SystemPromptSettings />}
           {activeTab === 'tools' && <ToolsSettings />}
           {activeTab === 'mcp' && <McpSettings />}
