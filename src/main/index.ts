@@ -31,6 +31,12 @@ import { setupStatisticsHandlers } from './statistics-handlers';
 import { setupProfileHandlers } from './profile-handlers';
 import { setupMcpHandlers } from './mcp-handlers';
 import { setupCredentialHandlers } from './credential-handlers';
+import { getAudioService, setupAudioHandlers } from './audio/audio-handlers';
+import {
+  disposeModelServicesNow,
+  getModelRuntimeSupervisor,
+  setupModelHandlers,
+} from './models/model-handlers';
 import { getCredentialRuntime } from './services/credentials/CredentialRuntime';
 import { registerImageScheme, setupImageHandlers } from './image-handlers';
 import { getDatabase } from '../services/database/database';
@@ -90,6 +96,8 @@ function initializeDefaults(): void {
 let mainWindow: BrowserWindow | null = null;
 let credentialQuitConfirmationOpen = false;
 let credentialSessionRevokedForQuit = false;
+let modelQuitCleanupInProgress = false;
+let modelQuitCleanupComplete = false;
 
 function hasActiveOriginalFileSession(): boolean {
   return getCredentialRuntime().hasActiveOriginalFileSession();
@@ -335,6 +343,8 @@ app.whenReady().then(async () => {
   setupMcpHandlers();
   setupImageHandlers();
   setupCredentialHandlers();
+  setupAudioHandlers();
+  setupModelHandlers();
   
   // Initialize default skills directory
   getDatabase().getDb().prepare(
@@ -372,13 +382,31 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', event => {
-  if (credentialSessionRevokedForQuit || !hasActiveOriginalFileSession()) return;
+  if (!credentialSessionRevokedForQuit && hasActiveOriginalFileSession()) {
+    event.preventDefault();
+    void confirmQuitDuringOriginalFileSession();
+    return;
+  }
+  if (modelQuitCleanupComplete) return;
+  const supervisor = getModelRuntimeSupervisor();
+  if (!supervisor.hasActiveProcesses()) return;
   event.preventDefault();
-  void confirmQuitDuringOriginalFileSession();
+  if (modelQuitCleanupInProgress) return;
+  modelQuitCleanupInProgress = true;
+  void supervisor.disposeAll().catch(() => {
+    supervisor.disposeAllNow();
+  }).finally(() => {
+    modelQuitCleanupComplete = true;
+    modelQuitCleanupInProgress = false;
+    app.quit();
+  });
 });
 
-// Stdio MCP servers are child processes; stop them so they don't outlive the app
+// Stop managed runtime resources so they do not outlive the app.
 app.on('will-quit', () => {
+  void getAudioService().disposeAll();
+  disposeModelServicesNow();
+
   const { getMcpService } = require('./services/mcp/McpService');
   void getMcpService().disposeAll();
 
