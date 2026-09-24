@@ -32,6 +32,7 @@ import { setupProfileHandlers } from './profile-handlers';
 import { setupMcpHandlers } from './mcp-handlers';
 import { setupCredentialHandlers } from './credential-handlers';
 import { getAudioService, setupAudioHandlers } from './audio/audio-handlers';
+import { registerAudioScheme, setupAudioMediaProtocol } from './audio/AudioMediaProtocol';
 import {
   disposeModelServicesNow,
   getModelRuntimeSupervisor,
@@ -54,6 +55,7 @@ app.name = 'Tiginal';
 // Attached images are served over a custom scheme; it has to be declared
 // privileged before the app is ready.
 registerImageScheme();
+registerAudioScheme();
 
 // Override userData path to ~/.config/tiginal/support on macOS/Linux
 if (process.platform !== 'win32') {
@@ -344,6 +346,7 @@ app.whenReady().then(async () => {
   setupImageHandlers();
   setupCredentialHandlers();
   setupAudioHandlers();
+  setupAudioMediaProtocol();
   setupModelHandlers();
   
   // Initialize default skills directory

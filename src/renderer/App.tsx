@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { TerminalSquare, KeyRound, Settings as SettingsIcon, MessageSquare, PanelLeft, PanelLeftClose, SquarePen, EyeOff, SquareSplitHorizontal } from 'lucide-react';
+import { AudioLines, TerminalSquare, KeyRound, Settings as SettingsIcon, MessageSquare, PanelLeft, PanelLeftClose, SquarePen, EyeOff, SquareSplitHorizontal } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SettingsModal } from './components/Settings/SettingsModal';
 import { Chat, ChatHandle } from './components/Chat/Chat';
@@ -7,19 +7,21 @@ import { TerminalView } from './components/Terminal/TerminalView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Drawer } from './components/Drawer/Drawer';
 import { CredentialsSettings } from './components/Settings/CredentialsSettings';
+import { AudioWorkspace } from './components/Audio/AudioWorkspace';
 
 // Platform detection
 const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const CHAT_MIN_WIDTH = 600;
 
 export default function App() {
-  const [leftView, setLeftView] = useState<'chat' | 'credentials'>('chat');
+  const [leftView, setLeftView] = useState<'chat' | 'audio' | 'credentials'>('chat');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Layout State
   const [showLeft, setShowLeft] = useState(true);
   const [showTerminal, setShowTerminal] = useState(true);
   const showChat = showLeft && leftView === 'chat';
+  const showAudio = showLeft && leftView === 'audio';
   const showCredentials = showLeft && leftView === 'credentials';
   const [chatRatio, setChatRatio] = useState(0.5); // Default 50% for IDE mode
 
@@ -42,7 +44,7 @@ export default function App() {
       const savedLayout = localStorage.getItem('app-layout-config');
       if (savedLayout) {
         const config = JSON.parse(savedLayout);
-        if (config.leftView === 'chat' || config.leftView === 'credentials') {
+        if (config.leftView === 'chat' || config.leftView === 'audio' || config.leftView === 'credentials') {
           setLeftView(config.leftView);
           if (typeof config.showLeft === 'boolean') setShowLeft(config.showLeft);
           if (typeof config.showTerminal === 'boolean') setShowTerminal(config.showTerminal);
@@ -167,7 +169,14 @@ export default function App() {
     setShowTerminal(false);
   };
 
+  const openAudio = () => {
+    setLeftView('audio');
+    setShowLeft(true);
+    setShowTerminal(false);
+  };
+
   const showSplitView = () => {
+    if (leftView === 'audio') setLeftView('chat');
     setShowLeft(true);
     setShowTerminal(true);
   };
@@ -273,6 +282,13 @@ export default function App() {
             style={{ WebkitAppRegion: 'no-drag' } as any}
           >
             <NavItem
+              id="audio"
+              icon={AudioLines}
+              title="Audio"
+              isActive={showAudio && !showTerminal}
+              onClick={openAudio}
+            />
+            <NavItem
               id="credentials"
               icon={KeyRound}
               title="Credentials"
@@ -353,6 +369,7 @@ export default function App() {
                 <div className={clsx('h-full w-full', !showChat && 'hidden')}>
                   <Chat ref={chatRef} onIncognitoChange={setIsIncognito} onConversationChange={setCurrentConversationId} />
                 </div>
+                {showAudio && <AudioWorkspace />}
                 {showCredentials && <CredentialsSettings />}
               </ErrorBoundary>
             </div>
