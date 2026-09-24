@@ -114,9 +114,16 @@ test('native adapter sends its secret in the handshake and appends deltas', () =
   assert.deepEqual(adapter.readMessage('{"msg":{"text":"hello "}}', state), [
     { kind: 'committed', text: 'hello ', fullText: 'hello ' },
   ]);
-  assert.deepEqual(adapter.readMessage('{"msg":{"text":"world","final":true}}', state), [
+  assert.deepEqual(adapter.readMessage('{"msg":{"text":"world","reset":true}}', state), [
+    { kind: 'segment-reset' },
     { kind: 'committed', text: 'world', fullText: 'hello world' },
     { kind: 'final', text: 'hello world' },
+  ]);
+  assert.deepEqual(adapter.readMessage(JSON.stringify({
+    status: 'error',
+    error: { code: 'UNEXPECTED_COMMAND', message: 'only the EOS text command is accepted after streaming begins' },
+  }), state), [
+    { kind: 'error', code: 'UNEXPECTED_COMMAND', message: 'only the EOS text command is accepted after streaming begins' },
   ]);
 });
 

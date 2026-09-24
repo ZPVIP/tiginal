@@ -18,6 +18,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isMinimized, setIsMinimized] = useState(false);
 
+  const prevOpenRef = useRef(isOpen);
+  useEffect(() => {
+    if (prevOpenRef.current && !isOpen) {
+      window.dispatchEvent(new Event('settings-closed'));
+    }
+    prevOpenRef.current = isOpen;
+  }, [isOpen]);
+
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();

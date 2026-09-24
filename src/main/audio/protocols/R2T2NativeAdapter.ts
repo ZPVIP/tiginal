@@ -73,7 +73,7 @@ export class R2T2NativeAdapter implements SpeechProtocolAdapter {
       events.push({ kind: 'partial', text: partial });
     }
 
-    if (payload.is_final === true || payload.final === true || message.final === true) {
+    if (payload.is_final === true || payload.final === true || message.final === true || message.reset === true) {
       state.partialText = '';
       events.push({ kind: 'final', text: state.committedText });
     }

@@ -122,6 +122,7 @@ export function SpeechProviderModal({
       } else {
         await audio.addSpeechProvider(saveInput);
       }
+      window.dispatchEvent(new Event('speech-providers-updated'));
       onSaved();
     } catch (error) {
       setResult({ success: false, error: messageFromError(error) });

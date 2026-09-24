@@ -152,28 +152,91 @@ export function AudioWorkspace() {
     }
   }, [instructionsCustomized, language, targetLanguage]);
 
+  const reloadProviders = useCallback(async () => {
+    const audio = window.electron?.audio;
+    if (!audio) return;
+    try {
+      const items = await audio.listSpeechProviders();
+      setProviders(items);
+      const preferred = items.find(item => item.enabled);
+      if (preferred) {
+        setProviderId(previous => {
+          if (previous && items.some(item => item.id === previous)) {
+            return previous;
+          }
+          return preferred.id;
+        });
+        setLanguage(previous => (previous === 'auto' ? preferred.defaultLanguage : previous));
+      } else {
+        setProviderId(previous => (items.some(item => item.id === previous) ? previous : ''));
+      }
+    } catch (error) {
+      setState({ kind: 'failed', message: messageFromError(error) });
+    }
+  }, []);
+
+  const reloadTranslationCandidates = useCallback(async () => {
+    const audio = window.electron?.audio;
+    if (!audio) return;
+    try {
+      const items = await audio.listTranslationCandidates();
+      setTranslationCandidates(items);
+      if (items.length > 0) {
+        setTranslationEngineId(previous => {
+          if (previous && items.some(item => item.id === previous)) {
+            return previous;
+          }
+          return items[0].id;
+        });
+      } else {
+        setTranslationEngineId('');
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     const audio = window.electron?.audio;
     if (!audio) {
       setState({ kind: 'failed', message: 'Audio API is unavailable.' });
       return;
     }
-    void audio.listSpeechProviders().then(items => {
-      setProviders(items);
-      const preferred = items.find(item => item.enabled);
-      if (preferred) {
-        setProviderId(previous => previous || preferred.id);
-        setLanguage(previous => previous === 'auto' ? preferred.defaultLanguage : previous);
-      }
-    }).catch(error => setState({ kind: 'failed', message: messageFromError(error) }));
 
-    void audio.listTranslationCandidates().then(items => {
-      setTranslationCandidates(items);
-      if (items.length > 0) {
-        setTranslationEngineId(previous => previous || items[0].id);
-      }
-    }).catch(() => undefined);
-  }, []);
+    void reloadProviders();
+    void reloadTranslationCandidates();
+
+    const handleSpeechUpdate = () => {
+      void reloadProviders();
+    };
+
+    const handleAiUpdate = () => {
+      void reloadProviders();
+      void reloadTranslationCandidates();
+    };
+
+    const handleSettingsClosed = () => {
+      void reloadProviders();
+      void reloadTranslationCandidates();
+    };
+
+    const handleFocus = () => {
+      void reloadProviders();
+      void reloadTranslationCandidates();
+    };
+
+    window.addEventListener('speech-providers-updated', handleSpeechUpdate);
+    window.addEventListener('ai-providers-updated', handleAiUpdate);
+    window.addEventListener('settings-closed', handleSettingsClosed);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('speech-providers-updated', handleSpeechUpdate);
+      window.removeEventListener('ai-providers-updated', handleAiUpdate);
+      window.removeEventListener('settings-closed', handleSettingsClosed);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [reloadProviders, reloadTranslationCandidates]);
 
   useEffect(() => () => {
     void captureRef.current?.abort();

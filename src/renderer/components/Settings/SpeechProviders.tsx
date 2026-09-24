@@ -94,6 +94,7 @@ export function SpeechProviders() {
     if (!window.confirm(`Delete speech provider "${provider.name}"?`)) return;
     try {
       await audio.deleteSpeechProvider(provider.id);
+      window.dispatchEvent(new Event('speech-providers-updated'));
       await load();
     } catch (deleteError) {
       setError(messageFromError(deleteError));

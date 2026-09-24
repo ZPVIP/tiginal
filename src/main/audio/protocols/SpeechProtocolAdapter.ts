@@ -50,10 +50,16 @@ export function parseProtocolPayload(raw: string, protocolName = 'Speech protoco
 
 export function protocolError(payload: Record<string, unknown>, protocolName = 'Speech protocol'): TranscriptEvent | null {
   if (payload.status !== 'error' && payload.type !== 'error') return null;
-  const nested = isRecord(payload.msg) ? payload.msg : null;
-  const message = stringField(nested ?? payload, ['msg', 'message', 'error'])
-    || stringField(payload, ['message', 'error'])
+  const nested = isRecord(payload.msg)
+    ? payload.msg
+    : isRecord(payload.error)
+      ? payload.error
+      : null;
+  const message = stringField(nested ?? payload, ['message', 'msg', 'error', 'detail'])
+    || stringField(payload, ['message', 'error', 'msg'])
     || `${protocolName} reported an error`;
-  const code = stringField(payload, ['code']) || `${protocolName.toUpperCase().replace(/\s+/g, '_')}_ERROR`;
+  const code = stringField(nested ?? payload, ['code', 'err_code'])
+    || stringField(payload, ['code'])
+    || `${protocolName.toUpperCase().replace(/\s+/g, '_')}_ERROR`;
   return { kind: 'error', code, message };
 }

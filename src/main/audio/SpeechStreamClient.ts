@@ -188,6 +188,7 @@ export class SpeechStreamClient {
         this.onEvent(event);
         if (event.kind === 'error') {
           this.completion.reject(new Error(event.message));
+          this.closeSocket();
         } else if (event.kind === 'final') {
           this.receivedFinal = true;
           this.completion.resolve();
