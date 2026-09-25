@@ -4,8 +4,19 @@ directories:
   output: release
   buildResources: build
 
-# Disable auto-update publishing
-publish: null
+# `npm run release` uploads to a draft GitHub release; review it on GitHub before publishing.
+publish:
+  provider: github
+  owner: ZPVIP
+  repo: tiginal
+  releaseType: draft
+
+# No Developer ID yet: skip signing with any certificate in the keychain and apply an ad-hoc signature instead.
+afterSign: scripts/adhoc-sign-mac.cjs
+
+# argon2, node-pty, and better-sqlite3 ship N-API prebuilds for every platform and architecture, so nothing
+# needs compiling for Electron. A rebuild would only produce binaries for the build machine's architecture.
+npmRebuild: false
 
 files:
   - bin/**/*
@@ -14,11 +25,17 @@ files:
   - src/renderer/styles.css
   - node_modules/**/*
   - package.json
+  # Local compiler output matches only the build machine and would shadow the per-architecture prebuilds.
+  - "!node_modules/{argon2,node-pty,better-sqlite3}/build/**"
+  - "!node_modules/{argon2,node-pty}/bin/**"
 
 asarUnpack:
   - bin/**/*
   - dist/main/cli/**/*
   - dist/main/shared/credentials/**/*
+  # Native modules load from disk instead of a temporary copy, and node-pty runs spawn-helper from app.asar.unpacked.
+  - "**/*.node"
+  - node_modules/node-pty/prebuilds/**
 
 extraResources:
   - from: resources/model-catalog/api.json
@@ -28,6 +45,9 @@ extraResources:
 
 mac:
   category: public.app-category.developer-tools
+  identity: null
+  extendInfo:
+    NSMicrophoneUsageDescription: Tiginal uses microphone audio for speech recognition and recording.
   target:
     - target: dmg
       arch: [x64, arm64]

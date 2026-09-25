@@ -17,21 +17,15 @@
     "test:mcp": "npm run build:main && node --test test/mcp-protocol.test.js test/mcp-service.test.js",
     "test:cache": "npm run build:main && node --test test/ai-cache.test.js",
     "start": "npm run build && node scripts/start-electron.cjs",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
+    "pack": "npm run build && electron-builder --dir --publish never",
+    "dist": "npm run build && electron-builder --publish never",
     "postinstall": "node scripts/fix-node-pty-spawn-helper.cjs",
     "test": "npm run build:main && node --test test/*.test.js",
-    "test:credentials": "npm run build:main && node scripts/credential-harness.cjs"
+    "test:credentials": "npm run build:main && node scripts/credential-harness.cjs",
+    "release": "bash scripts/release-mac.sh"
   },
   "author": "",
   "license": "MIT",
-  "build": {
-    "mac": {
-      "extendInfo": {
-        "NSMicrophoneUsageDescription": "Tiginal uses microphone audio for speech recognition and recording."
-      }
-    }
-  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "@types/better-sqlite3": "^7.6.13",

@@ -64,29 +64,54 @@ npm install
 npm start
 ```
 
-## Building Releases
+## Install on macOS
+
+Download the `.dmg` for your Mac from [Releases](https://github.com/ZPVIP/tiginal/releases): `Tiginal-x.x.x-arm64.dmg` for Apple silicon, `Tiginal-x.x.x.dmg` for Intel.
+
+The app is not signed with an Apple Developer ID yet, so macOS blocks the first launch. Open Tiginal once, then go to System Settings > Privacy & Security and click Open Anyway. If macOS reports that the app is damaged, remove the download quarantine and open it again:
 
 ```bash
-# Build for current platform
-npm run dist
-
-# macOS (creates .dmg and .zip)
-npm run dist -- --mac
-
-# Windows (creates .exe installer)
-npm run dist -- --win
-
-# Linux (creates .AppImage and .deb)
-npm run dist -- --linux
+xattr -dr com.apple.quarantine /Applications/Tiginal.app
 ```
 
-Output files are in the `release/` directory.
+## Build from Source
+
+Official packages are published for macOS only. On Windows and Linux, build Tiginal yourself. You need Node.js 24 and Git; the native modules ship prebuilt binaries, so no C++ toolchain is required.
+
+```bash
+git clone https://github.com/ZPVIP/tiginal.git
+cd tiginal
+npm ci
+npm run dist
+```
+
+`npm run dist` compiles the app and packages it for the current platform without uploading anything. Output files are in the `release/` directory.
 
 | Platform | Files |
 |----------|-------|
-| macOS | `Tiginal-x.x.x.dmg`, `Tiginal-x.x.x-mac.zip` |
+| macOS | `Tiginal-x.x.x-arm64.dmg`, `Tiginal-x.x.x.dmg`, and matching `.zip` files |
 | Windows | `Tiginal Setup x.x.x.exe` |
 | Linux | `Tiginal-x.x.x.AppImage`, `tiginal_x.x.x_amd64.deb` |
+
+## Publishing a Release (maintainers)
+
+Releases are built on a maintainer's Mac and uploaded to a draft GitHub release. Continuous integration is not used.
+
+One-time setup: create a fine-grained GitHub token limited to `ZPVIP/tiginal` with the Contents: Read and write permission, then store it in the login keychain. The command prompts for the token, so it never appears in shell history:
+
+```bash
+security add-generic-password -a "$USER" -s tiginal-github-release -w
+```
+
+For each release, set the version, push the commit and tag, and run the release script:
+
+```bash
+npm version 0.2.0
+git push --follow-tags
+npm run release
+```
+
+`npm run release` refuses to run with uncommitted changes or an unpushed tag. It reinstalls dependencies, runs the tests, builds the x64 and arm64 packages, and uploads them to a draft release named after the tag. Review the draft on GitHub, then publish it there or with `gh release edit v0.2.0 --draft=false`.
 
 ## Architecture
 
