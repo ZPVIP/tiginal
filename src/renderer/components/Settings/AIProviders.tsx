@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Edit2, RotateCw, CheckCircle2, AlertCircle, DownloadCloud, Bot, Radio } from 'lucide-react';
+import { Plus, Trash2, Edit2, RotateCw, CheckCircle2, AlertCircle, Bot, Radio } from 'lucide-react';
 import { ProviderModal } from './ProviderModal';
-import { ModelManagerModal } from './ModelManagerModal';
 import {
   AIProvider,
   ModelCatalogUpdateResult,
@@ -38,7 +37,6 @@ export function AIProviders() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCopilotModalOpen, setIsCopilotModalOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<AIProvider | undefined>(undefined);
-  const [managingModelsProvider, setManagingModelsProvider] = useState<AIProvider | undefined>(undefined);
   const [isCryptoUnlocked, setIsCryptoUnlocked] = useState(false);
   const [isUpdatingCatalog, setIsUpdatingCatalog] = useState(false);
   const [catalogUpdate, setCatalogUpdate] = useState<ModelCatalogUpdateResult | null>(null);
@@ -81,15 +79,6 @@ export function AIProviders() {
      setEditingProvider(undefined);
      window.dispatchEvent(new Event('ai-providers-updated'));
      loadProviders();
-  };
-
-  const handleModelSave = async (data: Partial<AIProvider>) => {
-      if (managingModelsProvider) {
-          await invoke('ai:update-provider', { ...managingModelsProvider, ...data });
-          setManagingModelsProvider(undefined);
-          window.dispatchEvent(new Event('ai-providers-updated'));
-          loadProviders();
-      }
   };
 
   const openAdd = () => {
@@ -201,13 +190,6 @@ export function AIProviders() {
                             <Edit2 size={14} />
                         </button>
                         <button 
-                           onClick={() => setManagingModelsProvider(provider)}
-                           className="p-1.5 text-text-muted hover:text-accent-danger hover:bg-surface-hover rounded-lg transition-colors"
-                           title="Manage Models"
-                        >
-                            <DownloadCloud size={14} />
-                        </button>
-                        <button 
                            onClick={() => handleDelete(provider.id)}
                            className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
                         >
@@ -239,15 +221,6 @@ export function AIProviders() {
           />
       )}
       
-      {managingModelsProvider && (
-          <ModelManagerModal
-              isOpen={!!managingModelsProvider}
-              onClose={() => setManagingModelsProvider(undefined)}
-              provider={managingModelsProvider}
-              onSave={handleModelSave}
-          />
-      )}
-
       {isCopilotModalOpen && (
           <CopilotAuthModal 
              isOpen={isCopilotModalOpen}
