@@ -1,4 +1,4 @@
-import { protocol } from 'electron';
+import { protocol, type CustomScheme } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { defaultAudioDirectory } from './AudioFilename';
@@ -42,25 +42,23 @@ function parseRange(value: string | null, size: number): { start: number; end: n
   return { start, end };
 }
 
-export function registerAudioScheme(): void {
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: AUDIO_SCHEME,
-      privileges: {
-        standard: true,
-        secure: true,
-        supportFetchAPI: true,
-        stream: true,
-      },
-    },
-  ]);
-}
+export const AUDIO_SCHEME_PRIVILEGES: CustomScheme = {
+  scheme: AUDIO_SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    // The renderer page has a file:// origin, so fetching a recording is a cross-origin request.
+    corsEnabled: true,
+    stream: true,
+  },
+};
 
 export function setupAudioMediaProtocol(): void {
   protocol.handle(AUDIO_SCHEME, async request => {
     const recordingPath = recordingPathFromUrl(request.url);
     if (!recordingPath || !fs.existsSync(recordingPath)) {
-      return new Response('Not found', { status: 404 });
+      return new Response('Not found', { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } });
     }
 
     const size = fs.statSync(recordingPath).size;
@@ -68,6 +66,7 @@ export function setupAudioMediaProtocol(): void {
     if (!range) {
       return new Response(fs.readFileSync(recordingPath), {
         headers: {
+          'Access-Control-Allow-Origin': '*',
           'Accept-Ranges': 'bytes',
           'Content-Length': String(size),
           'Content-Type': 'audio/wav',
@@ -79,6 +78,7 @@ export function setupAudioMediaProtocol(): void {
     return new Response(data, {
       status: 206,
       headers: {
+        'Access-Control-Allow-Origin': '*',
         'Accept-Ranges': 'bytes',
         'Content-Length': String(data.byteLength),
         'Content-Range': `bytes ${range.start}-${range.end}/${size}`,

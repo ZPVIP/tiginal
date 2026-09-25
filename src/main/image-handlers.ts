@@ -1,4 +1,4 @@
-import { ipcMain, protocol, nativeImage } from 'electron';
+import { ipcMain, protocol, nativeImage, type CustomScheme } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -143,15 +143,10 @@ export function deleteImages(paths: string[]): number {
   return removed;
 }
 
-/** Must run before app ready so the scheme is treated as a normal origin. */
-export function registerImageScheme(): void {
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: IMAGE_SCHEME,
-      privileges: { standard: true, secure: true, supportFetchAPI: true },
-    },
-  ]);
-}
+export const IMAGE_SCHEME_PRIVILEGES: CustomScheme = {
+  scheme: IMAGE_SCHEME,
+  privileges: { standard: true, secure: true, supportFetchAPI: true },
+};
 
 export function setupImageHandlers(): void {
   protocol.handle(IMAGE_SCHEME, async (request) => {

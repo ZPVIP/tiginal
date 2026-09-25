@@ -1,5 +1,5 @@
 import {
-  app, BrowserWindow, dialog, Menu, MenuItemConstructorOptions, type MessageBoxOptions,
+  app, BrowserWindow, dialog, Menu, MenuItemConstructorOptions, protocol, type MessageBoxOptions,
 } from 'electron';
 
 // Polyfill global File object for undici (used by cheerio/fetch) in Node 18 environments
@@ -32,14 +32,14 @@ import { setupProfileHandlers } from './profile-handlers';
 import { setupMcpHandlers } from './mcp-handlers';
 import { setupCredentialHandlers } from './credential-handlers';
 import { getAudioService, setupAudioHandlers } from './audio/audio-handlers';
-import { registerAudioScheme, setupAudioMediaProtocol } from './audio/AudioMediaProtocol';
+import { AUDIO_SCHEME_PRIVILEGES, setupAudioMediaProtocol } from './audio/AudioMediaProtocol';
 import {
   disposeModelServicesNow,
   getModelRuntimeSupervisor,
   setupModelHandlers,
 } from './models/model-handlers';
 import { getCredentialRuntime } from './services/credentials/CredentialRuntime';
-import { registerImageScheme, setupImageHandlers } from './image-handlers';
+import { IMAGE_SCHEME_PRIVILEGES, setupImageHandlers } from './image-handlers';
 import { getDatabase } from '../services/database/database';
 import { getCrypto } from '../services/ssh/CryptoService';
 import { ensureModelCatalogInitialized } from './services/ai/model-catalog';
@@ -52,10 +52,9 @@ import { themes } from '../renderer/themes';
 // Set app name for macOS menu bar
 app.name = 'Tiginal';
 
-// Attached images are served over a custom scheme; it has to be declared
-// privileged before the app is ready.
-registerImageScheme();
-registerAudioScheme();
+// Attached images and recordings are served over custom schemes. Electron accepts
+// only one registerSchemesAsPrivileged call, before the app is ready.
+protocol.registerSchemesAsPrivileged([IMAGE_SCHEME_PRIVILEGES, AUDIO_SCHEME_PRIVILEGES]);
 
 // Disable Electron development security warning spam in console
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
@@ -238,12 +237,12 @@ function createWindow(): void {
   });
 
   // Forward renderer console errors and warnings to terminal
-  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+  mainWindow.webContents.on('console-message', ({ level, message, lineNumber, sourceId }) => {
     if (message.includes('Electron Security Warning')) return;
-    if (level >= 2) {
-      console.error(`[Renderer Error] ${message} (${sourceId}:${line})`);
-    } else if (level === 1) {
-      console.warn(`[Renderer Warn] ${message} (${sourceId}:${line})`);
+    if (level === 'error') {
+      console.error(`[Renderer Error] ${message} (${sourceId}:${lineNumber})`);
+    } else if (level === 'warning') {
+      console.warn(`[Renderer Warn] ${message} (${sourceId}:${lineNumber})`);
     }
   });
 
