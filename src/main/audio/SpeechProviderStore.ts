@@ -5,17 +5,15 @@ import {
   BUILT_IN_R2T2_TRIAL_ENDPOINT,
   BUILT_IN_R2T2_TRIAL_MAX_SECONDS,
   BUILT_IN_R2T2_TRIAL_TOKEN,
-  BUILT_IN_T3PO_TRIAL_ENDPOINT,
-  BUILT_IN_T3PO_TRIAL_TOKEN,
   SPEECH_AUTH_MODES,
   SPEECH_PROVIDER_PROTOCOLS,
-  type R2T2ProviderOptions,
+  type SpeechProviderOptions,
   type SpeechAuthMode,
   type SpeechProvider,
   type SpeechProviderInput,
   type SpeechProviderProtocol,
 } from '../../shared/audio/types';
-import { defaultR2T2ProviderOptions } from '../../shared/audio/r2t2';
+import { defaultSpeechProviderOptions } from '../../shared/audio/r2t2';
 
 interface SpeechProviderRow {
   id: string;
@@ -24,12 +22,11 @@ interface SpeechProviderRow {
   endpoint: string;
   authMode: SpeechAuthMode;
   credentialEncrypted: string | null;
-  builtInKind: 'r2t2-online-trial' | 't3po-online-trial' | null;
+  builtInKind: 'r2t2-online-trial' | null;
   userModified: boolean;
   maxSessionSeconds: number | null;
   defaultLanguage: string;
-  options: R2T2ProviderOptions;
-  enabled: boolean;
+  options: SpeechProviderOptions;
   createdAt: number;
   updatedAt: number;
 }
@@ -61,37 +58,39 @@ function parseBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 
-function parseStringArray(value: unknown): string[] {
+function parseStringArray(value: unknown, limit = 100): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((item): item is string => typeof item === 'string')
     .map(item => item.trim())
     .filter(Boolean)
-    .slice(0, 100);
+    .slice(0, limit);
 }
 
-function parseOptions(value: unknown): R2T2ProviderOptions {
-  const defaults = defaultR2T2ProviderOptions();
+function parseOptions(value: unknown): SpeechProviderOptions {
+  const defaults = defaultSpeechProviderOptions();
   if (!isRecord(value)) return defaults;
   return {
     bookedWords: parseStringArray(value.bookedWords),
-    useVad: parseBoolean(value.useVad, defaults.useVad),
     smooth: parseBoolean(value.smooth, defaults.smooth),
-    mode: typeof value.mode === 'string' && value.mode.trim()
-      ? value.mode.trim().slice(0, 32)
-      : defaults.mode,
+    mode: value.mode === 'fast' ? 'fast' : defaults.mode,
     systemPrompt: typeof value.systemPrompt === 'string'
       ? value.systemPrompt.slice(0, 4_000)
       : defaults.systemPrompt,
+    latencyMode: value.latencyMode === 'low' || value.latencyMode === 'high'
+      ? value.latencyMode
+      : defaults.latencyMode,
+    // T3PO-ws accepts at most 200 terminology entries per session.
+    terminology: parseStringArray(value.terminology, 200),
   };
 }
 
-function parseOptionsJson(value: unknown): R2T2ProviderOptions {
-  if (typeof value !== 'string') return defaultR2T2ProviderOptions();
+function parseOptionsJson(value: unknown): SpeechProviderOptions {
+  if (typeof value !== 'string') return defaultSpeechProviderOptions();
   try {
     return parseOptions(JSON.parse(value));
   } catch {
-    return defaultR2T2ProviderOptions();
+    return defaultSpeechProviderOptions();
   }
 }
 
@@ -137,15 +136,12 @@ export function parseSpeechProviderInput(value: unknown, requireId = false): Spe
   if (!isSpeechProviderProtocol(value.protocol)) throw new Error('Unsupported speech protocol');
   if (!isSpeechAuthMode(value.authMode)) throw new Error('Unsupported speech authentication mode');
   if (
-    (value.protocol === 'r2t2-rstream' || value.protocol === 't3po-rstream')
+    (value.protocol === 'r2t2-rstream' || value.protocol === 't3po')
     && value.authMode === 'handshake-secret'
   ) {
     throw new Error(`${value.protocol} supports query-token or no authentication`);
   }
-  if (
-    (value.protocol === 'r2t2-native' || value.protocol === 't3po-native')
-    && value.authMode === 'query-token'
-  ) {
+  if (value.protocol === 'r2t2-native' && value.authMode === 'query-token') {
     throw new Error(`${value.protocol} supports handshake-secret or no authentication`);
   }
 
@@ -159,7 +155,6 @@ export function parseSpeechProviderInput(value: unknown, requireId = false): Spe
     maxSessionSeconds: optionalPositiveSeconds(value.maxSessionSeconds),
     defaultLanguage: requiredString(value, 'defaultLanguage').slice(0, 64),
     options: parseOptions(value.options),
-    enabled: parseBoolean(value.enabled, true),
   };
 }
 
@@ -170,9 +165,7 @@ function parseSpeechProviderRow(value: unknown): SpeechProviderRow {
   if (!isSpeechProviderProtocol(protocol) || !isSpeechAuthMode(authMode)) {
     throw new Error('Speech provider row has an unsupported protocol or authentication mode');
   }
-  const builtInKind = value.built_in_kind === 'r2t2-online-trial' || value.built_in_kind === 't3po-online-trial'
-    ? value.built_in_kind
-    : null;
+  const builtInKind = value.built_in_kind === 'r2t2-online-trial' ? value.built_in_kind : null;
   return {
     id: requiredString(value, 'id'),
     name: requiredString(value, 'name'),
@@ -189,7 +182,6 @@ function parseSpeechProviderRow(value: unknown): SpeechProviderRow {
       : null,
     defaultLanguage: requiredString(value, 'default_language'),
     options: parseOptionsJson(value.options_json),
-    enabled: value.enabled === 1,
     createdAt: typeof value.created_at === 'number' ? value.created_at : 0,
     updatedAt: typeof value.updated_at === 'number' ? value.updated_at : 0,
   };
@@ -208,7 +200,6 @@ function publicProvider(row: SpeechProviderRow): SpeechProvider {
     maxSessionSeconds: row.maxSessionSeconds,
     defaultLanguage: row.defaultLanguage,
     options: row.options,
-    enabled: row.enabled,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -216,19 +207,10 @@ function publicProvider(row: SpeechProviderRow): SpeechProvider {
 
 function usesBundledTrialCredential(row: SpeechProviderRow): boolean {
   if (row.credentialEncrypted !== null) return false;
-  if (
-    row.builtInKind === 'r2t2-online-trial'
+  return row.builtInKind === 'r2t2-online-trial'
     && row.protocol === 'r2t2-rstream'
     && row.authMode === 'query-token'
-    && row.endpoint === BUILT_IN_R2T2_TRIAL_ENDPOINT
-  ) return true;
-  if (
-    row.builtInKind === 't3po-online-trial'
-    && row.protocol === 't3po-rstream'
-    && row.authMode === 'query-token'
-    && row.endpoint === BUILT_IN_T3PO_TRIAL_ENDPOINT
-  ) return true;
-  return false;
+    && row.endpoint === BUILT_IN_R2T2_TRIAL_ENDPOINT;
 }
 
 export class SpeechProviderStore {
@@ -241,11 +223,20 @@ export class SpeechProviderStore {
     const rows: unknown[] = this.db.prepare(`
       SELECT id, name, protocol, endpoint, auth_mode, credential_encrypted,
              built_in_kind, user_modified, max_session_seconds, default_language,
-             options_json, enabled, created_at, updated_at
+             options_json, created_at, updated_at
       FROM speech_providers
       ORDER BY built_in_kind IS NULL, name COLLATE NOCASE
     `).all();
-    return rows.map(parseSpeechProviderRow).map(publicProvider);
+    // One unreadable row must not hide every other provider.
+    return rows.flatMap(row => {
+      try {
+        return [publicProvider(parseSpeechProviderRow(row))];
+      } catch (error) {
+        const id = isRecord(row) && typeof row.id === 'string' ? row.id : 'unknown';
+        console.warn(`Skipping speech provider ${id}: ${error instanceof Error ? error.message : String(error)}`);
+        return [];
+      }
+    });
   }
 
   add(input: SpeechProviderInput): SpeechProvider {
@@ -258,8 +249,8 @@ export class SpeechProviderStore {
       INSERT INTO speech_providers (
         id, name, protocol, endpoint, auth_mode, credential_encrypted,
         built_in_kind, user_modified, max_session_seconds, default_language,
-        options_json, enabled, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, ?, ?)
+        options_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, ?)
     `).run(
       id,
       input.name,
@@ -270,7 +261,6 @@ export class SpeechProviderStore {
       input.maxSessionSeconds,
       input.defaultLanguage,
       JSON.stringify(parseOptions(input.options)),
-      input.enabled === false ? 0 : 1,
       now,
       now,
     );
@@ -290,7 +280,7 @@ export class SpeechProviderStore {
       UPDATE speech_providers SET
         name = ?, protocol = ?, endpoint = ?, auth_mode = ?, credential_encrypted = ?,
         user_modified = ?, max_session_seconds = ?, default_language = ?, options_json = ?,
-        enabled = ?, updated_at = ?
+        updated_at = ?
       WHERE id = ?
     `).run(
       input.name,
@@ -302,7 +292,6 @@ export class SpeechProviderStore {
       input.maxSessionSeconds,
       input.defaultLanguage,
       JSON.stringify(parseOptions(input.options)),
-      input.enabled === false ? 0 : 1,
       now,
       input.id,
     );
@@ -331,7 +320,7 @@ export class SpeechProviderStore {
       credential = this.decryptCredential(existingRow.credentialEncrypted);
     } else {
       credential = proposedRow && usesBundledTrialCredential(proposedRow)
-        ? (proposedRow.builtInKind === 't3po-online-trial' ? BUILT_IN_T3PO_TRIAL_TOKEN : BUILT_IN_R2T2_TRIAL_TOKEN)
+        ? BUILT_IN_R2T2_TRIAL_TOKEN
         : null;
     }
     const now = Date.now();
@@ -348,7 +337,6 @@ export class SpeechProviderStore {
         maxSessionSeconds: input.maxSessionSeconds,
         defaultLanguage: input.defaultLanguage,
         options: parseOptions(input.options),
-        enabled: input.enabled !== false,
         createdAt: existingRow?.createdAt ?? now,
         updatedAt: now,
       },
@@ -360,7 +348,7 @@ export class SpeechProviderStore {
     const row = this.requireRow(id);
     let credential: string | null = null;
     if (usesBundledTrialCredential(row)) {
-      credential = row.builtInKind === 't3po-online-trial' ? BUILT_IN_T3PO_TRIAL_TOKEN : BUILT_IN_R2T2_TRIAL_TOKEN;
+      credential = BUILT_IN_R2T2_TRIAL_TOKEN;
     } else if (row.credentialEncrypted) {
       credential = this.decryptCredential(row.credentialEncrypted);
     }
@@ -371,7 +359,7 @@ export class SpeechProviderStore {
     const row: unknown = this.db.prepare(`
       SELECT id, name, protocol, endpoint, auth_mode, credential_encrypted,
              built_in_kind, user_modified, max_session_seconds, default_language,
-             options_json, enabled, created_at, updated_at
+             options_json, created_at, updated_at
       FROM speech_providers WHERE id = ?
     `).get(id);
     if (!row) throw new Error('Speech provider not found');

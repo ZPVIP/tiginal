@@ -7,14 +7,11 @@ import {
   BUILT_IN_R2T2_TRIAL_ENDPOINT,
   BUILT_IN_R2T2_TRIAL_ID,
   BUILT_IN_R2T2_TRIAL_MAX_SECONDS,
-  BUILT_IN_T3PO_TRIAL_ENDPOINT,
-  BUILT_IN_T3PO_TRIAL_ID,
-  BUILT_IN_T3PO_TRIAL_MAX_SECONDS,
 } from '../../shared/audio/types';
-import { defaultR2T2ProviderOptions } from '../../shared/audio/r2t2';
+import { defaultSpeechProviderOptions } from '../../shared/audio/r2t2';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 34;
+const SCHEMA_VERSION = 36;
 
 /**
  * Database service for Tiginal
@@ -210,6 +207,11 @@ export class DatabaseService {
 
     if (currentVersion < 34) {
       this.migrateV34();
+    }
+
+    // v35 was an unreleased step that only removed the T3PO demo; v36 supersedes it and handles both states.
+    if (currentVersion < 36) {
+      this.migrateV36();
     }
 
     // Update schema version
@@ -1036,7 +1038,7 @@ export class DatabaseService {
       'r2t2-online-trial',
       BUILT_IN_R2T2_TRIAL_MAX_SECONDS,
       'zh',
-      JSON.stringify(defaultR2T2ProviderOptions()),
+      JSON.stringify(defaultSpeechProviderOptions()),
       now,
       now,
     );
@@ -1134,7 +1136,7 @@ export class DatabaseService {
     `);
   }
 
-  /** Migration v34: Support T3PO protocols and seed T3PO Online Demo trial provider. */
+  /** Migration v34: support T3PO protocols in speech providers. */
   private migrateV34(): void {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -1166,27 +1168,74 @@ export class DatabaseService {
     } catch {
       // Recreate may fail if table already has constraints or under lock; continue.
     }
+  }
 
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT OR IGNORE INTO speech_providers (
-        id, name, protocol, endpoint, auth_mode, credential_encrypted,
-        built_in_kind, user_modified, max_session_seconds, default_language,
-        options_json, enabled, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, NULL, ?, 0, ?, ?, ?, 1, ?, ?)
-    `).run(
-      BUILT_IN_T3PO_TRIAL_ID,
-      'T3PO Online Demo',
-      't3po-rstream',
-      BUILT_IN_T3PO_TRIAL_ENDPOINT,
-      'query-token',
-      't3po-online-trial',
-      BUILT_IN_T3PO_TRIAL_MAX_SECONDS,
-      'zh',
-      JSON.stringify(defaultR2T2ProviderOptions()),
-      now,
-      now,
-    );
+  /**
+   * Migration v36: T3PO becomes a single text translation protocol for T3PO-ws `/ws/translate`,
+   * and the T3PO Online Demo seeded by v34 is removed because t3po.youdao.com serves no WebSocket endpoint.
+   * A demo copy the user pointed at another host stays as an ordinary provider.
+   */
+  private migrateV36(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // Rebuilding the table must not fire ON DELETE SET NULL on audio_sessions.speech_provider_id.
+    const foreignKeys = this.db.pragma('foreign_keys', { simple: true });
+    this.db.pragma('foreign_keys = OFF');
+    try {
+      this.db.transaction(() => {
+        this.db!.exec(`
+          CREATE TABLE speech_providers_v36 (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            protocol TEXT NOT NULL CHECK (protocol IN ('r2t2-rstream', 'r2t2-native', 't3po')),
+            endpoint TEXT NOT NULL,
+            auth_mode TEXT NOT NULL CHECK (auth_mode IN ('none', 'query-token', 'handshake-secret')),
+            credential_encrypted TEXT,
+            built_in_kind TEXT CHECK (built_in_kind IS NULL OR built_in_kind IN ('r2t2-online-trial')),
+            user_modified INTEGER NOT NULL DEFAULT 0,
+            max_session_seconds INTEGER,
+            default_language TEXT NOT NULL,
+            options_json TEXT NOT NULL DEFAULT '{}',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+
+          INSERT INTO speech_providers_v36
+          SELECT
+            id,
+            name,
+            CASE WHEN protocol IN ('t3po-rstream', 't3po-native') THEN 't3po' ELSE protocol END,
+            endpoint,
+            CASE WHEN protocol = 't3po-native' AND auth_mode = 'handshake-secret' THEN 'query-token' ELSE auth_mode END,
+            credential_encrypted,
+            CASE WHEN built_in_kind = 't3po-online-trial' THEN NULL ELSE built_in_kind END,
+            user_modified,
+            max_session_seconds,
+            default_language,
+            options_json,
+            enabled,
+            created_at,
+            updated_at
+          FROM speech_providers
+          WHERE NOT (
+            id = 'builtin-t3po-online-demo'
+            AND (user_modified = 0 OR endpoint = 'wss://t3po.youdao.com' OR endpoint LIKE 'wss://t3po.youdao.com/%')
+          );
+
+          DROP TABLE speech_providers;
+          ALTER TABLE speech_providers_v36 RENAME TO speech_providers;
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_speech_providers_built_in
+            ON speech_providers(built_in_kind)
+            WHERE built_in_kind IS NOT NULL;
+          UPDATE audio_sessions SET speech_provider_id = NULL
+            WHERE speech_provider_id IS NOT NULL
+              AND speech_provider_id NOT IN (SELECT id FROM speech_providers);
+        `);
+      })();
+    } finally {
+      this.db.pragma(`foreign_keys = ${foreignKeys ? 'ON' : 'OFF'}`);
+    }
   }
 
   /**

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Edit2, RotateCw, CheckCircle2, AlertCircle, DownloadCloud, Bot, Mic2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, RotateCw, CheckCircle2, AlertCircle, DownloadCloud, Bot, Radio } from 'lucide-react';
 import { ProviderModal } from './ProviderModal';
 import { ModelManagerModal } from './ModelManagerModal';
 import {
@@ -33,7 +33,7 @@ import { CopilotAuthModal } from './CopilotAuthModal';
 import { SettingsPageHeader } from './SettingsPageHeader';
 
 export function AIProviders() {
-  const [activeProviderTab, setActiveProviderTab] = useState<'general' | 'speech'>('general');
+  const [activeProviderTab, setActiveProviderTab] = useState<'general' | 'streaming'>('general');
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCopilotModalOpen, setIsCopilotModalOpen] = useState(false);
@@ -131,10 +131,10 @@ export function AIProviders() {
       <HorizontalTabs
         tabs={[
           { id: 'general', label: 'General', icon: <Bot size={15} /> },
-          { id: 'speech', label: 'Speech', icon: <Mic2 size={15} /> },
+          { id: 'streaming', label: 'Streaming', icon: <Radio size={15} /> },
         ]}
         activeTab={activeProviderTab}
-        onChange={setActiveProviderTab}
+        onChange={id => setActiveProviderTab(id === 'streaming' ? 'streaming' : 'general')}
         ariaLabel="AI provider categories"
       />
 

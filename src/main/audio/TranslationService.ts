@@ -12,6 +12,7 @@ import {
   defaultT3POInstructions,
   T3POStreamingTranslator,
 } from './T3POStreamingTranslator';
+import { createT3POTranslator, type StreamingTranslator } from './T3POWebSocketTranslator';
 import { fetchOpenAIWithCompatibility } from '../services/ai/openai-request';
 import { callNonStreamingChatCompletion } from '../chat-handlers';
 
@@ -65,11 +66,10 @@ export class TranslationService {
   public listCandidates(): TranslationEngineCandidate[] {
     const candidates: TranslationEngineCandidate[] = [];
 
-    // 1. Speech providers supporting T3PO
+    // 1. T3PO streaming providers
     try {
       const speechRows: unknown[] = this.db.prepare(`
-        SELECT id, name, protocol, endpoint, default_language, enabled FROM speech_providers
-        WHERE enabled = 1
+        SELECT id, name, protocol, endpoint, default_language FROM speech_providers
         ORDER BY name COLLATE NOCASE
       `).all();
 
@@ -77,16 +77,14 @@ export class TranslationService {
         if (!isRecord(row) || typeof row.id !== 'string' || typeof row.name !== 'string') continue;
         const protocol = typeof row.protocol === 'string' ? row.protocol : '';
         const endpoint = typeof row.endpoint === 'string' ? row.endpoint : '';
-        const isT3PO = protocol.startsWith('t3po');
-        if (!isT3PO) continue;
-        const isWs = endpoint.startsWith('ws://') || endpoint.startsWith('wss://');
+        if (protocol !== 't3po') continue;
         candidates.push({
           id: `speech-provider:${row.id}`,
           label: row.name,
-          description: `${protocol} · ${isWs ? 'WebSocket Streaming' : 'Speech Translation'}`,
+          description: 'T3PO · WebSocket Streaming',
           source: 'speech-provider',
-          capabilities: isWs ? ['translation', 'simultaneous-translation'] : ['translation'],
-          isSimultaneous: isWs,
+          capabilities: ['translation', 'simultaneous-translation'],
+          isSimultaneous: true,
           endpoint,
           protocol,
           defaultLanguage: typeof row.default_language === 'string' ? row.default_language : 'zh',
@@ -160,30 +158,18 @@ export class TranslationService {
     if (engineId.startsWith('speech-provider:')) {
       const providerId = engineId.slice('speech-provider:'.length);
       const resolved = this.speechStore.require(providerId);
-
-      const protocol = resolved.provider.protocol || '';
-      if (!protocol.startsWith('t3po')) {
+      if (resolved.provider.protocol !== 't3po') {
         throw new Error(
-          `Speech provider "${resolved.provider.name}" uses speech recognition protocol "${protocol}", which does not support text translation. Please select an LLM or T3PO translation engine.`
+          `Speech provider "${resolved.provider.name}" uses speech recognition protocol "${resolved.provider.protocol}", which does not support text translation. Please select an LLM or T3PO translation engine.`
         );
       }
 
-      const endpoint = resolved.provider.endpoint;
-      const apiKey = resolved.credential ?? undefined;
-      const model = ((resolved.provider.options as unknown as Record<string, unknown>)?.model as string) || 'Confucius4-T3PO';
-
-      // Run T3PO translator in forced mode
-      const translator = new T3POStreamingTranslator({
-        endpoint,
-        apiKey,
-        model,
+      const translator = createT3POTranslator(resolved.provider, resolved.credential, {
         sourceLanguage,
         targetLanguage,
         latencyMode: request.latencyMode,
-        instructions: request.instructions,
         terminology: request.terminology,
       });
-
       translator.pushCommittedText(text);
       const translated = await translator.flush();
       return {
@@ -343,26 +329,31 @@ export class TranslationService {
     config: AudioSessionTranslationConfig,
     sourceLanguage: string,
     onEvent: (event: TranslationSessionEvent) => void,
-  ): T3POStreamingTranslator {
+  ): StreamingTranslator {
     const { engineId, targetLanguage, latencyMode, instructions, terminology } = config;
+
+    if (engineId.startsWith('speech-provider:')) {
+      const providerId = engineId.slice('speech-provider:'.length);
+      const resolved = this.speechStore.require(providerId);
+      if (resolved.provider.protocol !== 't3po') {
+        throw new Error(
+          `Speech provider "${resolved.provider.name}" uses speech recognition protocol "${resolved.provider.protocol}", which does not support text translation.`
+        );
+      }
+      return createT3POTranslator(resolved.provider, resolved.credential, {
+        sourceLanguage,
+        targetLanguage,
+        latencyMode,
+        terminology,
+        onEvent,
+      });
+    }
 
     let endpoint = '';
     let apiKey: string | undefined;
     let model = 'Confucius4-T3PO';
 
-    if (engineId.startsWith('speech-provider:')) {
-      const providerId = engineId.slice('speech-provider:'.length);
-      const resolved = this.speechStore.require(providerId);
-      const protocol = resolved.provider.protocol || '';
-      if (!protocol.startsWith('t3po')) {
-        throw new Error(
-          `Speech provider "${resolved.provider.name}" uses speech recognition protocol "${protocol}", which does not support text translation.`
-        );
-      }
-      endpoint = resolved.provider.endpoint;
-      apiKey = resolved.credential ?? undefined;
-      model = ((resolved.provider.options as unknown as Record<string, unknown>)?.model as string) || 'Confucius4-T3PO';
-    } else if (engineId.startsWith('remote-ai:')) {
+    if (engineId.startsWith('remote-ai:')) {
       const parts = engineId.slice('remote-ai:'.length).split(':');
       const providerId = parts[0];
       const modelName = parts.slice(1).join(':');

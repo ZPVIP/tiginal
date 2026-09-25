@@ -10,8 +10,6 @@ const {
   getT3POLogitBias,
   T3POStreamingTranslator,
 } = require('../dist/main/main/audio/T3POStreamingTranslator.js');
-const { T3PORStreamAdapter } = require('../dist/main/main/audio/protocols/T3PORStreamAdapter.js');
-const { T3PONativeAdapter } = require('../dist/main/main/audio/protocols/T3PONativeAdapter.js');
 const { TranslationService } = require('../dist/main/main/audio/TranslationService.js');
 
 test('T3PO prompt builder formats history and current input correctly', () => {
@@ -123,61 +121,6 @@ test('T3POStreamingTranslator handles WAIT, TRANS, coalescing and force flush', 
   assert.equal(events.some(e => e.kind === 'complete'), true);
 });
 
-test('T3PO rstream and native protocol adapters handle messages and URL', () => {
-  const rstream = new T3PORStreamAdapter();
-  const provider = {
-    id: 'p1',
-    name: 'T3PO RStream',
-    protocol: 't3po-rstream',
-    endpoint: 'wss://example.com/stream',
-    authMode: 'query-token',
-    hasCredential: true,
-    builtInKind: null,
-    userModified: false,
-    maxSessionSeconds: null,
-    defaultLanguage: 'zh',
-    options: {
-      targetLanguage: 'en',
-      latencyMode: 'low',
-    },
-    enabled: true,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-
-  const url = rstream.buildUrl(provider, 'token123');
-  assert.equal(url.searchParams.get('t'), 'token123');
-
-  const openMsg = JSON.parse(rstream.buildOpeningMessage({
-    requestId: 'req-1',
-    language: 'zh',
-    options: provider.options,
-  }));
-  assert.equal(openMsg.action, 'start');
-  assert.equal(openMsg.lang, 'cn');
-
-  const state = { committedText: '', partialText: '' };
-  const msgs = rstream.readMessage(JSON.stringify({ status: 'connected' }), state);
-  assert.deepEqual(msgs, [{ kind: 'connected' }]);
-
-  const transMsgs = rstream.readMessage(JSON.stringify({
-    text: 'Hello',
-  }), state);
-  assert.equal(transMsgs.length, 1);
-  assert.equal(transMsgs[0].kind, 'committed');
-  assert.equal(transMsgs[0].text, 'Hello');
-
-  const native = new T3PONativeAdapter();
-  const nativeOpen = JSON.parse(native.buildOpeningMessage({
-    requestId: 'req-2',
-    language: 'zh',
-    credential: 'auth-secret',
-    options: provider.options,
-  }));
-  assert.equal(nativeOpen.secret_key, 'auth-secret');
-  assert.equal(nativeOpen.action, 'handshake');
-});
-
 test('TranslationService lists candidates from speech providers and ai providers', async () => {
   const mockDb = {
     prepare: sql => {
@@ -187,12 +130,12 @@ test('TranslationService lists candidates from speech providers and ai providers
           all: () => [
             {
               id: 'sp-t3po',
-              name: 'T3PO Online Trial',
-              protocol: 't3po-rstream',
+              name: 'Local T3PO',
+              protocol: 't3po',
               endpoint: 'wss://example.com/t3po',
               auth_mode: 'query-token',
               credential_encrypted: null,
-              built_in_kind: 't3po-online-trial',
+              built_in_kind: null,
               user_modified: 0,
               max_session_seconds: 600,
               default_language: 'zh',

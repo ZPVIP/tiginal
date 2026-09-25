@@ -13,6 +13,7 @@ import { toRecordingUrl } from './AudioMediaProtocol';
 import { AudioService } from './AudioService';
 import { AudioSessionRepository } from './AudioSessionRepository';
 import { testSpeechConnection } from './SpeechStreamClient';
+import { testT3POConnection } from './T3POWebSocketTranslator';
 import { parseSpeechProviderInput, SpeechProviderStore } from './SpeechProviderStore';
 import { TranslationService } from './TranslationService';
 import { getModelRuntimeSupervisor } from '../models/model-handlers';
@@ -179,7 +180,11 @@ export function setupAudioHandlers(): void {
     try {
       const input: SpeechProviderTestInput = parseSpeechProviderInput(value);
       const resolved = providerStore().resolveForTest(input);
-      await testSpeechConnection(resolved.provider, resolved.credential);
+      if (resolved.provider.protocol === 't3po') {
+        await testT3POConnection(resolved.provider, resolved.credential);
+      } else {
+        await testSpeechConnection(resolved.provider, resolved.credential);
+      }
       return { success: true };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };

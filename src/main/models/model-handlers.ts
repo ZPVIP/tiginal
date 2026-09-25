@@ -180,7 +180,7 @@ function defaultRemoteLanguageTarget(): string | null {
 
 function remoteSpeechCandidates(): DefaultEngineCandidate[] {
   const rows: unknown[] = getDatabase().getDb().prepare(`
-    SELECT id, name, protocol FROM speech_providers WHERE enabled = 1 ORDER BY name COLLATE NOCASE
+    SELECT id, name, protocol FROM speech_providers ORDER BY name COLLATE NOCASE
   `).all();
   return rows.flatMap(row => {
     if (!isRecord(row) || typeof row.id !== 'string' || typeof row.name !== 'string') return [];

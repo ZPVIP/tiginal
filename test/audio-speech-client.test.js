@@ -13,7 +13,6 @@ const {
 
 const options = {
   bookedWords: [],
-  useVad: true,
   smooth: true,
   mode: 'slow',
   systemPrompt: '',
@@ -49,7 +48,6 @@ function provider(endpoint) {
     maxSessionSeconds: null,
     defaultLanguage: 'en',
     options,
-    enabled: true,
     createdAt: 1,
     updatedAt: 1,
   };
@@ -186,12 +184,11 @@ test('AudioService keeps a finalized WAV after the recognition socket disconnect
   }
 });
 
-test('SpeechStreamClient T3PO protocol error labeling', async () => {
-
+test('SpeechStreamClient refuses T3PO providers because they translate text', () => {
   const t3poProvider = {
     id: 't3po-test',
     name: 'T3PO Test',
-    protocol: 't3po-rstream',
+    protocol: 't3po',
     endpoint: 'ws://127.0.0.1:59999/non-existent',
     authMode: 'none',
     hasCredential: false,
@@ -200,15 +197,13 @@ test('SpeechStreamClient T3PO protocol error labeling', async () => {
     maxSessionSeconds: null,
     defaultLanguage: 'en',
     options,
-    enabled: true,
     createdAt: 1,
     updatedAt: 1,
   };
 
-  const client = new SpeechStreamClient(t3poProvider, null, () => undefined);
-  await assert.rejects(
-    () => client.connect('en'),
-    /T3PO connection failed:/
+  assert.throws(
+    () => new SpeechStreamClient(t3poProvider, null, () => undefined),
+    /cannot transcribe audio/,
   );
 });
 

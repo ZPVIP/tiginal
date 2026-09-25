@@ -1,4 +1,5 @@
 import {
+  formatR2T2BookedWords,
   R2T2_NATIVE_EOS,
   tailSilenceSamples,
   type SpeechProtocolState,
@@ -22,15 +23,21 @@ export class R2T2NativeAdapter implements SpeechProtocolAdapter {
   }
 
   buildOpeningMessage(input: SpeechSessionOptions): string {
+    // The native header has no booked_words field; both servers read system_prompt as recognition context.
+    const systemPrompt = [input.options.systemPrompt.trim(), formatR2T2BookedWords(input.options.bookedWords)]
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 4_000);
     return JSON.stringify({
       requestId: input.requestId,
       channels: 1,
       sample_rate: 16_000,
       language: input.language,
-      use_vad: input.options.useVad,
+      use_vad: false,
       secret_key: input.credential ?? '',
       mode: input.options.mode,
-      ...(input.options.systemPrompt ? { system_prompt: input.options.systemPrompt } : {}),
+      smooth: input.options.smooth,
+      ...(systemPrompt ? { system_prompt: systemPrompt } : {}),
     });
   }
 
@@ -57,7 +64,8 @@ export class R2T2NativeAdapter implements SpeechProtocolAdapter {
     }
 
     const message = isRecord(payload.msg) ? payload.msg : payload;
-    if (message.reset === true || payload.reset === true) {
+    const reset = message.reset === true || payload.reset === true;
+    if (reset) {
       events.push({ kind: 'segment-reset' });
     }
 
@@ -73,7 +81,8 @@ export class R2T2NativeAdapter implements SpeechProtocolAdapter {
       events.push({ kind: 'partial', text: partial });
     }
 
-    if (payload.is_final === true || payload.final === true || message.final === true || message.reset === true) {
+    // Servers also reset mid-session (soft reset, VAD speech end); only the reset answering EOS ends the stream.
+    if (payload.is_final === true || payload.final === true || message.final === true || (reset && state.eosSent)) {
       state.partialText = '';
       events.push({ kind: 'final', text: state.committedText });
     }

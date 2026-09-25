@@ -67,8 +67,9 @@ export class R2T2RStreamAdapter implements SpeechProtocolAdapter {
     return JSON.stringify({
       lang: mapR2T2RStreamLanguage(input.language),
       booked_words: formatR2T2BookedWords(input.options.bookedWords),
-      use_vad: input.options.useVad,
+      use_vad: false,
       smooth: input.options.smooth,
+      mode: input.options.mode,
       requestId: input.requestId,
     });
   }

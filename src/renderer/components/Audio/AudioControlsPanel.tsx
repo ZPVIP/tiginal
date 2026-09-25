@@ -103,7 +103,7 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
   const isWsEngine = Boolean(
     selectedEngine?.endpoint?.startsWith('ws://') ||
     selectedEngine?.endpoint?.startsWith('wss://') ||
-    selectedEngine?.protocol?.startsWith('t3po-')
+    selectedEngine?.protocol === 't3po'
   );
   const isT3PO = Boolean(selectedEngine && (isWsEngine || selectedEngine.label.toLowerCase().includes('t3po')));
   const actionLabel = props.source === 'microphone' ? 'Start' : 'Transcribe';
@@ -113,7 +113,7 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
       cand.endpoint?.startsWith('ws://') ||
       cand.endpoint?.startsWith('wss://') ||
       cand.protocol?.startsWith('ws') ||
-      cand.protocol?.startsWith('t3po-') ||
+      cand.protocol === 't3po' ||
       cand.isSimultaneous
     );
 
@@ -209,7 +209,6 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
             options={props.providers.map(item => ({
               value: item.id,
               label: item.name,
-              disabled: !item.enabled,
             }))}
             placeholder="No speech provider"
             buttonClassName="h-9"

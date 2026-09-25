@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, FileAudio, FolderOpen, Mic, Radio, Trash2, Waves } from 'lucide-react';
-import type {
-  AudioSessionEvent,
-  SpeechProvider,
-  TranslationEngineCandidate,
-  TranslationLatencyMode,
+import {
+  isR2T2Protocol,
+  type AudioSessionEvent,
+  type SpeechProvider,
+  type TranslationEngineCandidate,
+  type TranslationLatencyMode,
 } from '../../../shared/audio/types';
 import { defaultT3POInstructions } from '../../../shared/audio/t3po-prompt';
 import { PcmCapture } from '../../audio/PcmCapture';
@@ -139,10 +140,22 @@ export function AudioWorkspace() {
   const busy = isBusy(state);
   const editable = !busy;
 
-  const selectedProvider = useMemo(
-    () => providers.find(provider => provider.id === providerId),
-    [providerId, providers],
+  // T3PO providers translate text, so only R2T2 providers can transcribe audio.
+  const recognitionProviders = useMemo(
+    () => providers.filter(provider => isR2T2Protocol(provider.protocol)),
+    [providers],
   );
+
+  const selectedProvider = useMemo(
+    () => recognitionProviders.find(provider => provider.id === providerId),
+    [providerId, recognitionProviders],
+  );
+
+  // A T3PO provider's latency mode is the default; the workspace selector overrides it per session.
+  useEffect(() => {
+    const t3po = providers.find(provider => `speech-provider:${provider.id}` === translationEngineId);
+    if (t3po) setTranslationLatency(t3po.options.latencyMode);
+  }, [providers, translationEngineId]);
 
   // Update default instructions when languages change, unless user customized them
   useEffect(() => {
@@ -158,17 +171,18 @@ export function AudioWorkspace() {
     try {
       const items = await audio.listSpeechProviders();
       setProviders(items);
-      const preferred = items.find(item => item.enabled);
+      const recognizers = items.filter(item => isR2T2Protocol(item.protocol));
+      const preferred = recognizers[0];
       if (preferred) {
         setProviderId(previous => {
-          if (previous && items.some(item => item.id === previous)) {
+          if (previous && recognizers.some(item => item.id === previous)) {
             return previous;
           }
           return preferred.id;
         });
         setLanguage(previous => (previous === 'auto' ? preferred.defaultLanguage : previous));
       } else {
-        setProviderId(previous => (items.some(item => item.id === previous) ? previous : ''));
+        setProviderId('');
       }
     } catch (error) {
       setState({ kind: 'failed', message: messageFromError(error) });
@@ -443,7 +457,7 @@ export function AudioWorkspace() {
     const isWs = Boolean(
       candidate?.endpoint?.startsWith('ws://') ||
       candidate?.endpoint?.startsWith('wss://') ||
-      candidate?.protocol?.startsWith('t3po-')
+      candidate?.protocol === 't3po'
     );
     const translationConfig = (realtimeTranslation && translationEngineId && isWs) ? {
       engineId: translationEngineId,
@@ -503,7 +517,7 @@ export function AudioWorkspace() {
     const isWs = Boolean(
       candidate?.endpoint?.startsWith('ws://') ||
       candidate?.endpoint?.startsWith('wss://') ||
-      candidate?.protocol?.startsWith('t3po-')
+      candidate?.protocol === 't3po'
     );
     const translationConfig = (realtimeTranslation && translationEngineId && isWs) ? {
       engineId: translationEngineId,
@@ -654,7 +668,7 @@ export function AudioWorkspace() {
   ]);
 
   const playerUrl = source === 'file' ? fileUrl : recordingUrl;
-  const canStart = Boolean(selectedProvider?.enabled) && (source === 'microphone' || Boolean(audioFile));
+  const canStart = Boolean(selectedProvider) && (source === 'microphone' || Boolean(audioFile));
   const fileProgress = state.kind === 'transcribing-file' ? state.progress : 0;
 
   const selectedEngine = useMemo(
@@ -665,7 +679,7 @@ export function AudioWorkspace() {
   const isWsEngine = Boolean(
     selectedEngine?.endpoint?.startsWith('ws://') ||
     selectedEngine?.endpoint?.startsWith('wss://') ||
-    selectedEngine?.protocol?.startsWith('t3po-') ||
+    selectedEngine?.protocol === 't3po' ||
     selectedEngine?.isSimultaneous
   );
 
@@ -678,7 +692,7 @@ export function AudioWorkspace() {
           c.endpoint?.startsWith('ws://') ||
           c.endpoint?.startsWith('wss://') ||
           c.protocol?.startsWith('ws') ||
-          c.protocol?.startsWith('t3po-') ||
+          c.protocol === 't3po' ||
           c.isSimultaneous
         );
       const streaming = translationCandidates.filter(isCandidateStreaming);
@@ -728,7 +742,7 @@ export function AudioWorkspace() {
           onFileChange={selectFile}
           language={language}
           onLanguageChange={setLanguage}
-          providers={providers}
+          providers={recognitionProviders}
           providerId={providerId}
           onProviderChange={setProviderId}
           technicalTerms={terms}

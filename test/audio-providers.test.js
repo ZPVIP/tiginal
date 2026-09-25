@@ -29,7 +29,7 @@ class FakeDatabase {
       return { run: (...values) => {
         const [
           id, name, protocol, endpoint, authMode, credentialEncrypted,
-          maxSessionSeconds, defaultLanguage, optionsJson, enabled, createdAt, updatedAt,
+          maxSessionSeconds, defaultLanguage, optionsJson, createdAt, updatedAt,
         ] = values;
         this.rows.set(id, {
           id,
@@ -43,7 +43,7 @@ class FakeDatabase {
           max_session_seconds: maxSessionSeconds,
           default_language: defaultLanguage,
           options_json: optionsJson,
-          enabled,
+          enabled: 1,
           created_at: createdAt,
           updated_at: updatedAt,
         });
@@ -72,7 +72,7 @@ class FakeDatabase {
       return { run: (...values) => {
         const [
           name, protocol, endpoint, authMode, credentialEncrypted, userModified,
-          maxSessionSeconds, defaultLanguage, optionsJson, enabled, updatedAt, id,
+          maxSessionSeconds, defaultLanguage, optionsJson, updatedAt, id,
         ] = values;
         const current = this.rows.get(id);
         this.rows.set(id, {
@@ -86,7 +86,6 @@ class FakeDatabase {
           max_session_seconds: maxSessionSeconds,
           default_language: defaultLanguage,
           options_json: optionsJson,
-          enabled,
           updated_at: updatedAt,
         });
       } };
@@ -133,8 +132,7 @@ function customInput(overrides = {}) {
     credential: 'private-token',
     maxSessionSeconds: null,
     defaultLanguage: 'en',
-    options: { bookedWords: [], useVad: true, smooth: true, mode: 'slow', systemPrompt: '' },
-    enabled: true,
+    options: { bookedWords: [], smooth: true, mode: 'slow', systemPrompt: '' },
     ...overrides,
   };
 }
@@ -221,4 +219,55 @@ test('demo token follows the configured endpoint', () => {
     id: BUILT_IN_R2T2_TRIAL_ID,
   });
   assert.equal(store.require(moved.id).credential, null);
+});
+
+test('provider options keep only slow or fast mode and drop the legacy VAD flag', () => {
+  const legacy = parseSpeechProviderInput(customInput({
+    options: { bookedWords: [], useVad: true, smooth: true, mode: 'turbo', systemPrompt: '' },
+  }));
+  assert.deepEqual(legacy.options, { bookedWords: [], smooth: true, mode: 'slow', systemPrompt: '', latencyMode: 'native', terminology: [] });
+
+  const fast = parseSpeechProviderInput(customInput({
+    options: { bookedWords: [], smooth: false, mode: 'fast', systemPrompt: '' },
+  }));
+  assert.equal(fast.options.mode, 'fast');
+});
+
+test('T3PO providers accept query tokens and keep latency mode and terminology', () => {
+  const input = parseSpeechProviderInput(customInput({
+    protocol: 't3po',
+    endpoint: 'ws://127.0.0.1:8273/ws/translate',
+    authMode: 'query-token',
+    options: { latencyMode: 'high', terminology: ['large language model=LLM'] },
+  }));
+  assert.equal(input.options.latencyMode, 'high');
+  assert.deepEqual(input.options.terminology, ['large language model=LLM']);
+  assert.throws(
+    () => parseSpeechProviderInput(customInput({ protocol: 't3po', authMode: 'handshake-secret' })),
+    /t3po supports query-token or no authentication/,
+  );
+  assert.throws(
+    () => parseSpeechProviderInput(customInput({ protocol: 't3po-rstream', authMode: 'query-token' })),
+    /Unsupported speech protocol/,
+  );
+});
+
+test('an unreadable provider row is skipped instead of hiding every provider', () => {
+  const { db, store } = createStore();
+  db.rows.set('legacy', {
+    ...db.rows.get(BUILT_IN_R2T2_TRIAL_ID),
+    id: 'legacy',
+    name: 'Legacy T3PO',
+    protocol: 't3po-rstream',
+    built_in_kind: null,
+  });
+  const warn = console.warn;
+  const warnings = [];
+  console.warn = message => warnings.push(message);
+  try {
+    assert.deepEqual(store.list().map(provider => provider.id), [BUILT_IN_R2T2_TRIAL_ID]);
+  } finally {
+    console.warn = warn;
+  }
+  assert.match(warnings[0], /Skipping speech provider legacy/);
 });

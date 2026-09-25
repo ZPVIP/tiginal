@@ -1,10 +1,24 @@
 export const SPEECH_PROVIDER_PROTOCOLS = [
   'r2t2-rstream',
   'r2t2-native',
-  't3po-rstream',
-  't3po-native',
+  't3po',
 ] as const;
 export type SpeechProviderProtocol = typeof SPEECH_PROVIDER_PROTOCOLS[number];
+
+export const SPEECH_PROVIDER_PROTOCOL_OPTIONS = [
+  { protocol: 'r2t2-rstream', label: 'R2T2 rstream', defaultPath: '/asr' },
+  { protocol: 'r2t2-native', label: 'R2T2 native', defaultPath: '/asr_stream_api_v1' },
+  { protocol: 't3po', label: 'T3PO', defaultPath: '/ws/translate' },
+] as const satisfies readonly { protocol: SpeechProviderProtocol; label: string; defaultPath: string }[];
+
+export type R2T2Protocol = Exclude<SpeechProviderProtocol, 't3po'>;
+
+export function isR2T2Protocol(protocol: SpeechProviderProtocol): protocol is R2T2Protocol {
+  return protocol !== 't3po';
+}
+
+export const R2T2_RECOGNITION_MODES = ['slow', 'fast'] as const;
+export type R2T2RecognitionMode = typeof R2T2_RECOGNITION_MODES[number];
 
 export const SPEECH_AUTH_MODES = ['none', 'query-token', 'handshake-secret'] as const;
 export type SpeechAuthMode = typeof SPEECH_AUTH_MODES[number];
@@ -14,17 +28,22 @@ export const BUILT_IN_R2T2_TRIAL_TOKEN = 'pwacGhcJQbZg0rzlOM0nrCVmmuU5S29iDIH1V2
 export const BUILT_IN_R2T2_TRIAL_ENDPOINT = 'wss://r2t2.youdao.com/asr';
 export const BUILT_IN_R2T2_TRIAL_MAX_SECONDS = 30;
 
-export const BUILT_IN_T3PO_TRIAL_ID = 'builtin-t3po-online-demo';
-export const BUILT_IN_T3PO_TRIAL_TOKEN = 'pwacGhcJQbZg0rzlOM0nrCVmmuU5S29iDIH1V2r2j6w';
-export const BUILT_IN_T3PO_TRIAL_ENDPOINT = 'wss://t3po.youdao.com/stream';
-export const BUILT_IN_T3PO_TRIAL_MAX_SECONDS = 30;
+export const TRANSLATION_LATENCY_MODES = ['low', 'native', 'high'] as const;
+export type TranslationLatencyMode = typeof TRANSLATION_LATENCY_MODES[number];
 
-export interface R2T2ProviderOptions {
+export interface SpeechProviderOptions {
+  /** R2T2: words the recognizer should favor. */
   bookedWords: string[];
-  useVad: boolean;
+  /** R2T2: adds the model's smooth-text instruction. */
   smooth: boolean;
-  mode: string;
+  /** R2T2: stable-text commit policy. */
+  mode: R2T2RecognitionMode;
+  /** R2T2 native: recognition context. */
   systemPrompt: string;
+  /** T3PO: default commit timing for simultaneous translation. */
+  latencyMode: TranslationLatencyMode;
+  /** T3PO: terminology entries written as `source=target`, or a single term kept unchanged. */
+  terminology: string[];
 }
 
 export interface SpeechProvider {
@@ -34,12 +53,11 @@ export interface SpeechProvider {
   endpoint: string;
   authMode: SpeechAuthMode;
   hasCredential: boolean;
-  builtInKind: 'r2t2-online-trial' | 't3po-online-trial' | null;
+  builtInKind: 'r2t2-online-trial' | null;
   userModified: boolean;
   maxSessionSeconds: number | null;
   defaultLanguage: string;
-  options: R2T2ProviderOptions;
-  enabled: boolean;
+  options: SpeechProviderOptions;
   createdAt: number;
   updatedAt: number;
 }
@@ -53,8 +71,7 @@ export interface SpeechProviderInput {
   credential?: string;
   maxSessionSeconds: number | null;
   defaultLanguage: string;
-  options?: Partial<R2T2ProviderOptions>;
-  enabled?: boolean;
+  options?: Partial<SpeechProviderOptions>;
 }
 
 export interface SpeechProviderTestInput extends SpeechProviderInput {
@@ -69,8 +86,6 @@ export type TranscriptEvent =
   | { kind: 'final'; text: string }
   | { kind: 'metrics'; ackedSamples?: number; serverBufferedMs?: number }
   | { kind: 'error'; code: string; message: string };
-
-export type TranslationLatencyMode = 'low' | 'native' | 'high';
 
 export interface TranslationEngineCandidate {
   id: string;

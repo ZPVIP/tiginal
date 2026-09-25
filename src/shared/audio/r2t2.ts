@@ -1,4 +1,4 @@
-import type { R2T2ProviderOptions, SpeechProviderProtocol } from './types';
+import type { SpeechProviderOptions, SpeechProviderProtocol } from './types';
 
 export const R2T2_SAMPLE_RATE = 16_000;
 export const R2T2_CHANNELS = 1;
@@ -11,22 +11,24 @@ export const R2T2_NATIVE_EOS = 'YOUDAO_ONETIME_ASR_STREAM_EOS';
 export interface SpeechProtocolState {
   committedText: string;
   partialText: string;
+  eosSent: boolean;
 }
 
 export interface SpeechSessionOptions {
   requestId: string;
   language: string;
   credential: string | null;
-  options: R2T2ProviderOptions;
+  options: SpeechProviderOptions;
 }
 
-export function defaultR2T2ProviderOptions(): R2T2ProviderOptions {
+export function defaultSpeechProviderOptions(): SpeechProviderOptions {
   return {
     bookedWords: [],
-    useVad: false,
     smooth: false,
     mode: 'slow',
     systemPrompt: '',
+    latencyMode: 'native',
+    terminology: [],
   };
 }
 
@@ -44,10 +46,11 @@ const RSTREAM_LANGUAGE_ALIASES: Readonly<Record<string, string>> = {
   dutch: 'nl',
   el: 'el',
   en: 'en',
+  eng: 'en',
   english: 'en',
   enus: 'en',
   enzh: 'en',
-  es: 'sp',
+  es: 'es',
   fa: 'fa',
   fil: 'fil',
   filipino: 'fil',
@@ -85,8 +88,8 @@ const RSTREAM_LANGUAGE_ALIASES: Readonly<Record<string, string>> = {
   romanian: 'ro',
   ru: 'ru',
   russian: 'ru',
-  sp: 'sp',
-  spanish: 'sp',
+  sp: 'es',
+  spanish: 'es',
   sv: 'sv',
   swedish: 'sv',
   th: 'th',

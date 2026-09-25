@@ -14,7 +14,7 @@ import { PcmWavWriter } from './PcmWavWriter';
 import { SpeechStreamClient } from './SpeechStreamClient';
 import type { SpeechProviderStore } from './SpeechProviderStore';
 import type { TranslationService } from './TranslationService';
-import type { T3POStreamingTranslator } from './T3POStreamingTranslator';
+import type { StreamingTranslator } from './T3POWebSocketTranslator';
 
 type SessionState = 'recording' | 'finalizing';
 
@@ -23,7 +23,7 @@ interface ActiveSession {
   writer: PcmWavWriter | null;
   totalSamples: number;
   client: SpeechStreamClient;
-  translator?: T3POStreamingTranslator | null;
+  translator?: StreamingTranslator | null;
   emit: (event: AudioSessionEvent) => void;
   state: SessionState;
   limitTimer: NodeJS.Timeout | null;
@@ -55,7 +55,9 @@ export class AudioService {
     emit: (event: AudioSessionEvent) => void,
   ): Promise<AudioSessionSnapshot> {
     const resolved = this.providers.require(input.providerId);
-    if (!resolved.provider.enabled) throw new Error('Speech provider is disabled');
+    if (resolved.provider.protocol === 't3po') {
+      throw new Error(`"${resolved.provider.name}" is a T3PO translation service; choose an R2T2 provider for speech recognition`);
+    }
 
     const isMicrophone = input.source?.kind !== 'file';
     const startedAt = new Date();
@@ -65,10 +67,14 @@ export class AudioService {
     const writer = recordingPath ? new PcmWavWriter(recordingPath) : null;
     const id = crypto.randomUUID();
     const language = input.language?.trim() || resolved.provider.defaultLanguage;
-    const provider = input.bookedWords
+    // Session terms add to the provider's booked words instead of replacing them.
+    const provider = input.bookedWords?.length
       ? {
           ...resolved.provider,
-          options: { ...resolved.provider.options, bookedWords: input.bookedWords },
+          options: {
+            ...resolved.provider.options,
+            bookedWords: [...resolved.provider.options.bookedWords, ...input.bookedWords],
+          },
         }
       : resolved.provider;
     const snapshot: AudioSessionSnapshot = {
@@ -80,7 +86,7 @@ export class AudioService {
       translation: input.translation,
     };
 
-    let translator: T3POStreamingTranslator | null = null;
+    let translator: StreamingTranslator | null = null;
     if (input.translation && this.translationService) {
       translator = this.translationService.createStreamingTranslator(
         input.translation,

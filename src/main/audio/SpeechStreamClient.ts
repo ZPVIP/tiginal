@@ -67,7 +67,7 @@ function rawText(data: RawData): string | null {
 
 export class SpeechStreamClient {
   private readonly adapter: SpeechProtocolAdapter;
-  private readonly protocolState: SpeechProtocolState = { committedText: '', partialText: '' };
+  private readonly protocolState: SpeechProtocolState = { committedText: '', partialText: '', eosSent: false };
   private readonly completion = deferred();
   private readonly protocolReady = deferred();
   private socket: WebSocket | null = null;
@@ -158,6 +158,7 @@ export class SpeechStreamClient {
       socket.send(this.adapter.encodeAudioFrame(new Int16Array(silenceSamples), this.sequence));
       this.sequence += 1;
     }
+    this.protocolState.eosSent = true;
     socket.send(this.adapter.eosMarker());
     try {
       await withTimeout(this.completion.promise, FINAL_TIMEOUT_MS, `${this.protocolLabel} final response timed out`);

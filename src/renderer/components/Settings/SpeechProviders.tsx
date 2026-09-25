@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Edit2, Mic, Mic2, Plus, Radio, Square, Trash2 } from 'lucide-react';
+import { Edit2, Mic, Plus, Radio, Square, Trash2 } from 'lucide-react';
 import type { SpeechProvider } from '../../../shared/audio/types';
 import { PcmCapture } from '../../audio/PcmCapture';
 import { SpeechProviderModal } from './SpeechProviderModal';
@@ -38,7 +38,7 @@ export function SpeechProviders() {
   }, []);
 
   const startMicrophoneTest = async (provider: SpeechProvider) => {
-    if (captureRef.current || !provider.enabled) return;
+    if (captureRef.current) return;
     setError('');
     setRecordingStatus('Connecting...');
     setRecordingPath(null);
@@ -91,7 +91,7 @@ export function SpeechProviders() {
   const deleteProvider = async (provider: SpeechProvider) => {
     const audio = window.electron?.audio;
     if (!audio) return;
-    if (!window.confirm(`Delete speech provider "${provider.name}"?`)) return;
+    if (!window.confirm(`Delete streaming provider "${provider.name}"?`)) return;
     try {
       await audio.deleteSpeechProvider(provider.id);
       window.dispatchEvent(new Event('speech-providers-updated'));
@@ -125,10 +125,10 @@ export function SpeechProviders() {
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Mic2 size={18} className="text-primary" />
+          <Radio size={18} className="text-primary" />
           <div>
-            <h3 className="text-sm font-semibold text-text-main">Speech Recognition Providers</h3>
-            <p className="text-xs text-text-muted">WebSocket speech endpoints used by microphone sessions.</p>
+            <h3 className="text-sm font-semibold text-text-main">Streaming Providers</h3>
+            <p className="text-xs text-text-muted">Real-time services over ws:// or wss://.</p>
           </div>
         </div>
         <button
@@ -139,7 +139,7 @@ export function SpeechProviders() {
           }}
           className="flex h-8 items-center gap-2 rounded-lg bg-primary px-3 text-sm text-primary-foreground hover:opacity-90"
         >
-          <Plus size={15} /> Add Speech Provider
+          <Plus size={15} /> Add
         </button>
       </div>
 
@@ -162,9 +162,6 @@ export function SpeechProviders() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium text-text-main">{provider.name}</span>
-                  {!provider.enabled && (
-                    <span className="rounded bg-surface-light px-1.5 py-0.5 text-[10px] uppercase text-text-muted">Disabled</span>
-                  )}
                 </div>
                 <p className="truncate text-[10px] text-text-muted">
                   {provider.endpoint} | {provider.protocol} | {provider.maxSessionSeconds === null ? 'No time limit' : `${provider.maxSessionSeconds}s limit`}
@@ -172,20 +169,22 @@ export function SpeechProviders() {
               </div>
             </div>
             <div className={`flex items-center gap-1 transition-opacity ${recordingProviderId === provider.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+              {provider.protocol !== 't3po' && (
+                <button
+                  type="button"
+                  disabled={recordingProviderId !== null && recordingProviderId !== provider.id}
+                  title={recordingProviderId === provider.id ? 'Stop microphone test' : 'Start microphone test'}
+                  onClick={() => recordingProviderId === provider.id
+                    ? void stopMicrophoneTest()
+                    : void startMicrophoneTest(provider)}
+                  className="rounded-lg p-1.5 text-text-muted hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  {recordingProviderId === provider.id ? <Square size={14} /> : <Mic size={14} />}
+                </button>
+              )}
               <button
                 type="button"
-                disabled={!provider.enabled || (recordingProviderId !== null && recordingProviderId !== provider.id)}
-                title={recordingProviderId === provider.id ? 'Stop microphone test' : 'Start microphone test'}
-                onClick={() => recordingProviderId === provider.id
-                  ? void stopMicrophoneTest()
-                  : void startMicrophoneTest(provider)}
-                className="rounded-lg p-1.5 text-text-muted hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                {recordingProviderId === provider.id ? <Square size={14} /> : <Mic size={14} />}
-              </button>
-              <button
-                type="button"
-                title="Edit speech provider"
+                title="Edit streaming provider"
                 onClick={() => void editProvider(provider)}
                 className="rounded-lg p-1.5 text-text-muted hover:bg-surface-hover hover:text-text-main"
               >
@@ -193,7 +192,7 @@ export function SpeechProviders() {
               </button>
               <button
                 type="button"
-                title="Delete speech provider"
+                title="Delete streaming provider"
                 onClick={() => void deleteProvider(provider)}
                 className="rounded-lg p-1.5 text-text-muted hover:bg-red-400/10 hover:text-red-400"
               >

@@ -2,6 +2,10 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
+  SPEECH_PROVIDER_PROTOCOL_OPTIONS,
+} = require('../dist/main/shared/audio/types.js');
+const {
+  mapR2T2RStreamLanguage,
   R2T2_NATIVE_EOS,
   R2T2_RSTREAM_EOS,
 } = require('../dist/main/shared/audio/r2t2.js');
@@ -10,7 +14,6 @@ const { R2T2RStreamAdapter } = require('../dist/main/main/audio/protocols/R2T2RS
 
 const options = {
   bookedWords: ['Tiginal'],
-  useVad: true,
   smooth: true,
   mode: 'slow',
   systemPrompt: 'Technical meeting',
@@ -29,11 +32,26 @@ function provider(protocol, endpoint) {
     maxSessionSeconds: null,
     defaultLanguage: 'en',
     options,
-    enabled: true,
     createdAt: 1,
     updatedAt: 1,
   };
 }
+
+test('speech providers offer both R2T2 protocols with their server paths', () => {
+  assert.deepEqual(
+    SPEECH_PROVIDER_PROTOCOL_OPTIONS.filter(option => option.protocol.startsWith('r2t2')),
+    [
+      { protocol: 'r2t2-rstream', label: 'R2T2 rstream', defaultPath: '/asr' },
+      { protocol: 'r2t2-native', label: 'R2T2 native', defaultPath: '/asr_stream_api_v1' },
+    ],
+  );
+});
+
+test('rstream language aliases use the demo canonical codes', () => {
+  assert.equal(mapR2T2RStreamLanguage('eng'), 'en');
+  assert.equal(mapR2T2RStreamLanguage('Spanish'), 'es');
+  assert.equal(mapR2T2RStreamLanguage('sp'), 'es');
+});
 
 test('rstream adapter keeps credentials in the URL and emits stable prefixes', () => {
   const adapter = new R2T2RStreamAdapter();
@@ -50,8 +68,9 @@ test('rstream adapter keeps credentials in the URL and emits stable prefixes', (
   })), {
     lang: 'cn',
     booked_words: 'Technical words: Tiginal',
-    use_vad: true,
+    use_vad: false,
     smooth: true,
+    mode: 'slow',
     requestId: 'request-1',
   });
 
@@ -108,12 +127,16 @@ test('native adapter sends its secret in the handshake and appends deltas', () =
   }));
   assert.equal(opening.secret_key, 'native-secret');
   assert.equal(opening.sample_rate, 16_000);
-  assert.equal(opening.system_prompt, 'Technical meeting');
+  assert.equal(opening.system_prompt, 'Technical meeting\nTechnical words: Tiginal');
+  assert.equal(opening.use_vad, false);
+  assert.equal(opening.mode, 'slow');
+  assert.equal(opening.smooth, true);
 
-  const state = { committedText: '', partialText: '' };
+  const state = { committedText: '', partialText: '', eosSent: false };
   assert.deepEqual(adapter.readMessage('{"msg":{"text":"hello "}}', state), [
     { kind: 'committed', text: 'hello ', fullText: 'hello ' },
   ]);
+  state.eosSent = true;
   assert.deepEqual(adapter.readMessage('{"msg":{"text":"world","reset":true}}', state), [
     { kind: 'segment-reset' },
     { kind: 'committed', text: 'world', fullText: 'hello world' },
@@ -124,6 +147,25 @@ test('native adapter sends its secret in the handshake and appends deltas', () =
     error: { code: 'UNEXPECTED_COMMAND', message: 'only the EOS text command is accepted after streaming begins' },
   }), state), [
     { kind: 'error', code: 'UNEXPECTED_COMMAND', message: 'only the EOS text command is accepted after streaming begins' },
+  ]);
+});
+
+test('native adapter treats a mid-session reset as a segment boundary, not the final response', () => {
+  const adapter = new R2T2NativeAdapter();
+  const state = { committedText: '', partialText: '', eosSent: false };
+  assert.deepEqual(adapter.readMessage('{"text":"first minute ","reset":true}', state), [
+    { kind: 'segment-reset' },
+    { kind: 'committed', text: 'first minute ', fullText: 'first minute ' },
+  ]);
+  assert.deepEqual(adapter.readMessage('{"text":"then "}', state), [
+    { kind: 'committed', text: 'then ', fullText: 'first minute then ' },
+  ]);
+
+  state.eosSent = true;
+  assert.deepEqual(adapter.readMessage('{"text":"tail","reset":true}', state), [
+    { kind: 'segment-reset' },
+    { kind: 'committed', text: 'tail', fullText: 'first minute then tail' },
+    { kind: 'final', text: 'first minute then tail' },
   ]);
 });
 
