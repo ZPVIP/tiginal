@@ -18,6 +18,9 @@ import type { StreamingTranslator } from './T3POWebSocketTranslator';
 
 type SessionState = 'recording' | 'finalizing';
 
+// Files stream faster than real time; keeping this much queued stays well under the client's 2 MiB limit.
+const FILE_QUEUE_TARGET_BYTES = 512 * 1_024;
+
 interface ActiveSession {
   snapshot: AudioSessionSnapshot;
   writer: PcmWavWriter | null;
@@ -146,6 +149,18 @@ export class AudioService {
       void this.failSession(sessionId, errorMessage(error));
       throw error;
     }
+    // The wall-clock limit timer cannot bound a file that streams faster than real time.
+    const limitSeconds = session.snapshot.maxSessionSeconds;
+    if (limitSeconds !== null && session.totalSamples >= limitSeconds * R2T2_SAMPLE_RATE) {
+      void this.finishSession(sessionId).catch(error => this.failSession(sessionId, errorMessage(error)));
+    }
+  }
+
+  /** Waits until the speech server has taken most of the queued audio, letting a file stream at the server's pace. */
+  async waitForAudioCapacity(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.state !== 'recording') return;
+    await session.client.waitForQueueBelow(FILE_QUEUE_TARGET_BYTES);
   }
 
   async finishSession(sessionId: string): Promise<void> {

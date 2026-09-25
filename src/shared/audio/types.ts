@@ -182,6 +182,8 @@ export interface AudioRendererApi {
   translateStatic(request: TranslationRequest): Promise<TranslationResult>;
   createSession(input: CreateAudioSessionInput): Promise<AudioSessionSnapshot>;
   pushPcmFrame(input: PushPcmFrameInput): void;
+  /** Resolves once the speech server has taken most of the queued audio; IPC keeps it ordered after earlier frames. */
+  waitForAudioCapacity(sessionId: string): Promise<void>;
   finishSession(sessionId: string): Promise<void>;
   abortSession(sessionId: string): Promise<void>;
   deleteRecording(recordingPath: string): Promise<void>;

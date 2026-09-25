@@ -4,7 +4,6 @@ import type {
   CreateAudioSessionInput,
 } from '../../shared/audio/types';
 import { StreamingPcm16Framer } from '../../shared/audio/pcm';
-import { R2T2_FRAME_DURATION_MS } from '../../shared/audio/r2t2';
 
 export interface AudioFileMetadata {
   durationSeconds: number;
@@ -16,9 +15,8 @@ export interface AudioFileTranscriberCallbacks {
   onSessionEvent?(event: AudioSessionEvent): void;
 }
 
-function wait(milliseconds: number): Promise<void> {
-  return new Promise(resolve => window.setTimeout(resolve, milliseconds));
-}
+// A file streams at the speech server's pace: after each burst, wait until the server has taken most of the queue.
+const FRAMES_PER_BURST = 8;
 
 async function decodeFile(file: File): Promise<{ buffer: AudioBuffer; context: AudioContext }> {
   const context = new AudioContext();
@@ -123,6 +121,7 @@ export class AudioFileTranscriber {
     const framer = new StreamingPcm16Framer(buffer.sampleRate);
     const chunkSamples = 4_096;
     const totalSamples = buffer.length;
+    let framesInBurst = 0;
 
     for (let offset = 0; offset < totalSamples && !this.cancelled && !this.finishRequested && !this.finishedByService; offset += chunkSamples) {
       const length = Math.min(chunkSamples, totalSamples - offset);
@@ -135,7 +134,11 @@ export class AudioFileTranscriber {
           sessionId,
           frame: frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength),
         });
-        await wait(R2T2_FRAME_DURATION_MS);
+        framesInBurst += 1;
+        if (framesInBurst >= FRAMES_PER_BURST) {
+          framesInBurst = 0;
+          await audio.waitForAudioCapacity(sessionId);
+        }
       }
       this.callbacks.onProgress?.(Math.min(1, (offset + length) / totalSamples));
     }

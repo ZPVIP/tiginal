@@ -266,3 +266,82 @@ test('AudioService does not create WAV file when source is file', async () => {
   }
 });
 
+
+test('a client can wait for queue space while the server falls behind instead of failing', async () => {
+  let serverSocket;
+  const mock = await fakeServer(socket => {
+    serverSocket = socket;
+    socket.on('message', (data, isBinary) => {
+      if (!isBinary) socket.send(JSON.stringify({ status: 'connected' }));
+    });
+  });
+  const client = new SpeechStreamClient(provider(mock.endpoint), 'local-token', () => undefined);
+  try {
+    await client.connect('en');
+    await client.waitForProtocolReady();
+    // Stop reading on the server so TCP pushes back and frames pile up in the client queue.
+    serverSocket._socket.pause();
+    const frame = new Int16Array(2560);
+    for (let index = 0; index < 400 && client.queuedBytes < 400 * 1024; index += 1) {
+      client.sendFrame(frame);
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.ok(client.queuedBytes >= 400 * 1024, `queue only reached ${client.queuedBytes} bytes`);
+
+    let resolved = false;
+    const waiting = client.waitForQueueBelow(256 * 1024).then(() => { resolved = true; });
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.equal(resolved, false);
+
+    serverSocket._socket.resume();
+    await waiting;
+    assert.ok(client.queuedBytes <= 256 * 1024);
+  } finally {
+    // A paused server never completes the close handshake.
+    serverSocket?._socket.resume();
+    client.close();
+    await closeServer(mock.server);
+  }
+});
+
+test('AudioService ends a time-limited session by audio duration when a file streams faster than real time', async () => {
+  let receivedSamples = 0;
+  const mock = await fakeServer(ws => {
+    ws.on('message', (data, isBinary) => {
+      if (isBinary) {
+        receivedSamples += data.length / 2;
+        return;
+      }
+      if (data.toString() === 'YOUDAO_ASR_EOS') ws.send(JSON.stringify({ final: true }));
+      else ws.send(JSON.stringify({ status: 'connected' }));
+    });
+  });
+  const repository = { insert() {}, updateStatus() {}, updateTranscript() {} };
+  const speechProvider = { ...provider(mock.endpoint), maxSessionSeconds: 1 };
+  const providers = { require() { return { provider: speechProvider, credential: 'local-token' }; } };
+  const recordingDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'tiginal-audio-limit-'));
+  const service = new AudioService(providers, repository, recordingDirectory);
+  let completedEvent;
+  const done = eventWithin(resolve => { completedEvent = resolve; });
+  try {
+    const session = await service.createSession(
+      { providerId: speechProvider.id, language: 'en', source: { kind: 'file', name: 'long.wav' } },
+      event => { if (event.kind === 'completed') completedEvent(event); },
+    );
+    // Two seconds of audio pushed at once; the one-second limit must stop the session at about one second.
+    for (let index = 0; index < 13; index += 1) {
+      try {
+        service.pushPcmFrame(session.id, new Int16Array(2560));
+      } catch {
+        break;
+      }
+    }
+    const completed = await done;
+    assert.ok(completed.durationMs >= 1000 && completed.durationMs < 1200, `duration ${completed.durationMs} ms`);
+    assert.ok(receivedSamples < 2 * 16000);
+  } finally {
+    await service.disposeAll();
+    await closeServer(mock.server);
+    fs.rmSync(recordingDirectory, { recursive: true, force: true });
+  }
+});

@@ -309,6 +309,13 @@ export function AudioWorkspace() {
     }
   }, [recordingPath]);
 
+  // A failed session keeps what was already transcribed, now in the editable transcript box.
+  const failWithTranscript = useCallback((message: string) => {
+    setEditableText(committedTextRef.current);
+    setPartialText('');
+    setState({ kind: 'failed', message });
+  }, []);
+
   const handleSessionEvent = useCallback((event: AudioSessionEvent) => {
     if (event.kind === 'session-created') {
       const recPath = event.session.recordingPath ?? '';
@@ -382,7 +389,7 @@ export function AudioWorkspace() {
         case 'metrics':
           return;
         case 'error':
-          setState({ kind: 'failed', message: event.event.message });
+          failWithTranscript(event.event.message);
           return;
         default: {
           const _exhaustive: never = event.event;
@@ -414,10 +421,10 @@ export function AudioWorkspace() {
     if (event.kind === 'failed') {
       captureRef.current = null;
       setRecordingPath(event.recordingPath || '');
-      setState({ kind: 'failed', message: event.message });
+      failWithTranscript(event.message);
       return;
     }
-  }, [loadRecordingUrl]);
+  }, [failWithTranscript, loadRecordingUrl]);
 
   const confirmDiscardEdits = useCallback((): boolean => {
     if (!transcriptDirty && !translationDirty) return true;
@@ -479,10 +486,11 @@ export function AudioWorkspace() {
       setRecordingPath(recPath);
     } catch (error) {
       captureRef.current = null;
-      setState({ kind: 'failed', message: messageFromError(error) });
+      failWithTranscript(messageFromError(error));
     }
   }, [
     confirmDiscardEdits,
+    failWithTranscript,
     handleSessionEvent,
     language,
     realtimeTranslation,
@@ -535,13 +543,14 @@ export function AudioWorkspace() {
         translation: translationConfig,
       });
     } catch (error) {
-      setState({ kind: 'failed', message: messageFromError(error) });
+      failWithTranscript(messageFromError(error));
     } finally {
       fileTranscriberRef.current = null;
     }
   }, [
     audioFile,
     confirmDiscardEdits,
+    failWithTranscript,
     handleSessionEvent,
     language,
     realtimeTranslation,
@@ -566,12 +575,12 @@ export function AudioWorkspace() {
       if (activeSourceRef.current === 'microphone') await captureRef.current?.stop();
       else fileTranscriberRef.current?.requestFinish();
     } catch (error) {
-      setState({ kind: 'failed', message: messageFromError(error) });
+      failWithTranscript(messageFromError(error));
     } finally {
       captureRef.current = null;
       if (activeSourceRef.current === 'microphone') fileTranscriberRef.current = null;
     }
-  }, []);
+  }, [failWithTranscript]);
 
   const cancel = useCallback(async () => {
     try {
@@ -586,12 +595,12 @@ export function AudioWorkspace() {
       setState(committedTextRef.current ? { kind: 'ready' } : { kind: 'idle' });
       setTranslationStatus(committedTranslation ? 'completed' : 'idle');
     } catch (error) {
-      setState({ kind: 'failed', message: messageFromError(error) });
+      failWithTranscript(messageFromError(error));
     } finally {
       captureRef.current = null;
       fileTranscriberRef.current = null;
     }
-  }, [committedTranslation, loadRecordingUrl]);
+  }, [failWithTranscript, committedTranslation, loadRecordingUrl]);
 
   const selectFile = useCallback((file: File | null) => {
     if (busy) return;

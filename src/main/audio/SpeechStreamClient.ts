@@ -10,7 +10,8 @@ import { createSpeechProtocolAdapter, type SpeechProtocolAdapter } from './proto
 
 const CONNECT_TIMEOUT_MS = 8_000;
 const PROBE_TIMEOUT_MS = 8_000;
-const FINAL_TIMEOUT_MS = 30_000;
+// A server working through a backlog keeps answering, so only this much silence counts as a stall.
+const STALL_TIMEOUT_MS = 30_000;
 const MAX_BUFFERED_BYTES = 512 * 1_024;
 const MAX_QUEUED_BYTES = 2 * 1_024 * 1_024;
 const QUEUE_POLL_MS = 10;
@@ -57,6 +58,10 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   });
 }
 
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
 function rawText(data: RawData): string | null {
   if (typeof data === 'string') return data;
   if (Buffer.isBuffer(data)) return data.toString('utf8');
@@ -74,6 +79,7 @@ export class SpeechStreamClient {
   private state: ClientState = 'idle';
   private sequence = 1;
   private receivedFinal = false;
+  private lastProgressAt = Date.now();
   private readonly pendingFrames: Int16Array[] = [];
   private queuedBytes = 0;
   private flushTimer: NodeJS.Timeout | null = null;
@@ -135,7 +141,10 @@ export class SpeechStreamClient {
   sendFrame(frame: Int16Array): void {
     if (this.state !== 'open' || !this.socket) throw new Error(`${this.protocolLabel} connection is not open`);
     if (this.queuedBytes + frame.byteLength > MAX_QUEUED_BYTES) {
-      throw new Error(`${this.protocolLabel} audio queue exceeded 2 MiB`);
+      throw new Error(
+        `${this.protocolLabel} is transcribing slower than real time, and more than 2 MiB of audio is waiting. `
+        + 'For r2t2-ws, a larger --chunk-ms such as 480 reduces the load.',
+      );
     }
     const copy = frame.slice();
     this.pendingFrames.push(copy);
@@ -147,7 +156,7 @@ export class SpeechStreamClient {
     if (this.state === 'closed') return;
     if (this.state !== 'open' || !this.socket) throw new Error(`${this.protocolLabel} connection is not open`);
     this.state = 'finishing';
-    await withTimeout(this.drainPendingFrames(), FINAL_TIMEOUT_MS, `${this.protocolLabel} audio queue did not drain`);
+    await this.drainPendingFrames();
     const socket = this.socket;
     if (!socket) {
       await this.completion.promise;
@@ -160,10 +169,19 @@ export class SpeechStreamClient {
     }
     this.protocolState.eosSent = true;
     socket.send(this.adapter.eosMarker());
+    this.lastProgressAt = Date.now();
     try {
-      await withTimeout(this.completion.promise, FINAL_TIMEOUT_MS, `${this.protocolLabel} final response timed out`);
+      await this.waitForFinalResponse();
     } finally {
       this.closeSocket();
+    }
+  }
+
+  /** Resolves once at most `bytes` of audio wait to be sent, so a file can stream as fast as the server keeps up. */
+  async waitForQueueBelow(bytes: number): Promise<void> {
+    while (this.queuedBytes > bytes && this.state === 'open') {
+      this.assertProgress(`${this.protocolLabel} stopped accepting audio`);
+      await sleep(QUEUE_POLL_MS);
     }
   }
 
@@ -175,6 +193,7 @@ export class SpeechStreamClient {
   }
 
   private handleMessage(data: RawData): void {
+    this.lastProgressAt = Date.now();
     const text = rawText(data);
     if (text === null) return;
     try {
@@ -233,6 +252,7 @@ export class SpeechStreamClient {
       this.queuedBytes = Math.max(0, this.queuedBytes - frame.byteLength);
       socket.send(this.adapter.encodeAudioFrame(frame, this.sequence));
       this.sequence += 1;
+      this.lastProgressAt = Date.now();
     }
     this.clearFlushTimer();
   }
@@ -260,8 +280,23 @@ export class SpeechStreamClient {
       && socket.readyState === WebSocket.OPEN
     ) {
       this.flushPendingFrames();
-      await new Promise(resolve => setTimeout(resolve, QUEUE_POLL_MS));
+      this.assertProgress(`${this.protocolLabel} audio queue did not drain`);
+      await sleep(QUEUE_POLL_MS);
     }
+  }
+
+  private async waitForFinalResponse(): Promise<void> {
+    let settled = false;
+    const done = this.completion.promise.finally(() => { settled = true; });
+    while (!settled) {
+      await Promise.race([done.catch(() => undefined), sleep(250)]);
+      if (!settled) this.assertProgress(`${this.protocolLabel} final response timed out`);
+    }
+    await done;
+  }
+
+  private assertProgress(message: string): void {
+    if (Date.now() - this.lastProgressAt > STALL_TIMEOUT_MS) throw new Error(message);
   }
 
   private closeSocket(): void {

@@ -212,6 +212,9 @@ export function setupAudioHandlers(): void {
       // AudioService emits a session failure for operational errors. Invalid IPC is ignored.
     }
   });
+  ipcMain.handle('audio:wait-for-capacity', (_event, value: unknown) => (
+    getAudioService().waitForAudioCapacity(requireId(value, 'Audio session'))
+  ));
   ipcMain.handle('audio:finish-session', (_event, value: unknown) => (
     getAudioService().finishSession(requireId(value, 'Audio session'))
   ));

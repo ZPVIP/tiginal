@@ -37,6 +37,7 @@ const audio: AudioRendererApi = {
   translateStatic: (request: TranslationRequest) => ipcRenderer.invoke('audio:translate-static', request),
   createSession: (input: CreateAudioSessionInput) => ipcRenderer.invoke('audio:create-session', input),
   pushPcmFrame: (input: PushPcmFrameInput) => ipcRenderer.send('audio:push-pcm-frame', input),
+  waitForAudioCapacity: (sessionId: string) => ipcRenderer.invoke('audio:wait-for-capacity', sessionId),
   finishSession: (sessionId: string) => ipcRenderer.invoke('audio:finish-session', sessionId),
   abortSession: (sessionId: string) => ipcRenderer.invoke('audio:abort-session', sessionId),
   deleteRecording: (recordingPath: string) => ipcRenderer.invoke('audio:delete-recording', recordingPath),
