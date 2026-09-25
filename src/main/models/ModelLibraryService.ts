@@ -25,40 +25,42 @@ const DOWNLOAD_PROGRESS_INTERVAL_MS = 250;
 
 const CURATED_MODELS: readonly MarketModel[] = [
   {
-    id: 'huggingface:netease-youdao/Confucius4-R2T2:main',
-    name: 'Confucius4-R2T2',
+    id: 'huggingface:netease-youdao/Confucius4-R2T2-GGUF:main',
+    name: 'Confucius4-R2T2-GGUF',
     author: 'netease-youdao',
     source: 'huggingface',
-    repoId: 'netease-youdao/Confucius4-R2T2',
+    repoId: 'netease-youdao/Confucius4-R2T2-GGUF',
     revision: 'main',
     updatedAt: null,
     downloads: null,
     likes: null,
     license: null,
-    formats: ['safetensors'],
+    formats: ['gguf'],
     capabilities: ['speech-recognition', 'microphone-stream', 'file-stream'],
     favorite: false,
     featured: true,
-    sourceUrl: 'https://huggingface.co/netease-youdao/Confucius4-R2T2',
+    sourceUrl: 'https://huggingface.co/netease-youdao/Confucius4-R2T2-GGUF',
   },
   {
-    id: 'huggingface:netease-youdao/Confucius4-T3PO:main',
-    name: 'Confucius4-T3PO',
+    id: 'huggingface:netease-youdao/Confucius4-T3PO-GGUF:main',
+    name: 'Confucius4-T3PO-GGUF',
     author: 'netease-youdao',
     source: 'huggingface',
-    repoId: 'netease-youdao/Confucius4-T3PO',
+    repoId: 'netease-youdao/Confucius4-T3PO-GGUF',
     revision: 'main',
     updatedAt: null,
     downloads: null,
     likes: null,
     license: null,
-    formats: ['safetensors'],
+    formats: ['gguf'],
     capabilities: ['text-generation', 'translation', 'simultaneous-translation'],
     favorite: false,
     featured: true,
-    sourceUrl: 'https://huggingface.co/netease-youdao/Confucius4-T3PO',
+    sourceUrl: 'https://huggingface.co/netease-youdao/Confucius4-T3PO-GGUF',
   },
 ];
+
+type DownloadOrigin = Pick<MarketModel, 'source' | 'repoId' | 'revision'>;
 
 interface FavoriteRow {
   source: string;
@@ -167,6 +169,16 @@ function safePathSegment(value: string): string {
   const normalized = value.replace(/[^a-zA-Z0-9._-]+/g, '--').replace(/^[-.]+|[-.]+$/g, '');
   if (!normalized) throw new Error('Model path segment is invalid');
   return normalized;
+}
+
+function isCommitSha(revision: string): boolean {
+  return /^[0-9a-f]{40}$/i.test(revision);
+}
+
+/** Folder name for a download: a commit SHA shortens to its first 7 characters, like `git log --oneline`. */
+export function downloadDirectoryName(model: Pick<MarketModel, 'source' | 'repoId' | 'revision'>): string {
+  const revision = isCommitSha(model.revision) ? model.revision.slice(0, 7).toLowerCase() : safePathSegment(model.revision);
+  return `${model.source}--${safePathSegment(model.repoId)}--${revision}`;
 }
 
 function safeTargetPath(root: string, relativePath: string): string {
@@ -394,6 +406,46 @@ function parseModelScopeModel(value: unknown, favorites: ReadonlySet<string>): M
   };
 }
 
+export interface DownloadResponseHeaders {
+  status: number;
+  contentRange: string | null;
+  etag: string | null;
+}
+
+/**
+ * append: the body continues the partial file. fresh: the body is the whole file.
+ * restart: the partial file no longer matches the remote file. invalid: the response cannot be used.
+ */
+export type DownloadResumeDecision = 'append' | 'fresh' | 'restart' | 'invalid';
+
+/**
+ * Hugging Face's CDN answers a stale If-Range with 206 instead of the full file, so the response ETag,
+ * range start, and total size are checked here as well.
+ */
+export function downloadResumeDecision(
+  requestedStart: number,
+  expectedEtag: string | null,
+  totalBytes: number | null,
+  response: DownloadResponseHeaders,
+): DownloadResumeDecision {
+  const range = response.contentRange ? /^bytes (\d+)-(\d+)\/(\d+|\*)$/i.exec(response.contentRange.trim()) : null;
+  if (!range) {
+    if (response.contentRange || response.status === 206) return requestedStart > 0 ? 'restart' : 'invalid';
+    return 'fresh';
+  }
+  const start = Number(range[1]);
+  const end = Number(range[2]);
+  const total = range[3] === '*' ? null : Number(range[3]);
+  if (totalBytes !== null && total !== null && total !== totalBytes) return requestedStart > 0 ? 'restart' : 'invalid';
+  if (requestedStart === 0) {
+    // Some ModelScope responses carry a Content-Range that covers the whole file.
+    return start === 0 && (total === null || end + 1 === total) ? 'fresh' : 'invalid';
+  }
+  if (start !== requestedStart) return 'restart';
+  if (expectedEtag && response.etag && response.etag !== expectedEtag) return 'restart';
+  return 'append';
+}
+
 export function defaultManagedModelDirectory(): string {
   return path.join(os.homedir(), '.cache', 'tiginal', 'models');
 }
@@ -501,16 +553,28 @@ export class ModelLibraryService {
       const modelPath = path.resolve(model.path);
       const download = completedDownloads.find(candidate => {
         const targetPath = path.resolve(candidate.targetPath);
+        if (candidate.filePath) {
+          const candidateFilePath = path.resolve(targetPath, candidate.filePath);
+          if (modelPath === candidateFilePath) return true;
+        }
         return modelPath === targetPath || modelPath.startsWith(`${targetPath}${path.sep}`);
       });
       const source = download?.source ?? model.source;
       const repoId = download?.repoId ?? model.repoId;
       const revision = download?.revision ?? model.revision;
       const remoteSource = source === 'modelscope' ? 'modelscope' : 'huggingface';
-      const defaultName = repoId?.split('/').at(-1) ?? model.defaultName;
+      const repoBaseName = repoId?.split('/').at(-1);
+      const isFileModel = !fs.existsSync(model.storagePath) || !fs.statSync(model.storagePath).isDirectory();
+      const defaultName = (isFileModel && model.defaultName)
+        ? model.defaultName
+        : (repoBaseName ?? model.defaultName);
+      const fileSuffix = path.basename(model.path);
+      const id = repoId
+        ? (isFileModel ? `${marketIdentity(remoteSource, repoId, revision ?? 'main')}:${fileSuffix}` : marketIdentity(remoteSource, repoId, revision ?? 'main'))
+        : model.id;
       return {
         ...model,
-        id: repoId ? marketIdentity(remoteSource, repoId, revision ?? 'main') : model.id,
+        id,
         name: aliases.get(path.resolve(model.storagePath)) ?? defaultName,
         defaultName,
         author: repoId?.split('/')[0] ?? model.author,
@@ -576,8 +640,22 @@ export class ModelLibraryService {
       throw new Error('Stop services that use this model before deleting it');
     }
     fs.rmSync(target, { recursive: true, force: false });
-    this.db.prepare(`DELETE FROM model_downloads WHERE target_path = ?`).run(target);
+    this.db.prepare(`
+      DELETE FROM model_downloads
+      WHERE target_path = ? OR (target_path = ? AND file_path = ?)
+    `).run(target, path.dirname(target), path.basename(target));
     this.db.prepare(`DELETE FROM model_aliases WHERE storage_path = ?`).run(target);
+
+    const parentDir = path.dirname(target);
+    if (parentDir !== containingRoot && fs.existsSync(parentDir)) {
+      try {
+        const remaining = fs.readdirSync(parentDir);
+        if (remaining.length === 0 || (remaining.length === 1 && remaining[0] === '.DS_Store')) {
+          fs.rmSync(parentDir, { recursive: true, force: true });
+        }
+      } catch {}
+    }
+
     return this.scanDownloadedModels();
   }
 
@@ -595,7 +673,9 @@ export class ModelLibraryService {
       : this.searchModelScope(query, favorites);
   }
 
-  async getDetails(model: MarketModel): Promise<MarketModelDetails> {
+  async getDetails(requested: MarketModel): Promise<MarketModelDetails> {
+    // Pin a branch such as `main` to its commit so the file list and every download come from one version.
+    const model = { ...requested, revision: await this.pinnedRevision(requested) };
     const files = model.source === 'huggingface'
       ? await this.huggingFaceFiles(model.repoId, model.revision)
       : await this.modelScopeFiles(model.repoId, model.revision);
@@ -651,7 +731,9 @@ export class ModelLibraryService {
     });
   }
 
-  async startDownload({ model, file }: ModelDownloadRequest): Promise<ModelDownload> {
+  async startDownload(request: ModelDownloadRequest): Promise<ModelDownload> {
+    const { file } = request;
+    const model = { ...request.model, revision: await this.pinnedRevision(request.model) };
     const existing = this.listDownloads().find(download => (
       download.source === model.source
       && download.repoId === model.repoId
@@ -662,10 +744,7 @@ export class ModelLibraryService {
     if (existing) return existing;
 
     const id = crypto.randomUUID();
-    const targetPath = path.join(
-      defaultManagedModelDirectory(),
-      `${model.source}--${safePathSegment(model.repoId)}--${safePathSegment(model.revision)}`,
-    );
+    const targetPath = this.downloadDirectory(model);
     const now = Date.now();
     this.db.prepare(`
       INSERT INTO model_downloads (
@@ -673,10 +752,51 @@ export class ModelLibraryService {
         downloaded_bytes, total_bytes, error, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, NULL, ?, ?)
     `).run(id, model.source, model.repoId, model.revision, file.path, targetPath, file.sizeBytes, now, now);
-    const controller = new AbortController();
-    this.downloadControllers.set(id, controller);
-    void this.downloadFile(id, model, file, targetPath, controller.signal);
+    this.runDownload(id, model, file, targetPath);
     return this.requireDownload(id);
+  }
+
+  /** Restarts a failed or cancelled download; downloadFile continues from the `.partial` file with a Range request. */
+  resumeDownload(id: string): ModelDownload {
+    const download = this.requireDownload(id);
+    if (download.status !== 'failed' && download.status !== 'cancelled') return download;
+    if (!download.filePath) throw new Error('This download has no file to resume');
+    this.db.prepare(`
+      UPDATE model_downloads SET status = 'queued', error = NULL, updated_at = ? WHERE id = ?
+    `).run(Date.now(), id);
+    this.runDownload(
+      id,
+      { source: download.source, repoId: download.repoId, revision: download.revision },
+      { path: download.filePath, sizeBytes: download.totalBytes },
+      download.targetPath,
+    );
+    return this.requireDownload(id);
+  }
+
+  /** Removes an unfinished download and its `.partial` file. Completed files are managed from the Downloaded tab. */
+  deleteDownload(id: string): void {
+    const download = this.requireDownload(id);
+    if (download.status === 'completed') throw new Error('Delete completed models from the Downloaded tab');
+    this.downloadControllers.get(id)?.abort();
+    this.downloadControllers.delete(id);
+
+    const managedRoot = path.resolve(defaultManagedModelDirectory());
+    const targetPath = path.resolve(download.targetPath);
+    if (!targetPath.startsWith(`${managedRoot}${path.sep}`)) {
+      throw new Error('The download directory is outside the managed model directory');
+    }
+    if (download.filePath) {
+      const destination = safeTargetPath(targetPath, download.filePath);
+      fs.rmSync(`${destination}.partial`, { force: true });
+      // Remove directories the download created once they hold nothing else.
+      for (let directory = path.dirname(destination); directory.startsWith(targetPath); directory = path.dirname(directory)) {
+        const entries = fs.existsSync(directory) ? fs.readdirSync(directory).filter(entry => entry !== '.DS_Store') : [];
+        if (entries.length > 0) break;
+        fs.rmSync(directory, { recursive: true, force: true });
+        if (directory === targetPath) break;
+      }
+    }
+    this.db.prepare('DELETE FROM model_downloads WHERE id = ?').run(id);
   }
 
   cancelDownload(id: string): void {
@@ -816,7 +936,38 @@ export class ModelLibraryService {
     });
   }
 
-  private fileUrl(model: MarketModel, filePath: string): string {
+  private async pinnedRevision(model: MarketModel): Promise<string> {
+    // ModelScope has no public commit lookup, so its revisions stay as given.
+    if (model.source !== 'huggingface' || isCommitSha(model.revision)) return model.revision;
+    const url = `https://huggingface.co/api/models/${model.repoId}/revision/${encodeURIComponent(model.revision)}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (!response.ok) throw new Error(`Hugging Face revision lookup failed with status ${response.status}`);
+    const value: unknown = await response.json();
+    const sha = isRecord(value) ? stringValue(value.sha) : null;
+    if (!sha || !isCommitSha(sha)) throw new Error(`Hugging Face returned no commit for ${model.repoId}@${model.revision}`);
+    return sha;
+  }
+
+  private downloadDirectory(model: DownloadOrigin): string {
+    const root = defaultManagedModelDirectory();
+    // Folders created before short revisions use the full commit SHA; keep adding that version's files there.
+    const fullShaDirectory = path.join(root, `${model.source}--${safePathSegment(model.repoId)}--${safePathSegment(model.revision)}`);
+    if (isCommitSha(model.revision) && fs.existsSync(fullShaDirectory)) return fullShaDirectory;
+    return path.join(root, downloadDirectoryName(model));
+  }
+
+  private downloadEtag(id: string): string | null {
+    const row: unknown = this.db.prepare('SELECT etag FROM model_downloads WHERE id = ?').get(id);
+    return isRecord(row) && typeof row.etag === 'string' && row.etag ? row.etag : null;
+  }
+
+  private runDownload(id: string, origin: DownloadOrigin, file: ModelFile, targetPath: string): void {
+    const controller = new AbortController();
+    this.downloadControllers.set(id, controller);
+    void this.downloadFile(id, origin, file, targetPath, controller.signal);
+  }
+
+  private fileUrl(model: DownloadOrigin, filePath: string): string {
     const encodedPath = encodeRepoPath(filePath);
     return model.source === 'huggingface'
       ? `https://huggingface.co/${model.repoId}/resolve/${encodeURIComponent(model.revision)}/${encodedPath}`
@@ -836,29 +987,37 @@ export class ModelLibraryService {
 
   private async downloadFile(
     id: string,
-    model: MarketModel,
+    model: DownloadOrigin,
     file: ModelFile,
     targetPath: string,
     signal: AbortSignal,
   ): Promise<void> {
+    let stream: fs.WriteStream | null = null;
     try {
       const totalBytes = file.sizeBytes;
+      const destination = safeTargetPath(targetPath, file.path);
+      const partialPath = `${destination}.partial`;
+      let partialSize = fs.existsSync(partialPath) ? fs.statSync(partialPath).size : 0;
+      const storedEtag = this.downloadEtag(id);
+      // Without an ETag there is no way to tell whether the partial file matches the current remote file.
+      if ((totalBytes !== null && partialSize > totalBytes) || (partialSize > 0 && storedEtag === null)) {
+        fs.rmSync(partialPath, { force: true });
+        partialSize = 0;
+      }
       if (totalBytes !== null) {
         const disk = fs.statfsSync(path.dirname(defaultManagedModelDirectory()));
         const availableBytes = disk.bavail * disk.bsize;
-        if (availableBytes < totalBytes) throw new Error('Not enough free disk space for this file');
+        if (availableBytes < totalBytes - partialSize) throw new Error('Not enough free disk space for this file');
       }
       fs.mkdirSync(targetPath, { recursive: true });
       this.db.prepare(`
         UPDATE model_downloads
-        SET status = 'downloading', total_bytes = ?, error = NULL, updated_at = ?
+        SET status = 'downloading', downloaded_bytes = ?, total_bytes = ?, error = NULL, updated_at = ?
         WHERE id = ?
-      `).run(totalBytes, Date.now(), id);
+      `).run(partialSize, totalBytes, Date.now(), id);
 
       let lastProgressUpdate = 0;
       if (signal.aborted) throw new DOMException('Download cancelled', 'AbortError');
-      const destination = safeTargetPath(targetPath, file.path);
-      const partialPath = `${destination}.partial`;
       fs.mkdirSync(path.dirname(destination), { recursive: true });
       if (fs.existsSync(destination) && file.sizeBytes !== null
         && fs.statSync(destination).size === file.sizeBytes) {
@@ -870,15 +1029,58 @@ export class ModelLibraryService {
         await this.scanDownloadedModels();
         return;
       }
-      const partialSize = fs.existsSync(partialPath) ? fs.statSync(partialPath).size : 0;
-      const headers = partialSize > 0 ? { Range: `bytes=${partialSize}-` } : undefined;
-      const response = await fetch(this.fileUrl(model, file.path), { headers, signal });
-      if (!response.ok && response.status !== 206) {
-        throw new Error(`Download failed for ${file.path} with status ${response.status}`);
+      if (totalBytes !== null && partialSize === totalBytes) {
+        // The previous run received every byte but stopped before the rename.
+        fs.renameSync(partialPath, destination);
+        this.db.prepare(`
+          UPDATE model_downloads
+          SET status = 'completed', downloaded_bytes = ?, error = NULL, updated_at = ?
+          WHERE id = ?
+        `).run(totalBytes, Date.now(), id);
+        await this.scanDownloadedModels();
+        return;
       }
+      let response: Response | null = null;
+      let append = false;
+      // A second attempt downloads the whole file after the partial file turned out to be stale.
+      for (let attempt = 0; attempt < 2 && !response; attempt += 1) {
+        const headers: Record<string, string> = {};
+        if (partialSize > 0 && storedEtag) {
+          headers.Range = `bytes=${partialSize}-`;
+          headers['If-Range'] = storedEtag;
+        }
+        const candidate = await fetch(this.fileUrl(model, file.path), { headers, signal });
+        if (!candidate.ok) {
+          await candidate.body?.cancel();
+          throw new Error(`Download failed for ${file.path} with status ${candidate.status}`);
+        }
+        const decision = downloadResumeDecision(partialSize, storedEtag, totalBytes, {
+          status: candidate.status,
+          contentRange: candidate.headers.get('content-range'),
+          etag: candidate.headers.get('etag'),
+        });
+        if (decision === 'restart') {
+          await candidate.body?.cancel();
+          fs.rmSync(partialPath, { force: true });
+          partialSize = 0;
+          continue;
+        }
+        if (decision === 'invalid') {
+          await candidate.body?.cancel();
+          throw new Error(`The server returned an unexpected partial response for ${file.path}`);
+        }
+        append = decision === 'append';
+        response = candidate;
+      }
+      if (!response) throw new Error(`Could not restart the download of ${file.path}`);
       if (!response.body) throw new Error(`Download returned no data for ${file.path}`);
-      const append = partialSize > 0 && response.status === 206;
-      const stream = fs.createWriteStream(partialPath, { flags: append ? 'a' : 'w' });
+      if (!append) {
+        this.db.prepare(`
+          UPDATE model_downloads SET etag = ?, downloaded_bytes = 0, updated_at = ? WHERE id = ?
+        `).run(response.headers.get('etag'), Date.now(), id);
+      }
+      const output = fs.createWriteStream(partialPath, { flags: append ? 'a' : 'w' });
+      stream = output;
       let downloadedBytes = append ? partialSize : 0;
       const reader = response.body.getReader();
       while (true) {
@@ -886,8 +1088,8 @@ export class ModelLibraryService {
         if (result.done) break;
         if (signal.aborted) throw new DOMException('Download cancelled', 'AbortError');
         const buffer = Buffer.from(result.value);
-        if (!stream.write(buffer)) {
-          await new Promise<void>(resolve => stream.once('drain', resolve));
+        if (!output.write(buffer)) {
+          await new Promise<void>(resolve => output.once('drain', resolve));
         }
         downloadedBytes += buffer.byteLength;
         const now = Date.now();
@@ -899,9 +1101,10 @@ export class ModelLibraryService {
         }
       }
       await new Promise<void>((resolve, reject) => {
-        stream.once('error', reject);
-        stream.end(resolve);
+        output.once('error', reject);
+        output.end(resolve);
       });
+      stream = null;
       if (file.sizeBytes !== null && downloadedBytes !== file.sizeBytes) {
         throw new Error(`Downloaded size does not match ${file.path}`);
       }
@@ -913,6 +1116,8 @@ export class ModelLibraryService {
       `).run(downloadedBytes, Date.now(), id);
       await this.scanDownloadedModels();
     } catch (error) {
+      // Close the partial file so it can be resumed or deleted.
+      stream?.destroy();
       const cancelled = signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
       this.db.prepare(`
         UPDATE model_downloads SET status = ?, error = ?, updated_at = ? WHERE id = ?

@@ -143,9 +143,26 @@ function huggingFaceIdentity(modelPath: string): ModelIdentity | null {
   return { source: 'huggingface', repoId, revision: parts[snapshotIndex + 1] };
 }
 
+function managedIdentity(modelPath: string): ModelIdentity | null {
+  const parts = modelPath.split(path.sep);
+  for (const part of parts) {
+    const match = /^(huggingface|modelscope)--(.+)--([a-f0-9]+|main|[a-zA-Z0-9._-]+)$/.exec(part);
+    if (match) {
+      const source = match[1] as 'huggingface' | 'modelscope';
+      const repoId = match[2].split('--').join('/');
+      const revision = match[3];
+      return { source, repoId, revision };
+    }
+  }
+  return null;
+}
+
 function identityFor(modelPath: string, directory: ScanDirectoryInput): ModelIdentity {
   if (directory.kind === 'huggingface-cache') {
     return huggingFaceIdentity(modelPath) ?? { source: 'local', repoId: null, revision: null };
+  }
+  if (directory.kind === 'managed') {
+    return managedIdentity(modelPath) ?? { source: 'local', repoId: null, revision: null };
   }
   return { source: 'local', repoId: null, revision: null };
 }
@@ -161,11 +178,54 @@ function modelId(modelPath: string, identity: ModelIdentity): string {
     .digest('hex');
 }
 
-function toDownloadedModel(modelPath: string, directory: ScanDirectoryInput): DownloadedModel {
+function toDownloadedModels(modelPath: string, directory: ScanDirectoryInput): DownloadedModel[] {
   const files = listFiles(modelPath);
   const identity = identityFor(modelPath, directory);
   const name = displayName(modelPath, identity);
   const format = modelFormat(files, modelPath);
+
+  if (format === 'gguf') {
+    const ggufFiles = files.filter(file => {
+      const lower = file.path.toLowerCase();
+      return lower.endsWith('.gguf') || lower.endsWith('.gguf.partial');
+    });
+
+    if (ggufFiles.length > 1) {
+      return ggufFiles.map(file => {
+        const fullPath = path.join(modelPath, file.path);
+        const isPartial = file.path.endsWith('.partial');
+        const cleanName = isPartial ? file.path.slice(0, -'.partial'.length) : file.path;
+        const fileBase = path.basename(cleanName, path.extname(cleanName));
+        let modifiedAt = 0;
+        try {
+          modifiedAt = fs.statSync(fullPath).mtimeMs;
+        } catch {
+          // Keep a deterministic zero for paths that disappear during a scan.
+        }
+        const capabilities = modelCapabilities(fileBase, 'gguf');
+        return {
+          id: modelId(fullPath, identity),
+          name: fileBase,
+          defaultName: fileBase,
+          author: identity.repoId?.split('/')[0] ?? null,
+          source: identity.source,
+          repoId: identity.repoId,
+          revision: identity.revision,
+          path: fullPath,
+          storagePath: fullPath,
+          format: 'gguf',
+          sizeBytes: file.sizeBytes ?? 0,
+          files: [file],
+          capabilities,
+          compatibleEngineIds: compatibleEngines(fileBase, 'gguf', capabilities),
+          complete: !isPartial,
+          favorite: false,
+          modifiedAt,
+        };
+      });
+    }
+  }
+
   const capabilities = modelCapabilities(identity.repoId ?? name, format);
   const preferredModelFile = files
     .filter(file => (
@@ -182,7 +242,7 @@ function toDownloadedModel(modelPath: string, directory: ScanDirectoryInput): Do
   } catch {
     // Keep a deterministic zero for paths that disappear during a scan.
   }
-  return {
+  return [{
     id: modelId(modelPath, identity),
     name,
     defaultName: name,
@@ -200,7 +260,7 @@ function toDownloadedModel(modelPath: string, directory: ScanDirectoryInput): Do
     complete: !files.some(file => file.path.endsWith('.partial')),
     favorite: false,
     modifiedAt,
-  };
+  }];
 }
 
 export function scanModelDirectories(directories: readonly ScanDirectoryInput[]): DownloadedModel[] {
@@ -209,8 +269,10 @@ export function scanModelDirectories(directories: readonly ScanDirectoryInput[])
     const state: ScanState = { scannedFiles: 0, modelRoots: new Set() };
     collectModelRoots(directory.path, 0, state);
     for (const modelPath of state.modelRoots) {
-      const model = toDownloadedModel(modelPath, directory);
-      models.set(model.id, model);
+      const scanned = toDownloadedModels(modelPath, directory);
+      for (const model of scanned) {
+        models.set(model.id, model);
+      }
     }
   }
   return [...models.values()].sort((left, right) => right.modifiedAt - left.modifiedAt);

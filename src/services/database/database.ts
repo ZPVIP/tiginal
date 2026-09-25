@@ -11,7 +11,7 @@ import {
 import { defaultSpeechProviderOptions } from '../../shared/audio/r2t2';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 36;
+const SCHEMA_VERSION = 37;
 
 /**
  * Database service for Tiginal
@@ -212,6 +212,10 @@ export class DatabaseService {
     // v35 was an unreleased step that only removed the T3PO demo; v36 supersedes it and handles both states.
     if (currentVersion < 36) {
       this.migrateV36();
+    }
+
+    if (currentVersion < 37) {
+      this.migrateV37();
     }
 
     // Update schema version
@@ -1235,6 +1239,17 @@ export class DatabaseService {
       })();
     } finally {
       this.db.pragma(`foreign_keys = ${foreignKeys ? 'ON' : 'OFF'}`);
+    }
+  }
+
+  /** Migration v37: remember the ETag a download started with so a resume can detect a changed remote file. */
+  private migrateV37(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      this.db.exec(`ALTER TABLE model_downloads ADD COLUMN etag TEXT`);
+    } catch {
+      // Column might already exist.
     }
   }
 

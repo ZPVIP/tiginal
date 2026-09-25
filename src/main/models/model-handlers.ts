@@ -309,6 +309,12 @@ export function setupModelHandlers(): void {
   ipcMain.handle('models:cancel-download', (_event, value: unknown) => (
     modelServices().library.cancelDownload(requiredString({ id: value }, 'id'))
   ));
+  ipcMain.handle('models:resume-download', (_event, value: unknown) => (
+    modelServices().library.resumeDownload(requiredString({ id: value }, 'id'))
+  ));
+  ipcMain.handle('models:delete-download', (_event, value: unknown) => (
+    modelServices().library.deleteDownload(requiredString({ id: value }, 'id'))
+  ));
   ipcMain.handle('models:list-downloads', () => modelServices().library.listDownloads());
   ipcMain.handle('models:list-instances', () => modelServices().supervisor.list());
   ipcMain.handle('models:start', (_event, value: unknown) => (

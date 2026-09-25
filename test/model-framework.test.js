@@ -178,6 +178,41 @@ test('model scanner recognizes managed and Hugging Face cache layouts', t => {
   assert.deepEqual(speech.compatibleEngineIds, ['r2t2-runtime', 'vllm']);
 });
 
+test('model scanner recognizes multiple GGUF files in a single directory', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tiginal-multi-gguf-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const repoDir = path.join(
+    root,
+    'huggingface--netease-youdao--Confucius4-R2T2-GGUF--86ff0251cb9f456b63aeef5f80137f104e22869a',
+  );
+  fs.mkdirSync(repoDir, { recursive: true });
+  fs.writeFileSync(path.join(repoDir, 'Confucius4-R2T2-Q4_K_M.gguf'), Buffer.alloc(100));
+  fs.writeFileSync(path.join(repoDir, 'Confucius4-R2T2-Q8_0.gguf'), Buffer.alloc(200));
+  fs.writeFileSync(path.join(repoDir, 'mmproj-Confucius4-R2T2-Q8_0.gguf'), Buffer.alloc(50));
+
+  const models = scanModelDirectories([
+    { path: root, kind: 'managed' },
+  ]);
+  assert.equal(models.length, 3);
+
+  const q4 = models.find(m => m.name === 'Confucius4-R2T2-Q4_K_M');
+  assert.ok(q4);
+  assert.equal(q4.format, 'gguf');
+  assert.equal(q4.sizeBytes, 100);
+  assert.equal(q4.repoId, 'netease-youdao/Confucius4-R2T2-GGUF');
+  assert.equal(q4.path, path.join(repoDir, 'Confucius4-R2T2-Q4_K_M.gguf'));
+  assert.equal(q4.storagePath, path.join(repoDir, 'Confucius4-R2T2-Q4_K_M.gguf'));
+
+  const q8 = models.find(m => m.name === 'Confucius4-R2T2-Q8_0');
+  assert.ok(q8);
+  assert.equal(q8.sizeBytes, 200);
+
+  const mmproj = models.find(m => m.name === 'mmproj-Confucius4-R2T2-Q8_0');
+  assert.ok(mmproj);
+  assert.equal(mmproj.sizeBytes, 50);
+});
+
 test('downloaded model names persist across rescans without changing the model path', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tiginal-model-alias-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

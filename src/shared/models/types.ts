@@ -261,6 +261,8 @@ export interface ModelsRendererApi {
   listFavoriteModels(): Promise<MarketModel[]>;
   startModelDownload(request: ModelDownloadRequest): Promise<ModelDownload>;
   cancelModelDownload(id: string): Promise<void>;
+  resumeModelDownload(id: string): Promise<ModelDownload>;
+  deleteModelDownload(id: string): Promise<void>;
   listModelDownloads(): Promise<ModelDownload[]>;
   listModelInstances(): Promise<ModelInstance[]>;
   startModel(input: StartModelInput): Promise<ModelInstance>;

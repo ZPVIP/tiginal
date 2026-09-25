@@ -8,6 +8,7 @@ import {
   FolderPlus,
   Heart,
   Loader2,
+  Play,
   RefreshCw,
   Search,
   Trash2,
@@ -114,7 +115,10 @@ function ModelDetailsDialog({
   onDownload(model: MarketModel, file: ModelFile): void;
   onClose(): void;
 }) {
-  const [filter, setFilter] = useState<FileFilter>('all');
+  // llama.cpp runs GGUF, so start there unless the repository has no GGUF files.
+  const [filter, setFilter] = useState<FileFilter>(
+    () => (model.files.some(file => fileFormat(file.path) === 'gguf') ? 'gguf' : 'all'),
+  );
   const visibleFiles = useMemo(
     () => model.files.filter(file => filter === 'all' || fileFormat(file.path) === filter),
     [filter, model.files],
@@ -381,10 +385,36 @@ export function ModelLibrarySettings() {
     }
   };
 
+  // Failed and cancelled downloads stay listed so their partial files can be resumed or deleted.
   const activeDownloads = useMemo(
-    () => downloads.filter(download => download.status !== 'completed' && download.status !== 'cancelled'),
+    () => downloads.filter(download => download.status !== 'completed'),
     [downloads],
   );
+
+  const resumeDownload = async (id: string) => {
+    const api = window.electron?.models;
+    if (!api) return;
+    setError('');
+    try {
+      const download = await api.resumeModelDownload(id);
+      setDownloads(current => current.map(item => (item.id === id ? download : item)));
+    } catch (resumeError) {
+      setError(errorMessage(resumeError));
+    }
+  };
+
+  const deleteDownload = async (download: ModelDownload) => {
+    const api = window.electron?.models;
+    if (!api) return;
+    if (!window.confirm(`Delete the partially downloaded file "${download.filePath || download.repoId}"?`)) return;
+    setError('');
+    try {
+      await api.deleteModelDownload(download.id);
+      setDownloads(current => current.filter(item => item.id !== download.id));
+    } catch (deleteError) {
+      setError(errorMessage(deleteError));
+    }
+  };
 
   const renderMarketCards = (models: readonly MarketModel[]) => (
     <div className="grid gap-3">
@@ -469,6 +499,18 @@ export function ModelLibrarySettings() {
                       <button type="button" title="Cancel download" onClick={() => void window.electron?.models.cancelModelDownload(download.id)}>
                         <X size={13} />
                       </button>
+                    )}
+                    {(download.status === 'failed' || download.status === 'cancelled') && (
+                      <>
+                        {download.filePath && (
+                          <button type="button" title="Resume download" className="hover:text-primary" onClick={() => void resumeDownload(download.id)}>
+                            <Play size={13} />
+                          </button>
+                        )}
+                        <button type="button" title="Delete partial download" className="hover:text-accent-danger" onClick={() => void deleteDownload(download)}>
+                          <Trash2 size={13} />
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
