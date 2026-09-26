@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, FileAudio, FolderOpen, Mic, Radio, Trash2, Waves } from 'lucide-react';
+import { FileAudio, FolderOpen, Mic, Radio, Trash2, Waves } from 'lucide-react';
 import {
   isR2T2Protocol,
   type AudioSessionEvent,
@@ -102,7 +102,7 @@ export function AudioWorkspace() {
   const [providers, setProviders] = useState<SpeechProvider[]>([]);
   const [providerId, setProviderId] = useState('');
   const [source, setSource] = useState<AudioInputSource>('microphone');
-  const [language, setLanguage] = useState('auto');
+  const [language, setLanguage] = useState('en');
   const [terms, setTerms] = useState('');
   const [microphoneDevice, setMicrophoneDevice] = useState('System Default');
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -120,7 +120,7 @@ export function AudioWorkspace() {
   // Translation states
   const [translationCandidates, setTranslationCandidates] = useState<TranslationEngineCandidate[]>([]);
   const [translationEngineId, setTranslationEngineId] = useState('');
-  const [targetLanguage, setTargetLanguage] = useState('en');
+  const [targetLanguage, setTargetLanguage] = useState('zh');
   const [realtimeTranslation, setRealtimeTranslation] = useState(false);
   const [translationLatency, setTranslationLatency] = useState<TranslationLatencyMode>('native');
   const [instructionsCustomized, setInstructionsCustomized] = useState(false);
@@ -436,12 +436,6 @@ export function AudioWorkspace() {
     setTranslationError(null);
     setTranslationStatus('idle');
   }, []);
-
-  const handleResetInstructions = useCallback(() => {
-    const src = language === 'auto' ? 'zh' : language;
-    setTranslationInstructions(defaultT3POInstructions(src, targetLanguage));
-    setInstructionsCustomized(false);
-  }, [language, targetLanguage]);
 
   const startMicrophone = useCallback(async () => {
     if (captureRef.current || fileTranscriberRef.current || !selectedProvider || !confirmDiscardEdits()) return;
@@ -770,7 +764,6 @@ export function AudioWorkspace() {
             setTranslationInstructions(value);
             setInstructionsCustomized(true);
           }}
-          onResetTranslationInstructions={handleResetInstructions}
           isActive={busy}
           canStart={canStart}
           isFinalizing={state.kind === 'finalizing'}
@@ -786,6 +779,7 @@ export function AudioWorkspace() {
           editable={editable}
           dirty={transcriptDirty}
           busy={busy}
+          error={state.kind === 'failed' ? formatErrorMessage(state.message) : null}
           onChange={value => {
             setEditableText(value);
             setTranscriptDirty(true);
@@ -857,13 +851,6 @@ export function AudioWorkspace() {
           </div>
           {selectedProvider && <span className="shrink-0">{selectedProvider.name}</span>}
         </div>
-
-        {state.kind === 'failed' && (
-          <div className="mb-2 flex items-start gap-2 rounded-lg border border-accent-danger/30 bg-accent-danger/10 px-3 py-2 text-xs text-accent-danger">
-            <AlertCircle size={14} className="mt-0.5 shrink-0" />
-            <span>{formatErrorMessage(state.message)}</span>
-          </div>
-        )}
 
         {source === 'microphone' && busy ? (
           <div className="flex items-center gap-3">

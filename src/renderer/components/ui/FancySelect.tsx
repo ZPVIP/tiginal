@@ -18,6 +18,7 @@ interface FancySelectProps {
   buttonClassName?: string;
   listClassName?: string;
   leftIcon?: React.ReactNode;
+  disabled?: boolean;
 }
 
 export function FancySelect({
@@ -28,7 +29,8 @@ export function FancySelect({
   className,
   buttonClassName,
   listClassName,
-  leftIcon
+  leftIcon,
+  disabled = false,
 }: FancySelectProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -78,9 +80,13 @@ export function FancySelect({
     <div ref={rootRef} className={clsx('relative', className)}>
       <div
         ref={triggerRef}
-        tabIndex={0}
-        onClick={() => setOpen(v => !v)}
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled}
+        onClick={() => {
+          if (!disabled) setOpen(v => !v);
+        }}
         onKeyDown={(e) => {
+          if (disabled) return;
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             setOpen(v => !v);
@@ -90,6 +96,7 @@ export function FancySelect({
         className={clsx(
           'w-full bg-surface text-text-main text-sm rounded-lg py-2 px-3 pr-8 border border-border outline-none cursor-pointer flex items-center focus:border-primary',
           open && 'border-primary',
+          disabled && 'cursor-not-allowed opacity-60',
           buttonClassName
         )}
       >

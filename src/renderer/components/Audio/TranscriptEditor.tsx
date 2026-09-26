@@ -1,4 +1,4 @@
-import { Check, Copy, LoaderCircle, Pencil, Trash2 } from 'lucide-react';
+import { AlertCircle, Check, Copy, LoaderCircle, Pencil, Trash2 } from 'lucide-react';
 
 interface TranscriptEditorProps {
   committedText: string;
@@ -7,6 +7,7 @@ interface TranscriptEditorProps {
   editable: boolean;
   dirty: boolean;
   busy: boolean;
+  error?: string | null;
   onChange(value: string): void;
   onCopy(): void;
   onClear(): void;
@@ -28,7 +29,16 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex min-w-0 items-center gap-1">
+          {props.error && (
+            <span
+              title={props.error}
+              className="mr-1 flex min-w-0 items-center gap-1.5 rounded-md border border-accent-danger/30 bg-accent-danger/10 px-2 py-1 text-[11px] text-accent-danger"
+            >
+              <AlertCircle size={12} className="shrink-0" />
+              <span className="truncate">{props.error}</span>
+            </span>
+          )}
           <button
             type="button"
             title="Copy transcript"
