@@ -61,7 +61,7 @@ export class AudioFileTranscriber {
 
   constructor(private readonly callbacks: AudioFileTranscriberCallbacks = {}) {}
 
-  async start(file: File, input: CreateAudioSessionInput): Promise<void> {
+  async start(file: File, input: Omit<CreateAudioSessionInput, 'source'>): Promise<void> {
     if (this.session || this.removeSessionListener) throw new Error('Audio file transcription is already active');
     const audio = window.electron?.audio;
     if (!audio) throw new Error('Audio API is unavailable');

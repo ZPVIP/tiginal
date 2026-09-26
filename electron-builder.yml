@@ -48,6 +48,8 @@ mac:
   identity: null
   extendInfo:
     NSMicrophoneUsageDescription: Tiginal uses microphone audio for speech recognition and recording.
+    NSAudioCaptureUsageDescription: Tiginal captures system audio for speech recognition and recording.
+    NSScreenCaptureUsageDescription: Tiginal uses screen sharing permission to capture system audio for speech recognition and recording.
   target:
     - target: dmg
       arch: [x64, arm64]

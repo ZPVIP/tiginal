@@ -162,7 +162,7 @@ test('AudioService keeps a finalized WAV after the recognition socket disconnect
 
   try {
     const session = await service.createSession(
-      { providerId: speechProvider.id, language: 'en' },
+      { providerId: speechProvider.id, language: 'en', source: { kind: 'microphone' } },
       event => {
         if (event.kind === 'failed') deliverEvent(event);
       },

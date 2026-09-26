@@ -1,4 +1,4 @@
-import { ipcMain, type IpcMainEvent } from 'electron';
+import { app, ipcMain, shell, systemPreferences, type IpcMainEvent } from 'electron';
 import { getDatabase } from '../../services/database/database';
 import { getCrypto } from '../../services/ssh/CryptoService';
 import type {
@@ -17,6 +17,12 @@ import { testT3POConnection } from './T3POWebSocketTranslator';
 import { parseSpeechProviderInput, SpeechProviderStore } from './SpeechProviderStore';
 import { TranslationService } from './TranslationService';
 import { getModelRuntimeSupervisor } from '../models/model-handlers';
+import { appendAudioCaptureDiagnostic } from './AudioCaptureDiagnostics';
+import {
+  getAudioInputCapabilities,
+  getSystemAudioPermissionInfo,
+  MAC_SYSTEM_AUDIO_SETTINGS_URL,
+} from './PlatformAudioCapture';
 
 let audioService: AudioService | null = null;
 let translationService: TranslationService | null = null;
@@ -92,18 +98,17 @@ function parseCreateSessionInput(value: unknown): CreateAudioSessionInput {
     ...(Array.isArray(bookedWords)
       ? { bookedWords: bookedWords.filter((word): word is string => typeof word === 'string') }
       : {}),
-    ...(source ? { source } : {}),
+    source,
     ...(translation ? { translation } : {}),
   };
 }
 
-function parseAudioSource(value: unknown): CreateAudioSessionInput['source'] | undefined {
-  if (value === undefined) return undefined;
+function parseAudioSource(value: unknown): CreateAudioSessionInput['source'] {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error('Audio source must be an object');
   }
   const kind = Reflect.get(value, 'kind');
-  if (kind === 'microphone') return { kind };
+  if (kind === 'microphone' || kind === 'system' || kind === 'mixed') return { kind };
   if (kind === 'file') {
     const name = Reflect.get(value, 'name');
     if (typeof name !== 'string' || !name.trim()) throw new Error('Audio file name is required');
@@ -157,6 +162,34 @@ function parseTranslationRequest(value: unknown): TranslationRequest {
 }
 
 export function setupAudioHandlers(): void {
+  ipcMain.handle('audio:get-input-capabilities', () => getAudioInputCapabilities(process.platform));
+  ipcMain.handle('audio:get-system-audio-permission-info', () => getSystemAudioPermissionInfo(
+    process.platform,
+    app.isPackaged,
+    process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : 'unknown',
+  ));
+  ipcMain.handle('audio:open-system-audio-settings', async () => {
+    if (process.platform === 'darwin') await shell.openExternal(MAC_SYSTEM_AUDIO_SETTINGS_URL);
+  });
+  ipcMain.on('audio:capture-diagnostic', (_event, value: unknown) => {
+    try {
+      const disabledFeatures = app.commandLine.getSwitchValue('disable-features')
+        .split(',')
+        .map(feature => feature.trim())
+        .filter(Boolean);
+      appendAudioCaptureDiagnostic(app.getPath('userData'), {
+        platform: process.platform,
+        isPackaged: app.isPackaged,
+        electronVersion: process.versions.electron,
+        screenPermission: process.platform === 'darwin'
+          ? systemPreferences.getMediaAccessStatus('screen')
+          : 'unknown',
+        disabledFeatures,
+      }, value);
+    } catch (error) {
+      console.warn('[AudioCapture] Failed to write diagnostic:', error);
+    }
+  });
   ipcMain.handle('audio:list-speech-providers', () => providerStore().list());
   ipcMain.handle('audio:get-speech-provider-credential', (_event, value: unknown) => {
     try {

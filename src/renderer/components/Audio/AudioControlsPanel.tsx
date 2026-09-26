@@ -1,20 +1,29 @@
-import { ChevronDown, FileAudio, Mic, Square, X } from 'lucide-react';
+import { AudioLines, ChevronDown, FileAudio, Mic, Square, Volume2, X } from 'lucide-react';
 import type {
+  AudioInputSourceKind,
   SpeechProvider,
   TranslationEngineCandidate,
   TranslationLatencyMode,
 } from '../../../shared/audio/types';
 import type { AudioFileMetadata } from '../../audio/AudioFileTranscriber';
+import {
+  microphoneSelectionFromValue,
+  microphoneSelectionValue,
+  type MicrophoneDeviceOption,
+  type MicrophoneSelection,
+} from '../../audio/MicrophoneDevices';
 import { InfoIcon } from '../Shared/InfoIcon';
 import { FancySelect } from '../ui/FancySelect';
 import { Toggle } from '../ui/Toggle';
 
-export type AudioInputSource = 'microphone' | 'file';
-
 interface AudioControlsPanelProps {
-  source: AudioInputSource;
-  onSourceChange(source: AudioInputSource): void;
-  microphoneDevice: string;
+  source: AudioInputSourceKind;
+  availableSources: readonly AudioInputSourceKind[];
+  onSourceChange(source: AudioInputSourceKind): void;
+  microphoneSelection: MicrophoneSelection;
+  microphoneOptions: readonly MicrophoneDeviceOption[];
+  onMicrophoneSelectionChange(selection: MicrophoneSelection): void;
+  onRequestMicrophoneDevices(): void;
   file: File | null;
   fileMetadata: AudioFileMetadata | null;
   onFileChange(file: File | null): void;
@@ -112,7 +121,20 @@ function formatLabel(file: File): string {
 export function AudioControlsPanel(props: AudioControlsPanelProps) {
   const selectedEngine = props.translationCandidates.find(candidate => candidate.id === props.translationEngineId);
   const isT3PO = selectedEngine?.protocol === 't3po';
-  const actionLabel = props.source === 'microphone' ? 'Start' : 'Transcribe';
+  const actionLabel = props.source === 'file' ? 'Transcribe' : 'Start';
+  const sourceOptions = [
+    { value: 'microphone' as const, label: 'Microphone', icon: Mic },
+    { value: 'system' as const, label: 'System Audio', icon: Volume2 },
+    { value: 'mixed' as const, label: 'Mic + System', icon: AudioLines },
+    { value: 'file' as const, label: 'Audio File', icon: FileAudio },
+  ].filter(option => props.availableSources.includes(option.value));
+  const ActionIcon = props.source === 'file'
+    ? FileAudio
+    : props.source === 'system'
+      ? Volume2
+      : props.source === 'mixed'
+        ? AudioLines
+        : Mic;
 
   const isCandidateStreaming = (cand: TranslationEngineCandidate) =>
     Boolean(
@@ -137,10 +159,7 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
         <fieldset disabled={props.isActive} className="space-y-2 disabled:opacity-60">
           <legend className="mb-2 text-xs font-medium text-text-sec">Input Source</legend>
           <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-surface p-1">
-            {([
-              { value: 'microphone' as const, label: 'Microphone', icon: Mic },
-              { value: 'file' as const, label: 'Audio File', icon: FileAudio },
-            ]).map(option => {
+            {sourceOptions.map(option => {
               const Icon = option.icon;
               return (
                 <button
@@ -160,14 +179,27 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
           </div>
         </fieldset>
 
-        {props.source === 'microphone' ? (
+        {props.source === 'microphone' || props.source === 'mixed' ? (
           <div>
             <label className="mb-1.5 block text-xs font-medium text-text-sec">Microphone Device</label>
-            <div className="truncate rounded-lg border border-border bg-surface px-3 py-2 text-xs text-text-muted" title={props.microphoneDevice}>
-              {props.microphoneDevice || 'System Default'}
-            </div>
+            <FancySelect
+              value={microphoneSelectionValue(props.microphoneSelection)}
+              onChange={value => props.onMicrophoneSelectionChange(microphoneSelectionFromValue(value))}
+              options={props.microphoneOptions.map(option => ({
+                value: microphoneSelectionValue(option.selection),
+                label: option.label,
+              }))}
+              onOpen={props.onRequestMicrophoneDevices}
+              buttonClassName="h-9 text-xs"
+              disabled={props.isActive}
+            />
+            {props.source === 'mixed' && (
+              <p className="mt-1.5 text-[10px] leading-relaxed text-text-muted">
+                Microphone and system audio are mixed into one recognition stream.
+              </p>
+            )}
           </div>
-        ) : (
+        ) : props.source === 'file' ? (
           <div>
             <label className="mb-1.5 block text-xs font-medium text-text-sec">Audio File</label>
             <label className="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-surface px-3 text-xs text-text-muted hover:border-primary hover:text-text-main">
@@ -191,6 +223,10 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
                 </p>
               </div>
             )}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border bg-surface px-3 py-2 text-[11px] leading-relaxed text-text-muted">
+            Captures audio played by this computer. You may be asked to choose a screen or display.
           </div>
         )}
 
@@ -337,7 +373,7 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
               onClick={props.onStart}
               className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {props.source === 'microphone' ? <Mic size={15} /> : <FileAudio size={15} />}
+              <ActionIcon size={15} />
               {actionLabel}
             </button>
           ) : (

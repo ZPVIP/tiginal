@@ -11,7 +11,7 @@ import {
 import { defaultSpeechProviderOptions } from '../../shared/audio/r2t2';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 37;
+const SCHEMA_VERSION = 38;
 
 /**
  * Database service for Tiginal
@@ -216,6 +216,10 @@ export class DatabaseService {
 
     if (currentVersion < 37) {
       this.migrateV37();
+    }
+
+    if (currentVersion < 38) {
+      this.migrateV38();
     }
 
     // Update schema version
@@ -1250,6 +1254,44 @@ export class DatabaseService {
       this.db.exec(`ALTER TABLE model_downloads ADD COLUMN etag TEXT`);
     } catch {
       // Column might already exist.
+    }
+  }
+
+  /** Migration v38: persist system audio and mixed live input kinds. */
+  private migrateV38(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const foreignKeys = this.db.pragma('foreign_keys', { simple: true });
+    this.db.pragma('foreign_keys = OFF');
+    try {
+      this.db.transaction(() => {
+        this.db!.exec(`
+          CREATE TABLE audio_sessions_v38 (
+            id TEXT PRIMARY KEY,
+            source_kind TEXT NOT NULL CHECK (source_kind IN ('microphone', 'system', 'mixed', 'file')),
+            source_path TEXT,
+            recording_path TEXT,
+            speech_provider_id TEXT,
+            recognition_language TEXT NOT NULL,
+            transcript TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL CHECK (status IN ('connecting', 'recording', 'finalizing', 'completed', 'failed', 'aborted')),
+            duration_ms INTEGER NOT NULL DEFAULT 0,
+            started_at_iso TEXT NOT NULL,
+            timezone_offset_minutes INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (speech_provider_id) REFERENCES speech_providers(id) ON DELETE SET NULL
+          );
+
+          INSERT INTO audio_sessions_v38
+          SELECT * FROM audio_sessions;
+          DROP TABLE audio_sessions;
+          ALTER TABLE audio_sessions_v38 RENAME TO audio_sessions;
+          CREATE INDEX idx_audio_sessions_created ON audio_sessions(created_at DESC);
+        `);
+      })();
+    } finally {
+      this.db.pragma(`foreign_keys = ${foreignKeys ? 'ON' : 'OFF'}`);
     }
   }
 

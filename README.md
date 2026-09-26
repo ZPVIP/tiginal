@@ -89,9 +89,66 @@ npm run dist
 
 | Platform | Files |
 |----------|-------|
-| macOS | `Tiginal-x.x.x-arm64.dmg`, `Tiginal-x.x.x.dmg`, and matching `.zip` files |
+| macOS | `Tiginal-x.x.x-arm64.dmg`, `Tiginal-x.x.x.dmg`, and matching `-mac.zip` files |
 | Windows | `Tiginal Setup x.x.x.exe` |
 | Linux | `Tiginal-x.x.x.AppImage`, `tiginal_x.x.x_amd64.deb` |
+
+## Build and install a macOS release locally
+
+Use this process to build a release-mode app and install it on the same Mac without uploading a GitHub release. The macOS system application directory is `/Applications`, with an uppercase `A`.
+
+1. Install the exact dependencies from `package-lock.json` and run the test suite:
+
+```bash
+npm ci
+npm test
+```
+
+2. Build the release packages:
+
+```bash
+npm run dist
+```
+
+The build creates Intel and Apple silicon disk images in `release/`. Use the Apple silicon image on an `arm64` Mac. Use the image without an architecture suffix on an Intel Mac.
+
+3. Open the disk image for your Mac.
+
+For Apple silicon:
+
+```bash
+open "release/Tiginal-$(node -p "require('./package.json').version")-arm64.dmg"
+```
+
+For Intel:
+
+```bash
+open "release/Tiginal-$(node -p "require('./package.json').version").dmg"
+```
+
+4. Drag **Tiginal** into **Applications** in the disk image window. If Finder finds an older copy, quit Tiginal and choose **Replace**.
+
+5. Eject the disk image, then open the installed app:
+
+```bash
+open /Applications/Tiginal.app
+```
+
+The project applies an ad-hoc signature because it does not have an Apple Developer ID certificate. If macOS blocks the first launch, open **System Settings > Privacy & Security** and click **Open Anyway**. If macOS reports that the app is damaged, remove its download quarantine and open it again:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Tiginal.app
+open /Applications/Tiginal.app
+```
+
+Verify the installed bundle and its executable architecture:
+
+```bash
+codesign --verify --deep --strict --verbose=2 /Applications/Tiginal.app
+file /Applications/Tiginal.app/Contents/MacOS/Tiginal
+```
+
+After the first system-audio capture attempt, add and enable Tiginal under **System Settings > Privacy & Security > Screen & System Audio Recording**. Quit and reopen Tiginal after changing this permission.
 
 ## Publishing a Release (maintainers)
 

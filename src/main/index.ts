@@ -1,5 +1,6 @@
 import {
-  app, BrowserWindow, dialog, Menu, MenuItemConstructorOptions, protocol, type MessageBoxOptions,
+  app, BrowserWindow, desktopCapturer, dialog, Menu, MenuItemConstructorOptions, protocol, session,
+  type MessageBoxOptions,
 } from 'electron';
 
 // Polyfill global File object for undici (used by cheerio/fetch) in Node 18 environments
@@ -34,6 +35,11 @@ import { setupCredentialHandlers } from './credential-handlers';
 import { getAudioService, setupAudioHandlers } from './audio/audio-handlers';
 import { AUDIO_SCHEME_PRIVILEGES, setupAudioMediaProtocol } from './audio/AudioMediaProtocol';
 import {
+  configurePlatformAudioCapture,
+  getMacAudioCaptureDisabledFeatures,
+  getMacAudioCaptureEnabledFeatures,
+} from './audio/PlatformAudioCapture';
+import {
   disposeModelServicesNow,
   getModelRuntimeSupervisor,
   setupModelHandlers,
@@ -61,7 +67,14 @@ process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 // Prevent Chromium Skia buffer queue/overlay crashes on macOS (SharedImageManager invalid mailbox)
 if (process.platform === 'darwin') {
-  app.commandLine.appendSwitch('disable-features', 'WidgetLayering,CalculateNativeWinOcclusion');
+  const electronMajor = Number.parseInt(process.versions.electron, 10);
+  const disabledFeatures = [
+    'WidgetLayering',
+    'CalculateNativeWinOcclusion',
+    ...getMacAudioCaptureDisabledFeatures({ isPackaged: app.isPackaged, electronMajor }),
+  ];
+  app.commandLine.appendSwitch('disable-features', disabledFeatures.join(','));
+  app.commandLine.appendSwitch('enable-features', getMacAudioCaptureEnabledFeatures().join(','));
 }
 
 // Override userData path to ~/.config/tiginal/support on macOS/Linux
@@ -349,6 +362,12 @@ function createMenu(): void {
 }
 
 app.whenReady().then(async () => {
+  configurePlatformAudioCapture({
+    platform: process.platform,
+    displayMediaSession: session.defaultSession,
+    getScreenSources: () => desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }),
+  });
+
   // Initialize database
   getDatabase();
   await ensureModelCatalogInitialized();

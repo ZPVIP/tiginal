@@ -1,11 +1,25 @@
 import type {
+  AudioCaptureDiagnostic,
+  AudioCaptureTrackDiagnostic,
   AudioSessionEvent,
   AudioSessionSnapshot,
   CreateAudioSessionInput,
 } from '../../shared/audio/types';
+import { SYSTEM_AUDIO_DISPLAY_MEDIA_OPTIONS } from '../../shared/audio/types';
+import {
+  DEFAULT_MICROPHONE_SELECTION,
+  type MicrophoneSelection,
+} from './MicrophoneDevices';
 import workletUrl from '../audio-worklet/pcm-capture.worklet.ts?worker&url';
 
 const FLUSH_TIMEOUT_MS = 2_000;
+
+export class SystemAudioTrackUnavailableError extends Error {
+  constructor() {
+    super('No system audio track was returned. In System Settings > Privacy & Security > Screen & System Audio Recording, add and enable Tiginal under System Audio Recording Only, then restart Tiginal.');
+    this.name = 'SystemAudioTrackUnavailableError';
+  }
+}
 
 export interface PcmCaptureCallbacks {
   onPeak?(peak: number): void;
@@ -13,6 +27,16 @@ export interface PcmCaptureCallbacks {
   onDevice?(label: string): void;
   onSessionEvent?(event: AudioSessionEvent): void;
 }
+
+export type LiveAudioSource =
+  | { kind: 'microphone'; microphone: MicrophoneSelection }
+  | { kind: 'system' }
+  | { kind: 'mixed'; microphone: MicrophoneSelection };
+
+const DEFAULT_LIVE_AUDIO_SOURCE: LiveAudioSource = {
+  kind: 'microphone',
+  microphone: DEFAULT_MICROPHONE_SELECTION,
+};
 
 type WorkletMessage =
   | { kind: 'frame'; frame: ArrayBuffer }
@@ -33,12 +57,30 @@ function parseWorkletMessage(value: unknown): WorkletMessage | null {
   return kind === 'flushed' ? { kind } : null;
 }
 
+function trackDiagnostic(track: MediaStreamTrack): AudioCaptureTrackDiagnostic {
+  const settings = track.getSettings();
+  return {
+    kind: track.kind === 'audio' ? 'audio' : 'video',
+    readyState: track.readyState,
+    enabled: track.enabled,
+    muted: track.muted,
+    ...(typeof settings.sampleRate === 'number' ? { sampleRate: settings.sampleRate } : {}),
+    ...(typeof settings.channelCount === 'number' ? { channelCount: settings.channelCount } : {}),
+    ...(typeof settings.displaySurface === 'string' ? { displaySurface: settings.displaySurface } : {}),
+  };
+}
+
+function reportCaptureDiagnostic(diagnostic: AudioCaptureDiagnostic): void {
+  window.electron?.audio.reportCaptureDiagnostic(diagnostic);
+}
+
 export class PcmCapture {
   private readonly removeSessionListener: () => void;
   private session: AudioSessionSnapshot | null = null;
-  private stream: MediaStream | null = null;
+  private streams: MediaStream[] = [];
   private context: AudioContext | null = null;
-  private source: MediaStreamAudioSourceNode | null = null;
+  private sources: MediaStreamAudioSourceNode[] = [];
+  private inputGains: GainNode[] = [];
   private worklet: AudioWorkletNode | null = null;
   private mutedOutput: GainNode | null = null;
   private flushResolver: (() => void) | null = null;
@@ -59,23 +101,17 @@ export class PcmCapture {
     });
   }
 
-  async start(input: CreateAudioSessionInput): Promise<AudioSessionSnapshot> {
-    if (this.session || this.stopPromise) throw new Error('Microphone capture is already active');
+  async start(
+    input: Omit<CreateAudioSessionInput, 'source'>,
+    liveSource: LiveAudioSource = DEFAULT_LIVE_AUDIO_SOURCE,
+  ): Promise<AudioSessionSnapshot> {
+    if (this.session || this.stopPromise) throw new Error('Live audio capture is already active');
     const audio = window.electron?.audio;
     if (!audio) throw new Error('Audio API is unavailable');
 
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      this.streams = await this.acquireStreams(liveSource);
       this.callbacks.onPermissionGranted?.();
-      const deviceLabel = this.stream.getAudioTracks()[0]?.label;
-      if (deviceLabel) this.callbacks.onDevice?.(deviceLabel);
       this.context = new AudioContext();
       await this.context.audioWorklet.addModule(workletUrl);
       this.worklet = new AudioWorkletNode(this.context, 'tiginal-pcm-capture', {
@@ -83,12 +119,20 @@ export class PcmCapture {
         numberOfOutputs: 1,
         outputChannelCount: [1],
       });
-      this.source = this.context.createMediaStreamSource(this.stream);
       this.mutedOutput = this.context.createGain();
       this.mutedOutput.gain.value = 0;
       this.worklet.port.onmessage = event => this.handleWorkletMessage(event.data);
-      this.session = await audio.createSession({ ...input, source: { kind: 'microphone' } });
-      this.source.connect(this.worklet);
+      this.session = await audio.createSession({ ...input, source: { kind: liveSource.kind } });
+      const inputGain = liveSource.kind === 'mixed' ? 0.5 : 1;
+      for (const stream of this.streams) {
+        const source = this.context.createMediaStreamSource(stream);
+        const gain = this.context.createGain();
+        gain.gain.value = inputGain;
+        source.connect(gain);
+        gain.connect(this.worklet);
+        this.sources.push(source);
+        this.inputGains.push(gain);
+      }
       this.worklet.connect(this.mutedOutput);
       this.mutedOutput.connect(this.context.destination);
       await this.context.resume();
@@ -129,7 +173,7 @@ export class PcmCapture {
       return;
     }
 
-    this.source?.disconnect();
+    for (const source of this.sources) source.disconnect();
     this.stopTracks();
     try {
       await this.flushWorklet();
@@ -178,20 +222,120 @@ export class PcmCapture {
   }
 
   private stopTracks(): void {
-    for (const track of this.stream?.getTracks() ?? []) track.stop();
+    for (const stream of this.streams) {
+      for (const track of stream.getTracks()) track.stop();
+    }
   }
 
   private async cleanupCaptureGraph(): Promise<void> {
     this.stopTracks();
-    this.source?.disconnect();
+    for (const source of this.sources) source.disconnect();
+    for (const gain of this.inputGains) gain.disconnect();
     this.worklet?.disconnect();
     this.mutedOutput?.disconnect();
     this.worklet = null;
-    this.source = null;
+    this.sources = [];
+    this.inputGains = [];
     this.mutedOutput = null;
-    this.stream = null;
+    this.streams = [];
     const context = this.context;
     this.context = null;
     if (context && context.state !== 'closed') await context.close();
+  }
+
+  private async acquireStreams(source: LiveAudioSource): Promise<MediaStream[]> {
+    const streams: MediaStream[] = [];
+    try {
+      if (source.kind === 'system' || source.kind === 'mixed') {
+        streams.push(await this.acquireSystemAudio(source.kind));
+      }
+      if (source.kind === 'microphone' || source.kind === 'mixed') {
+        const microphone = await this.acquireMicrophone(source.microphone);
+        streams.push(microphone);
+        const deviceLabel = microphone.getAudioTracks()[0]?.label;
+        if (deviceLabel) this.callbacks.onDevice?.(deviceLabel);
+      }
+      return streams;
+    } catch (error) {
+      for (const stream of streams) {
+        for (const track of stream.getTracks()) track.stop();
+      }
+      throw error;
+    }
+  }
+
+  private async acquireMicrophone(selection: MicrophoneSelection): Promise<MediaStream> {
+    const constraints: MediaTrackConstraints = {
+      channelCount: 1,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      ...(selection.kind === 'device' ? { deviceId: { exact: selection.deviceId } } : {}),
+    };
+    return navigator.mediaDevices.getUserMedia({ audio: constraints });
+  }
+
+  private async acquireSystemAudio(source: 'system' | 'mixed'): Promise<MediaStream> {
+    const captureId = globalThis.crypto.randomUUID();
+    reportCaptureDiagnostic({ event: 'capture-requested', captureId, source });
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      const error = new Error('System audio capture is unavailable on this platform');
+      reportCaptureDiagnostic({
+        event: 'capture-failed',
+        captureId,
+        name: error.name,
+        message: error.message,
+      });
+      throw error;
+    }
+    let displayStream: MediaStream;
+    try {
+      displayStream = await navigator.mediaDevices.getDisplayMedia(SYSTEM_AUDIO_DISPLAY_MEDIA_OPTIONS);
+    } catch (error) {
+      reportCaptureDiagnostic({
+        event: 'capture-failed',
+        captureId,
+        name: error instanceof Error ? error.name : 'UnknownError',
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+
+    const reportStreamState = (phase: Extract<AudioCaptureDiagnostic, { event: 'stream-state' }>['phase']) => {
+      reportCaptureDiagnostic({
+        event: 'stream-state',
+        captureId,
+        phase,
+        tracks: displayStream.getTracks().map(trackDiagnostic),
+      });
+    };
+    reportStreamState('returned');
+    for (const track of displayStream.getTracks()) {
+      track.addEventListener('mute', () => reportStreamState('track-muted'));
+      track.addEventListener('unmute', () => reportStreamState('track-unmuted'));
+      track.addEventListener('ended', () => reportStreamState('track-ended'));
+    }
+
+    const audioTracks = displayStream.getAudioTracks();
+    // ScreenCaptureKit couples the audio and video tracks to one capture session on macOS.
+    // Keep the video track alive until cleanup, or stopping it also ends system audio.
+    await new Promise(resolve => window.setTimeout(resolve, 100));
+    reportStreamState('settled');
+    const liveAudioTracks = audioTracks.filter(track => track.readyState === 'live');
+    if (liveAudioTracks.length === 0) {
+      for (const track of displayStream.getTracks()) track.stop();
+      const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+      const error = isMac
+        ? new SystemAudioTrackUnavailableError()
+        : new Error('The selected source did not provide a live system audio track');
+      reportCaptureDiagnostic({
+        event: 'capture-failed',
+        captureId,
+        name: error.name,
+        message: error.message,
+      });
+      throw error;
+    }
+    return displayStream;
   }
 }

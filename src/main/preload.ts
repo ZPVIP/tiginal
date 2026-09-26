@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import type {
+  AudioCaptureDiagnostic,
   AudioRendererApi,
   AudioSessionEvent,
   CreateAudioSessionInput,
@@ -21,6 +22,12 @@ import type {
 declare const window: any;
 
 const audio: AudioRendererApi = {
+  getInputCapabilities: () => ipcRenderer.invoke('audio:get-input-capabilities'),
+  getSystemAudioPermissionInfo: () => ipcRenderer.invoke('audio:get-system-audio-permission-info'),
+  openSystemAudioSettings: () => ipcRenderer.invoke('audio:open-system-audio-settings'),
+  reportCaptureDiagnostic: (diagnostic: AudioCaptureDiagnostic) => (
+    ipcRenderer.send('audio:capture-diagnostic', diagnostic)
+  ),
   listSpeechProviders: () => ipcRenderer.invoke('audio:list-speech-providers'),
   getSpeechProviderCredential: (id: string) => (
     ipcRenderer.invoke('audio:get-speech-provider-credential', id)

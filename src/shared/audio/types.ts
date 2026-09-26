@@ -135,13 +135,99 @@ export interface AudioSessionTranslationConfig {
   terminology?: string[];
 }
 
+export const AUDIO_INPUT_SOURCE_KINDS = ['microphone', 'system', 'mixed', 'file'] as const;
+export type AudioInputSourceKind = typeof AUDIO_INPUT_SOURCE_KINDS[number];
+
+export type AudioSessionSource =
+  | { kind: 'microphone' }
+  | { kind: 'system' }
+  | { kind: 'mixed' }
+  | { kind: 'file'; name: string };
+
+export interface AudioInputCapabilities {
+  sources: readonly AudioInputSourceKind[];
+}
+
+export const SYSTEM_AUDIO_DISPLAY_MEDIA_OPTIONS = {
+  audio: true,
+  video: true,
+  systemAudio: 'include',
+  windowAudio: 'system',
+  audioSelection: 'preferred',
+} as const;
+
+export interface AudioCaptureTrackDiagnostic {
+  kind: 'audio' | 'video';
+  readyState: 'live' | 'ended';
+  enabled: boolean;
+  muted: boolean;
+  sampleRate?: number;
+  channelCount?: number;
+  displaySurface?: string;
+}
+
+export type AudioCaptureDiagnostic =
+  | {
+    event: 'capture-requested';
+    captureId: string;
+    source: 'system' | 'mixed';
+  }
+  | {
+    event: 'stream-state';
+    captureId: string;
+    phase: 'returned' | 'settled' | 'track-muted' | 'track-unmuted' | 'track-ended';
+    tracks: AudioCaptureTrackDiagnostic[];
+  }
+  | {
+    event: 'capture-failed';
+    captureId: string;
+    name: string;
+    message: string;
+  };
+
+export const MAC_MEDIA_ACCESS_STATUSES = [
+  'not-determined',
+  'granted',
+  'denied',
+  'restricted',
+  'unknown',
+] as const;
+export type MacMediaAccessStatus = typeof MAC_MEDIA_ACCESS_STATUSES[number];
+
+export type SystemAudioPermissionInfo =
+  | { kind: 'unsupported' }
+  | {
+    kind: 'macos';
+    screenStatus: MacMediaAccessStatus;
+    permissionOwner: 'application' | 'launcher';
+  };
+
+export function shouldShowSystemAudioPermissionGuide(
+  permissionInfo: SystemAudioPermissionInfo,
+  dismissedForSession: boolean,
+): boolean {
+  if (permissionInfo.kind !== 'macos' || dismissedForSession) return false;
+
+  switch (permissionInfo.screenStatus) {
+    case 'not-determined':
+    case 'denied':
+    case 'restricted':
+      return true;
+    case 'granted':
+    case 'unknown':
+      return false;
+    default: {
+      const _exhaustive: never = permissionInfo.screenStatus;
+      return _exhaustive;
+    }
+  }
+}
+
 export interface CreateAudioSessionInput {
   providerId: string;
   language?: string;
   bookedWords?: string[];
-  source?:
-    | { kind: 'microphone' }
-    | { kind: 'file'; name: string };
+  source: AudioSessionSource;
   translation?: AudioSessionTranslationConfig;
 }
 
@@ -172,6 +258,10 @@ export interface SpeechConnectionTestResult {
 }
 
 export interface AudioRendererApi {
+  getInputCapabilities(): Promise<AudioInputCapabilities>;
+  getSystemAudioPermissionInfo(): Promise<SystemAudioPermissionInfo>;
+  openSystemAudioSettings(): Promise<void>;
+  reportCaptureDiagnostic(diagnostic: AudioCaptureDiagnostic): void;
   listSpeechProviders(): Promise<SpeechProvider[]>;
   getSpeechProviderCredential(id: string): Promise<string | null>;
   addSpeechProvider(input: SpeechProviderInput): Promise<SpeechProvider>;

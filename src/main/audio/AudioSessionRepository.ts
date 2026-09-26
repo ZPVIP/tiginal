@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import type { AudioSessionSource } from '../../shared/audio/types';
 
 export type AudioSessionStatus =
   | 'connecting'
@@ -10,9 +11,7 @@ export type AudioSessionStatus =
 
 export interface NewAudioSessionRecord {
   id: string;
-  source:
-    | { kind: 'microphone' }
-    | { kind: 'file'; name: string };
+  source: AudioSessionSource;
   recordingPath: string | null;
   providerId: string;
   language: string;

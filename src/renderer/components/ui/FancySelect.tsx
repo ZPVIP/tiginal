@@ -19,6 +19,7 @@ interface FancySelectProps {
   listClassName?: string;
   leftIcon?: React.ReactNode;
   disabled?: boolean;
+  onOpen?: () => void;
 }
 
 export function FancySelect({
@@ -31,6 +32,7 @@ export function FancySelect({
   listClassName,
   leftIcon,
   disabled = false,
+  onOpen,
 }: FancySelectProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -83,12 +85,16 @@ export function FancySelect({
         tabIndex={disabled ? -1 : 0}
         aria-disabled={disabled}
         onClick={() => {
-          if (!disabled) setOpen(v => !v);
+          if (!disabled) {
+            if (!open) onOpen?.();
+            setOpen(v => !v);
+          }
         }}
         onKeyDown={(e) => {
           if (disabled) return;
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
+            if (!open) onOpen?.();
             setOpen(v => !v);
           }
           if (e.key === 'Escape') setOpen(false);

@@ -73,7 +73,7 @@ export function LiveWaveformCanvas({ peaks, active }: LiveWaveformCanvasProps) {
   return (
     <canvas
       ref={canvasRef}
-      aria-label={active ? 'Live microphone waveform' : 'Microphone waveform'}
+      aria-label={active ? 'Live audio waveform' : 'Audio waveform'}
       className="h-16 w-full rounded-lg bg-surface-light"
     />
   );

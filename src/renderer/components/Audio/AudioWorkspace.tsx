@@ -1,24 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileAudio, FolderOpen, Mic, Radio, Trash2, Waves } from 'lucide-react';
+import { AudioLines, FileAudio, FolderOpen, Mic, Radio, Trash2, Volume2, Waves } from 'lucide-react';
 import {
   isR2T2Protocol,
+  shouldShowSystemAudioPermissionGuide,
+  type AudioInputSourceKind,
   type AudioSessionEvent,
   type SpeechProvider,
+  type SystemAudioPermissionInfo,
   type TranslationEngineCandidate,
   type TranslationLatencyMode,
 } from '../../../shared/audio/types';
 import { defaultT3POInstructions } from '../../../shared/audio/t3po-prompt';
 import { PcmCapture } from '../../audio/PcmCapture';
 import {
+  DEFAULT_MICROPHONE_SELECTION,
+  listMicrophoneDevices,
+  microphoneSelectionValue,
+  type MicrophoneDeviceOption,
+  type MicrophoneSelection,
+} from '../../audio/MicrophoneDevices';
+import {
   AudioFileTranscriber,
   inspectAudioFile,
   type AudioFileMetadata,
 } from '../../audio/AudioFileTranscriber';
-import { AudioControlsPanel, type AudioInputSource } from './AudioControlsPanel';
+import { AudioControlsPanel } from './AudioControlsPanel';
 import { AudioWaveformPlayer } from './AudioWaveformPlayer';
 import { LiveWaveformCanvas } from './LiveWaveformCanvas';
+import { SystemAudioPermissionDialog } from './SystemAudioPermissionDialog';
 import { TranscriptEditor } from './TranscriptEditor';
 import { TranslationEditor } from './TranslationEditor';
+
+const SYSTEM_AUDIO_PERMISSION_GUIDE_DISMISSED_KEY = 'tiginal:system-audio-permission-guide-dismissed';
 
 type WorkbenchState =
   | { kind: 'idle' }
@@ -32,6 +45,23 @@ type WorkbenchState =
 
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function storageHasFlag(storage: Storage, key: string): boolean {
+  try {
+    return storage.getItem(key) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function setStorageFlag(storage: Storage, key: string, enabled: boolean): void {
+  try {
+    if (enabled) storage.setItem(key, 'true');
+    else storage.removeItem(key);
+  } catch {
+    // Storage can be unavailable in restricted renderer contexts.
+  }
 }
 
 function technicalTerms(value: string): string[] {
@@ -52,7 +82,7 @@ function isBusy(state: WorkbenchState): boolean {
 function statusLabel(state: WorkbenchState): string {
   switch (state.kind) {
     case 'idle': return 'Ready';
-    case 'requesting-permission': return 'Requesting microphone permission';
+    case 'requesting-permission': return 'Requesting audio permission';
     case 'connecting': return 'Connecting to speech provider';
     case 'recording': return 'Listening';
     case 'transcribing-file': return `Transcribing ${Math.round(state.progress * 100)}%`;
@@ -101,10 +131,14 @@ const revealTitle = isMac ? 'Reveal in Finder' : isWin ? 'Reveal in File Explore
 export function AudioWorkspace() {
   const [providers, setProviders] = useState<SpeechProvider[]>([]);
   const [providerId, setProviderId] = useState('');
-  const [source, setSource] = useState<AudioInputSource>('microphone');
+  const [source, setSource] = useState<AudioInputSourceKind>('microphone');
+  const [availableSources, setAvailableSources] = useState<readonly AudioInputSourceKind[]>(['microphone', 'file']);
   const [language, setLanguage] = useState('en');
   const [terms, setTerms] = useState('');
-  const [microphoneDevice, setMicrophoneDevice] = useState('System Default');
+  const [microphoneSelection, setMicrophoneSelection] = useState<MicrophoneSelection>(DEFAULT_MICROPHONE_SELECTION);
+  const [microphoneOptions, setMicrophoneOptions] = useState<MicrophoneDeviceOption[]>([
+    { selection: DEFAULT_MICROPHONE_SELECTION, label: 'System Default' },
+  ]);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [fileMetadata, setFileMetadata] = useState<AudioFileMetadata | null>(null);
   const [fileUrl, setFileUrl] = useState('');
@@ -131,11 +165,16 @@ export function AudioWorkspace() {
   const [translationStatus, setTranslationStatus] = useState<'idle' | 'deciding' | 'waiting' | 'translating' | 'completed' | 'failed'>('idle');
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [isStaticTranslating, setIsStaticTranslating] = useState(false);
+  const [systemAudioPermissionInfo, setSystemAudioPermissionInfo] = useState<
+    Extract<SystemAudioPermissionInfo, { kind: 'macos' }> | null
+  >(null);
+  const [systemAudioPermissionDialogOpen, setSystemAudioPermissionDialogOpen] = useState(false);
 
   const captureRef = useRef<PcmCapture | null>(null);
   const fileTranscriberRef = useRef<AudioFileTranscriber | null>(null);
   const committedTextRef = useRef('');
-  const activeSourceRef = useRef<AudioInputSource>('microphone');
+  const activeSourceRef = useRef<AudioInputSourceKind>('microphone');
+  const microphonePermissionGrantedRef = useRef(false);
   const activeRecordingPathRef = useRef('');
   const busy = isBusy(state);
   const editable = !busy;
@@ -210,6 +249,24 @@ export function AudioWorkspace() {
     }
   }, []);
 
+  const reloadMicrophoneDevices = useCallback(async (requestPermission = false) => {
+    const options = await listMicrophoneDevices(requestPermission);
+    if (requestPermission) microphonePermissionGrantedRef.current = true;
+    setMicrophoneOptions(options);
+    setMicrophoneSelection(current => (
+      options.some(option => microphoneSelectionValue(option.selection) === microphoneSelectionValue(current))
+        ? current
+        : DEFAULT_MICROPHONE_SELECTION
+    ));
+  }, []);
+
+  const requestMicrophoneDevices = useCallback(() => {
+    if (busy) return;
+    void reloadMicrophoneDevices(!microphonePermissionGrantedRef.current).catch(error => {
+      setState({ kind: 'failed', message: messageFromError(error) });
+    });
+  }, [busy, reloadMicrophoneDevices]);
+
   useEffect(() => {
     const audio = window.electron?.audio;
     if (!audio) {
@@ -219,6 +276,23 @@ export function AudioWorkspace() {
 
     void reloadProviders();
     void reloadTranslationCandidates();
+    void audio.getInputCapabilities()
+      .then(capabilities => {
+        setAvailableSources(capabilities.sources);
+        setSource(current => capabilities.sources.includes(current) ? current : 'microphone');
+      })
+      .catch(() => setAvailableSources(['microphone', 'file']));
+    void audio.getSystemAudioPermissionInfo()
+      .then(info => {
+        if (info.kind !== 'macos') return;
+        setSystemAudioPermissionInfo(info);
+        const dismissed = storageHasFlag(window.sessionStorage, SYSTEM_AUDIO_PERMISSION_GUIDE_DISMISSED_KEY);
+        if (shouldShowSystemAudioPermissionGuide(info, dismissed)) {
+          setSystemAudioPermissionDialogOpen(true);
+        }
+      })
+      .catch(() => undefined);
+    void reloadMicrophoneDevices().catch(() => undefined);
 
     const handleSpeechUpdate = () => {
       void reloadProviders();
@@ -250,7 +324,17 @@ export function AudioWorkspace() {
       window.removeEventListener('settings-closed', handleSettingsClosed);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [reloadProviders, reloadTranslationCandidates]);
+  }, [reloadMicrophoneDevices, reloadProviders, reloadTranslationCandidates]);
+
+  useEffect(() => {
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices?.addEventListener) return;
+    const handleDeviceChange = () => {
+      void reloadMicrophoneDevices().catch(() => undefined);
+    };
+    mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    return () => mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+  }, [reloadMicrophoneDevices]);
 
   useEffect(() => () => {
     void captureRef.current?.abort();
@@ -366,7 +450,7 @@ export function AudioWorkspace() {
     if (event.kind === 'provider-event') {
       switch (event.event.kind) {
         case 'connected':
-          setState(activeSourceRef.current === 'microphone'
+          setState(activeSourceRef.current !== 'file'
             ? { kind: 'recording' }
             : { kind: 'transcribing-file', progress: 0 });
           return;
@@ -406,7 +490,7 @@ export function AudioWorkspace() {
       const recPath = event.recordingPath ?? '';
       setRecordingPath(recPath);
       activeRecordingPathRef.current = recPath;
-      if (activeSourceRef.current === 'microphone' && recPath) void loadRecordingUrl(recPath);
+      if (activeSourceRef.current !== 'file' && recPath) void loadRecordingUrl(recPath);
 
       if (event.translation) {
         setEditableTranslation(event.translation);
@@ -437,18 +521,23 @@ export function AudioWorkspace() {
     setTranslationStatus('idle');
   }, []);
 
-  const startMicrophone = useCallback(async () => {
+  const startLiveCapture = useCallback(async () => {
     if (captureRef.current || fileTranscriberRef.current || !selectedProvider || !confirmDiscardEdits()) return;
     resetTranscript();
     setRecordingUrl('');
     setRecordingPath('');
     setLivePeaks([]);
-    activeSourceRef.current = 'microphone';
+    activeSourceRef.current = source;
     setState({ kind: 'requesting-permission' });
 
     const capture = new PcmCapture({
-      onPermissionGranted: () => setState({ kind: 'connecting' }),
-      onDevice: setMicrophoneDevice,
+      onPermissionGranted: () => {
+        if (source === 'system' || source === 'mixed') {
+          setSystemAudioPermissionDialogOpen(false);
+        }
+        setState({ kind: 'connecting' });
+      },
+      onDevice: () => void reloadMicrophoneDevices().catch(() => undefined),
       onPeak: peak => setLivePeaks(previous => [...previous.slice(-1_599), peak]),
       onSessionEvent: handleSessionEvent,
     });
@@ -469,12 +558,20 @@ export function AudioWorkspace() {
     } : undefined;
 
     try {
-      const snapshot = await capture.start({
-        providerId: selectedProvider.id,
-        language,
-        bookedWords: technicalTerms(terms),
-        translation: translationConfig,
-      });
+      const liveSource = source === 'mixed'
+        ? { kind: 'mixed' as const, microphone: microphoneSelection }
+        : source === 'system'
+          ? { kind: 'system' as const }
+          : { kind: 'microphone' as const, microphone: microphoneSelection };
+      const snapshot = await capture.start(
+        {
+          providerId: selectedProvider.id,
+          language,
+          bookedWords: technicalTerms(terms),
+          translation: translationConfig,
+        },
+        liveSource,
+      );
       const recPath = snapshot.recordingPath ?? '';
       activeRecordingPathRef.current = recPath;
       setRecordingPath(recPath);
@@ -487,9 +584,12 @@ export function AudioWorkspace() {
     failWithTranscript,
     handleSessionEvent,
     language,
+    microphoneSelection,
     realtimeTranslation,
     resetTranscript,
+    reloadMicrophoneDevices,
     selectedProvider,
+    source,
     targetLanguage,
     terms,
     translationCandidates,
@@ -559,20 +659,20 @@ export function AudioWorkspace() {
   ]);
 
   const start = useCallback(() => {
-    if (source === 'microphone') void startMicrophone();
-    else void startFileTranscription();
-  }, [source, startFileTranscription, startMicrophone]);
+    if (source === 'file') void startFileTranscription();
+    else void startLiveCapture();
+  }, [source, startFileTranscription, startLiveCapture]);
 
   const stop = useCallback(async () => {
     setState({ kind: 'finalizing' });
     try {
-      if (activeSourceRef.current === 'microphone') await captureRef.current?.stop();
+      if (activeSourceRef.current !== 'file') await captureRef.current?.stop();
       else fileTranscriberRef.current?.requestFinish();
     } catch (error) {
       failWithTranscript(messageFromError(error));
     } finally {
       captureRef.current = null;
-      if (activeSourceRef.current === 'microphone') fileTranscriberRef.current = null;
+      if (activeSourceRef.current !== 'file') fileTranscriberRef.current = null;
     }
   }, [failWithTranscript]);
 
@@ -583,7 +683,7 @@ export function AudioWorkspace() {
         fileTranscriberRef.current?.abort(),
       ]);
       const path = activeRecordingPathRef.current;
-      if (path && activeSourceRef.current === 'microphone') await loadRecordingUrl(path);
+      if (path && activeSourceRef.current !== 'file') await loadRecordingUrl(path);
       setEditableText(committedTextRef.current);
       setPartialText('');
       setState(committedTextRef.current ? { kind: 'ready' } : { kind: 'idle' });
@@ -671,7 +771,7 @@ export function AudioWorkspace() {
   ]);
 
   const playerUrl = source === 'file' ? fileUrl : recordingUrl;
-  const canStart = Boolean(selectedProvider) && (source === 'microphone' || Boolean(audioFile));
+  const canStart = Boolean(selectedProvider) && (source !== 'file' || Boolean(audioFile));
   const fileProgress = state.kind === 'transcribing-file' ? state.progress : 0;
 
   const selectedEngine = useMemo(
@@ -733,13 +833,30 @@ export function AudioWorkspace() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
+      <SystemAudioPermissionDialog
+        isOpen={systemAudioPermissionDialogOpen}
+        permissionInfo={systemAudioPermissionInfo}
+        onClose={() => {
+          setStorageFlag(window.sessionStorage, SYSTEM_AUDIO_PERMISSION_GUIDE_DISMISSED_KEY, true);
+          setSystemAudioPermissionDialogOpen(false);
+        }}
+        onOpenSettings={() => {
+          void window.electron?.audio.openSystemAudioSettings().catch(error => {
+            setState({ kind: 'failed', message: messageFromError(error) });
+          });
+        }}
+      />
       <div className="audio-workspace-grid min-h-0 flex-1">
         <AudioControlsPanel
           source={source}
+          availableSources={availableSources}
           onSourceChange={nextSource => {
             if (!busy) setSource(nextSource);
           }}
-          microphoneDevice={microphoneDevice}
+          microphoneSelection={microphoneSelection}
+          microphoneOptions={microphoneOptions}
+          onMicrophoneSelectionChange={setMicrophoneSelection}
+          onRequestMicrophoneDevices={requestMicrophoneDevices}
           file={audioFile}
           fileMetadata={fileMetadata}
           onFileChange={selectFile}
@@ -822,7 +939,13 @@ export function AudioWorkspace() {
       <footer className="shrink-0 border-t border-border bg-surface/70 px-4 py-3">
         <div className="mb-2 flex items-center justify-between gap-3 text-[11px] text-text-muted">
           <div className="flex min-w-0 items-center gap-2">
-            {source === 'microphone' ? <Mic size={13} /> : <FileAudio size={13} />}
+            {source === 'file'
+              ? <FileAudio size={13} />
+              : source === 'system'
+                ? <Volume2 size={13} />
+                : source === 'mixed'
+                  ? <AudioLines size={13} />
+                  : <Mic size={13} />}
             <span className="shrink-0">{statusLabel(state)}</span>
             {state.kind === 'recording' && <Radio size={12} className="animate-pulse text-red-400" />}
             {recordingPath && (
@@ -852,7 +975,7 @@ export function AudioWorkspace() {
           {selectedProvider && <span className="shrink-0">{selectedProvider.name}</span>}
         </div>
 
-        {source === 'microphone' && busy ? (
+        {source !== 'file' && busy ? (
           <div className="flex items-center gap-3">
             <Waves size={16} className="shrink-0 text-primary" />
             <LiveWaveformCanvas peaks={livePeaks} active />

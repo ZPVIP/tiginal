@@ -75,7 +75,7 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
             {props.partialText && <span className="text-text-muted">{props.partialText}</span>}
             {!streamingText && (
               <span className="text-text-muted">
-                {props.busy ? 'Waiting for speech...' : 'Start a microphone session or transcribe an audio file.'}
+                {props.busy ? 'Waiting for speech...' : 'Start a live audio session or transcribe an audio file.'}
               </span>
             )}
           </div>

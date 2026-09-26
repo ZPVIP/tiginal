@@ -14,6 +14,7 @@
     "build": "npm run build:main && npm run build:renderer",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
+    "pretest": "node node_modules/electron/install.js",
     "test:mcp": "npm run build:main && node --test test/mcp-protocol.test.js test/mcp-service.test.js",
     "test:cache": "npm run build:main && node --test test/ai-cache.test.js",
     "start": "npm run build && node scripts/start-electron.cjs",
@@ -23,6 +24,14 @@
     "test": "npm run build:main && node --test test/*.test.js",
     "test:credentials": "npm run build:main && node scripts/credential-harness.cjs",
     "release": "bash scripts/release-mac.sh"
+  },
+  "allowScripts": {
+    "argon2@0.44.0": true,
+    "better-sqlite3@13.0.3": true,
+    "esbuild@0.27.2": true,
+    "fsevents@2.3.3": true,
+    "node-pty@1.1.0": true,
+    "tesseract.js@7.0.0": false
   },
   "author": "",
   "license": "MIT",

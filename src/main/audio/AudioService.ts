@@ -62,9 +62,9 @@ export class AudioService {
       throw new Error(`"${resolved.provider.name}" is a T3PO translation service; choose an R2T2 provider for speech recognition`);
     }
 
-    const isMicrophone = input.source?.kind !== 'file';
+    const isLiveSource = input.source.kind !== 'file';
     const startedAt = new Date();
-    const recordingPath = isMicrophone
+    const recordingPath = isLiveSource
       ? createAudioRecordingPath(this.audioDirectory, startedAt)
       : null;
     const writer = recordingPath ? new PcmWavWriter(recordingPath) : null;
@@ -102,7 +102,7 @@ export class AudioService {
 
     this.repository.insert({
       id,
-      source: input.source ?? { kind: 'microphone' },
+      source: input.source,
       recordingPath,
       providerId: provider.id,
       language,
