@@ -2,8 +2,11 @@ import * as crypto from 'crypto';
 import WebSocket, { type RawData } from 'ws';
 import type { SpeechProvider, TranscriptEvent } from '../../shared/audio/types';
 import {
+  getSpeechSessionRolloverSeconds,
   R2T2_FRAME_DURATION_MS,
   R2T2_FRAME_SAMPLES,
+  R2T2_SAMPLE_RATE,
+  shouldRolloverSpeechSession,
   type SpeechProtocolState,
 } from '../../shared/audio/r2t2';
 import { createSpeechProtocolAdapter, type SpeechProtocolAdapter } from './protocols';
@@ -83,6 +86,13 @@ export class SpeechStreamClient {
   private readonly pendingFrames: Int16Array[] = [];
   private queuedBytes = 0;
   private flushTimer: NodeJS.Timeout | null = null;
+  private currentLanguage: string;
+  private samplesInCurrentSocket = 0;
+  private isRollingOver = false;
+  private rolloverTimer: NodeJS.Timeout | null = null;
+  private rolloverPromise: Promise<void> | null = null;
+  private readonly retiredSockets = new Set<WebSocket>();
+  private readonly rolloverSeconds: number | null;
 
   constructor(
     private readonly provider: SpeechProvider,
@@ -90,6 +100,15 @@ export class SpeechStreamClient {
     private readonly onEvent: (event: TranscriptEvent) => void,
   ) {
     this.adapter = createSpeechProtocolAdapter(provider.protocol);
+    this.currentLanguage = provider.defaultLanguage;
+    if (shouldRolloverSpeechSession(provider)) {
+      this.rolloverSeconds = getSpeechSessionRolloverSeconds(
+        provider.maxSessionSeconds,
+        provider.options,
+      );
+    } else {
+      this.rolloverSeconds = null;
+    }
     void this.completion.promise.catch(() => undefined);
     void this.protocolReady.promise.catch(() => undefined);
   }
@@ -101,6 +120,7 @@ export class SpeechStreamClient {
   async connect(language = this.provider.defaultLanguage): Promise<void> {
     if (this.state !== 'idle') throw new Error(`${this.protocolLabel} client has already been started`);
     this.state = 'connecting';
+    this.currentLanguage = language;
     const socket = new WebSocket(this.adapter.buildUrl(this.provider, this.credential));
     this.socket = socket;
     socket.binaryType = 'arraybuffer';
@@ -115,6 +135,7 @@ export class SpeechStreamClient {
         credential: this.credential,
         options: this.provider.options,
       }));
+      this.scheduleRolloverTimer();
       opened.resolve();
     });
     socket.on('message', data => this.handleMessage(data));
@@ -124,7 +145,11 @@ export class SpeechStreamClient {
       this.protocolReady.reject(wrapped);
       this.completion.reject(wrapped);
     });
-    socket.once('close', (code, reason) => this.handleClose(code, reason.toString()));
+    socket.once('close', (code, reason) => {
+      if (this.socket === socket) {
+        this.handleClose(code, reason.toString());
+      }
+    });
 
     try {
       await withTimeout(opened.promise, CONNECT_TIMEOUT_MS, `${this.protocolLabel} connection timed out`);
@@ -149,13 +174,34 @@ export class SpeechStreamClient {
     const copy = frame.slice();
     this.pendingFrames.push(copy);
     this.queuedBytes += copy.byteLength;
+    this.samplesInCurrentSocket += copy.length;
     this.flushPendingFrames();
+
+    if (
+      this.rolloverSeconds !== null
+      && !this.isRollingOver
+      && this.samplesInCurrentSocket >= this.rolloverSeconds * R2T2_SAMPLE_RATE
+    ) {
+      void this.triggerRollover().catch(error => {
+        const message = errorMessage(error);
+        this.onEvent({ kind: 'error', code: `${this.protocolLabel}_ROLLOVER_FAILED`, message });
+        this.completion.reject(new Error(message));
+      });
+    }
   }
 
   async finish(): Promise<void> {
     if (this.state === 'closed') return;
     if (this.state !== 'open' || !this.socket) throw new Error(`${this.protocolLabel} connection is not open`);
     this.state = 'finishing';
+    this.clearRolloverTimer();
+    if (this.rolloverPromise) {
+      try {
+        await this.rolloverPromise;
+      } catch {
+        // Handled by rollover failure
+      }
+    }
     await this.drainPendingFrames();
     const socket = this.socket;
     if (!socket) {
@@ -174,12 +220,13 @@ export class SpeechStreamClient {
       await this.waitForFinalResponse();
     } finally {
       this.closeSocket();
+      this.closeRetiredSockets();
     }
   }
 
   /** Resolves once at most `bytes` of audio wait to be sent, so a file can stream as fast as the server keeps up. */
   async waitForQueueBelow(bytes: number): Promise<void> {
-    while (this.queuedBytes > bytes && this.state === 'open') {
+    while ((this.queuedBytes > bytes || this.isRollingOver) && this.state === 'open') {
       this.assertProgress(`${this.protocolLabel} stopped accepting audio`);
       await sleep(QUEUE_POLL_MS);
     }
@@ -188,8 +235,10 @@ export class SpeechStreamClient {
   close(): void {
     if (this.state === 'closed') return;
     this.state = 'closed';
+    this.clearRolloverTimer();
     this.completion.resolve();
     this.closeSocket();
+    this.closeRetiredSockets();
   }
 
   private handleMessage(data: RawData): void {
@@ -238,6 +287,7 @@ export class SpeechStreamClient {
   }
 
   private flushPendingFrames(): void {
+    if (this.isRollingOver) return;
     const socket = this.socket;
     if (this.state !== 'open' && this.state !== 'finishing') return;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
@@ -255,6 +305,170 @@ export class SpeechStreamClient {
       this.lastProgressAt = Date.now();
     }
     this.clearFlushTimer();
+  }
+
+  private scheduleRolloverTimer(): void {
+    this.clearRolloverTimer();
+    if (this.state !== 'open' || this.rolloverSeconds === null || this.rolloverSeconds <= 0) return;
+    this.rolloverTimer = setTimeout(() => {
+      this.rolloverTimer = null;
+      void this.triggerRollover().catch(error => {
+        const message = errorMessage(error);
+        this.onEvent({ kind: 'error', code: `${this.protocolLabel}_ROLLOVER_FAILED`, message });
+        this.completion.reject(new Error(message));
+      });
+    }, Math.round(this.rolloverSeconds * 1_000));
+  }
+
+  private clearRolloverTimer(): void {
+    if (this.rolloverTimer) {
+      clearTimeout(this.rolloverTimer);
+      this.rolloverTimer = null;
+    }
+  }
+
+  private async triggerRollover(): Promise<void> {
+    if (this.state !== 'open' || this.isRollingOver || !this.socket) return;
+    this.isRollingOver = true;
+    this.clearRolloverTimer();
+    this.rolloverPromise = this.performRollover().finally(() => {
+      this.isRollingOver = false;
+      this.rolloverPromise = null;
+    });
+    await this.rolloverPromise;
+  }
+
+  private async performRollover(): Promise<void> {
+    const oldSocket = this.socket;
+    if (!oldSocket || this.state !== 'open') return;
+
+    this.samplesInCurrentSocket = 0;
+
+    const nextSocket = new WebSocket(this.adapter.buildUrl(this.provider, this.credential));
+    nextSocket.binaryType = 'arraybuffer';
+
+    const opened = deferred();
+    nextSocket.once('open', () => {
+      if ((this.state as ClientState) === 'closed') {
+        nextSocket.close(1000);
+        opened.reject(new Error('Client closed'));
+        return;
+      }
+      nextSocket.send(this.adapter.buildOpeningMessage({
+        requestId: `tiginal-${crypto.randomUUID()}`,
+        language: this.currentLanguage,
+        credential: this.credential,
+        options: this.provider.options,
+      }));
+      opened.resolve();
+    });
+
+    nextSocket.on('message', data => this.handleMessage(data));
+    nextSocket.once('error', error => {
+      const wrapped = new Error(`${this.protocolLabel} rollover connection failed: ${error.message}`);
+      opened.reject(wrapped);
+      if (this.socket === nextSocket) {
+        this.completion.reject(wrapped);
+        this.close();
+      }
+    });
+    nextSocket.once('close', (code, reason) => {
+      if (this.socket === nextSocket) {
+        this.handleClose(code, reason.toString());
+      }
+    });
+
+    try {
+      await withTimeout(opened.promise, CONNECT_TIMEOUT_MS, `${this.protocolLabel} rollover connection timed out`);
+    } catch (error) {
+      nextSocket.removeAllListeners();
+      nextSocket.on('error', () => undefined);
+      if (nextSocket.readyState === WebSocket.OPEN || nextSocket.readyState === WebSocket.CONNECTING) {
+        nextSocket.close(1000);
+      }
+      throw error;
+    }
+
+    if ((this.state as ClientState) === 'closed') {
+      nextSocket.removeAllListeners();
+      nextSocket.on('error', () => undefined);
+      nextSocket.close(1000);
+      return;
+    }
+
+    this.socket = nextSocket;
+    this.sequence = 1;
+    this.isRollingOver = false;
+    this.scheduleRolloverTimer();
+    this.retireSocket(oldSocket);
+    this.flushPendingFrames();
+  }
+
+  private retireSocket(oldSocket: WebSocket): void {
+    this.retiredSockets.add(oldSocket);
+    oldSocket.removeAllListeners();
+
+    const silenceSamples = this.adapter.tailSilenceSamples();
+    if (silenceSamples > 0 && oldSocket.readyState === WebSocket.OPEN) {
+      oldSocket.send(this.adapter.encodeAudioFrame(new Int16Array(silenceSamples), 999_999));
+    }
+    if (oldSocket.readyState === WebSocket.OPEN) {
+      oldSocket.send(this.adapter.eosMarker());
+    }
+
+    const cleanupRetired = () => {
+      clearTimeout(forceCloseTimer);
+      this.retiredSockets.delete(oldSocket);
+      oldSocket.removeAllListeners();
+      oldSocket.on('error', () => undefined);
+      if (oldSocket.readyState === WebSocket.OPEN || oldSocket.readyState === WebSocket.CONNECTING) {
+        oldSocket.close(1000);
+      }
+    };
+
+    const forceCloseTimer = setTimeout(cleanupRetired, 5_000);
+    forceCloseTimer.unref?.();
+
+    const self = this;
+    const retiredState: SpeechProtocolState = {
+      get committedText() {
+        return self.protocolState.committedText;
+      },
+      set committedText(val: string) {
+        self.protocolState.committedText = val;
+      },
+      partialText: this.protocolState.partialText,
+      eosSent: true,
+    };
+
+    oldSocket.on('message', data => {
+      const text = rawText(data);
+      if (text === null) return;
+      try {
+        const events = this.adapter.readMessage(text, retiredState);
+        for (const event of events) {
+          if (event.kind === 'committed') {
+            this.onEvent(event);
+          }
+        }
+      } catch {
+        // ignore errors on retired socket
+      }
+    });
+
+    oldSocket.once('close', cleanupRetired);
+    oldSocket.once('error', cleanupRetired);
+  }
+
+  private closeRetiredSockets(): void {
+    for (const socket of this.retiredSockets) {
+      socket.removeAllListeners();
+      socket.on('error', () => undefined);
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close(1000);
+      }
+    }
+    this.retiredSockets.clear();
   }
 
   private scheduleQueuePoll(): void {

@@ -10,6 +10,11 @@ const {
   SpeechStreamClient,
   testSpeechConnection,
 } = require('../dist/main/main/audio/SpeechStreamClient.js');
+const {
+  shouldRolloverSpeechSession,
+  getSpeechSessionRolloverSeconds,
+  R2T2_ONLINE_DEMO_LIMIT_SECONDS,
+} = require('../dist/main/shared/audio/r2t2.js');
 
 const options = {
   bookedWords: [],
@@ -317,7 +322,7 @@ test('AudioService ends a time-limited session by audio duration when a file str
     });
   });
   const repository = { insert() {}, updateStatus() {}, updateTranscript() {} };
-  const speechProvider = { ...provider(mock.endpoint), maxSessionSeconds: 1 };
+  const speechProvider = { ...provider(mock.endpoint), maxSessionSeconds: 1, options: { ...options, rollover: false } };
   const providers = { require() { return { provider: speechProvider, credential: 'local-token' }; } };
   const recordingDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'tiginal-audio-limit-'));
   const service = new AudioService(providers, repository, recordingDirectory);
@@ -339,6 +344,133 @@ test('AudioService ends a time-limited session by audio duration when a file str
     const completed = await done;
     assert.ok(completed.durationMs >= 1000 && completed.durationMs < 1200, `duration ${completed.durationMs} ms`);
     assert.ok(receivedSamples < 2 * 16000);
+  } finally {
+    await service.disposeAll();
+    await closeServer(mock.server);
+    fs.rmSync(recordingDirectory, { recursive: true, force: true });
+  }
+});
+
+test('shouldRolloverSpeechSession respects configured maxSessionSeconds (e.g. 20s, 30s, 50s) for R2T2 protocols', () => {
+  assert.equal(R2T2_ONLINE_DEMO_LIMIT_SECONDS, 30);
+  assert.equal(shouldRolloverSpeechSession({ protocol: 'r2t2-rstream', maxSessionSeconds: 20 }), true);
+  assert.equal(shouldRolloverSpeechSession({ protocol: 'r2t2-rstream', maxSessionSeconds: 30 }), true);
+  assert.equal(shouldRolloverSpeechSession({ protocol: 'r2t2-rstream', maxSessionSeconds: 50 }), true);
+  assert.equal(shouldRolloverSpeechSession({ protocol: 'r2t2-native', maxSessionSeconds: 30 }), true);
+  assert.equal(shouldRolloverSpeechSession({ protocol: 't3po', maxSessionSeconds: 30 }), false);
+  assert.equal(shouldRolloverSpeechSession({ protocol: 'r2t2-rstream', maxSessionSeconds: null }), false);
+  assert.equal(
+    shouldRolloverSpeechSession({ protocol: 'r2t2-rstream', maxSessionSeconds: 30, options: { rollover: false } }),
+    false,
+  );
+  assert.equal(
+    shouldRolloverSpeechSession({ protocol: 'r2t2-rstream', maxSessionSeconds: null, options: { testRollover: true } }),
+    true,
+  );
+
+  assert.equal(getSpeechSessionRolloverSeconds(20), 18.5);
+  assert.equal(getSpeechSessionRolloverSeconds(30), 28.5);
+  assert.equal(getSpeechSessionRolloverSeconds(50), 48.5);
+  assert.equal(getSpeechSessionRolloverSeconds(null), null);
+  assert.equal(getSpeechSessionRolloverSeconds(0), null);
+  assert.equal(getSpeechSessionRolloverSeconds(30, { testRolloverSeconds: 0.1 }), 0.1);
+});
+
+test('SpeechStreamClient rolls over to a new WebSocket connection before limit and continues transcription', async () => {
+  const connections = [];
+  const mock = await fakeServer(socket => {
+    const connIndex = connections.length;
+    const connData = { socket, index: connIndex, messages: [] };
+    connections.push(connData);
+
+    socket.on('message', (data, isBinary) => {
+      if (isBinary) {
+        connData.messages.push({ kind: 'audio', bytes: data.length });
+        if (connIndex === 0) {
+          socket.send(JSON.stringify({ msg: { text: 'hello ' } }));
+        } else {
+          socket.send(JSON.stringify({ msg: { text: 'world' } }));
+        }
+        return;
+      }
+      const text = data.toString();
+      if (text === 'YOUDAO_ASR_EOS') {
+        connData.messages.push({ kind: 'eos' });
+        socket.send(JSON.stringify({ final: true }));
+      } else {
+        connData.messages.push({ kind: 'opening', value: JSON.parse(text) });
+        socket.send(JSON.stringify({ status: 'connected' }));
+      }
+    });
+  });
+
+  const events = [];
+  const testProvider = {
+    ...provider(mock.endpoint),
+    maxSessionSeconds: 30,
+    options: {
+      ...options,
+      testRollover: true,
+      testRolloverSeconds: 0.25, // 250ms rollover for fast test
+    },
+  };
+  const client = new SpeechStreamClient(testProvider, 'token', event => events.push(event));
+
+  try {
+    await client.connect('en');
+    await client.waitForProtocolReady();
+
+    // Send first frame to first connection
+    client.sendFrame(new Int16Array(2560));
+
+    // Wait for rollover timer to trigger and establish second connection
+    await new Promise(resolve => {
+      const interval = setInterval(() => {
+        if (connections.length >= 2) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 10);
+    });
+
+    // Send second frame to second connection
+    client.sendFrame(new Int16Array(2560));
+    await client.finish();
+
+    assert.equal(connections.length, 2, 'Should have created two connections');
+    assert.ok(connections[0].messages.some(m => m.kind === 'eos'), 'First connection should receive EOS');
+    assert.ok(connections[1].messages.some(m => m.kind === 'opening'), 'Second connection should receive opening');
+
+    const committed = events.filter(e => e.kind === 'committed').map(e => e.fullText);
+    assert.ok(committed.includes('hello '), 'Committed includes first chunk');
+    assert.ok(committed.includes('hello world'), 'Committed includes second chunk concatenated');
+  } finally {
+    client.close();
+    await closeServer(mock.server);
+  }
+});
+
+test('AudioService does not enforce 30s limit when provider has 30s demo limit', async () => {
+  const mock = await fakeServer(ws => {
+    ws.on('message', (data, isBinary) => {
+      if (!isBinary && data.toString().startsWith('{')) {
+        ws.send(JSON.stringify({ status: 'connected' }));
+      }
+    });
+  });
+  const repository = { insert() {}, updateStatus() {}, updateTranscript() {} };
+  const speechProvider = { ...provider(mock.endpoint), maxSessionSeconds: 30 };
+  const providers = { require() { return { provider: speechProvider, credential: 'token' }; } };
+  const recordingDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'tiginal-audio-demo-'));
+  const service = new AudioService(providers, repository, recordingDirectory);
+
+  try {
+    const session = await service.createSession(
+      { providerId: speechProvider.id, language: 'en', source: { kind: 'microphone', deviceId: 'default' } },
+      () => {},
+    );
+    // When rollover is active, session snapshot's maxSessionSeconds is null so no 30s auto-abort
+    assert.equal(session.maxSessionSeconds, null);
   } finally {
     await service.disposeAll();
     await closeServer(mock.server);

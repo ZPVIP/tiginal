@@ -7,7 +7,7 @@ import type {
   CreateAudioSessionInput,
   TranscriptEvent,
 } from '../../shared/audio/types';
-import { R2T2_SAMPLE_RATE } from '../../shared/audio/r2t2';
+import { R2T2_SAMPLE_RATE, shouldRolloverSpeechSession } from '../../shared/audio/r2t2';
 import { createAudioRecordingPath, defaultAudioDirectory } from './AudioFilename';
 import { AudioSessionRepository } from './AudioSessionRepository';
 import { PcmWavWriter } from './PcmWavWriter';
@@ -80,12 +80,13 @@ export class AudioService {
           },
         }
       : resolved.provider;
+    const shouldRollover = shouldRolloverSpeechSession(provider);
     const snapshot: AudioSessionSnapshot = {
       id,
       providerId: provider.id,
       recordingPath,
       startedAt: startedAt.getTime(),
-      maxSessionSeconds: provider.maxSessionSeconds,
+      maxSessionSeconds: shouldRollover ? null : provider.maxSessionSeconds,
       translation: input.translation,
     };
 
@@ -126,7 +127,7 @@ export class AudioService {
     try {
       await client.connect(language);
       this.repository.updateStatus(id, 'recording', 0);
-      if (provider.maxSessionSeconds !== null) {
+      if (!shouldRollover && provider.maxSessionSeconds !== null) {
         session.limitTimer = setTimeout(() => {
           void this.finishSession(id).catch(error => this.failSession(id, errorMessage(error)));
         }, provider.maxSessionSeconds * 1_000);

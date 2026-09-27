@@ -1,4 +1,4 @@
-import type { SpeechProviderOptions, SpeechProviderProtocol } from './types';
+import type { SpeechProvider, SpeechProviderOptions, SpeechProviderProtocol } from './types';
 
 export const R2T2_SAMPLE_RATE = 16_000;
 export const R2T2_CHANNELS = 1;
@@ -128,4 +128,36 @@ export function eosForProtocol(protocol: SpeechProviderProtocol): string {
 export function tailSilenceSamples(protocol: SpeechProviderProtocol): number {
   if (protocol !== 'r2t2-native') return 0;
   return Math.round(R2T2_SAMPLE_RATE * (R2T2_NATIVE_TAIL_SILENCE_MS / 1_000));
+}
+
+export const R2T2_ONLINE_DEMO_LIMIT_SECONDS = 30;
+
+export function shouldRolloverSpeechSession(
+  provider: Pick<SpeechProvider, 'protocol' | 'maxSessionSeconds'> & {
+    options?: SpeechProviderOptions | Record<string, unknown>;
+  },
+): boolean {
+  if (provider.protocol !== 'r2t2-rstream' && provider.protocol !== 'r2t2-native') {
+    return false;
+  }
+  const opts = provider.options as Record<string, unknown> | undefined;
+  if (opts && typeof opts.rollover === 'boolean') {
+    return opts.rollover;
+  }
+  if (opts && opts.testRollover) {
+    return true;
+  }
+  return typeof provider.maxSessionSeconds === 'number' && provider.maxSessionSeconds > 0;
+}
+
+export function getSpeechSessionRolloverSeconds(
+  maxSessionSeconds: number | null,
+  options?: SpeechProviderOptions | Record<string, unknown>,
+): number | null {
+  const opts = options as Record<string, unknown> | undefined;
+  if (opts && typeof opts.testRolloverSeconds === 'number') {
+    return opts.testRolloverSeconds;
+  }
+  if (maxSessionSeconds === null || maxSessionSeconds <= 0) return null;
+  return maxSessionSeconds <= 2 ? maxSessionSeconds * 0.5 : Math.max(3, maxSessionSeconds - 1.5);
 }
