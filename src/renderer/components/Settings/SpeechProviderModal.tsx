@@ -137,8 +137,8 @@ export function SpeechProviderModal({
   ) => setForm(current => ({ ...current, [key]: value }));
 
   const updateOption = (
-    key: 'smooth' | 'mode' | 'systemPrompt' | 'latencyMode',
-    value: boolean | string,
+    key: 'smooth' | 'mode' | 'systemPrompt' | 'latencyMode' | 'chunkSizeMs',
+    value: boolean | string | number | null,
   ) => setForm(current => ({
     ...current,
     options: { ...current.options, [key]: value },
@@ -306,6 +306,24 @@ export function SpeechProviderModal({
                   <option value="high">High</option>
                 </select>
               </label>
+              <label>
+                <span className={`${labelClass} flex items-center gap-1`}>
+                  Chunk size (ms)
+                  <InfoIcon title="Audio streaming chunk duration in milliseconds (e.g. 160). When set, Tiginal generates chunk timeline, speaker diarization, and SRT subtitles. Leave empty to disable." />
+                </span>
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="20"
+                  step="20"
+                  value={form.options?.chunkSizeMs ?? ''}
+                  placeholder="e.g. 160 (empty to disable)"
+                  onChange={event => updateOption(
+                    'chunkSizeMs',
+                    event.target.value ? Number.parseInt(event.target.value, 10) : null,
+                  )}
+                />
+              </label>
             </div>
 
             <label className="block">
@@ -379,18 +397,35 @@ export function SpeechProviderModal({
                   <option value="fast">Fast</option>
                 </select>
               </label>
-              <div className="flex items-end gap-5 pb-2">
-                <div className="flex items-center gap-2 text-xs text-text-muted">
-                  <Toggle
-                    size="small"
-                    label="Transcript smoothing"
-                    checked={form.options?.smooth ?? false}
-                    onChange={value => updateOption('smooth', value)}
-                  />
-                  Smooth
-                  <InfoIcon title="Adds the instruction 'Smooth the text' to the recognition prompt so the model returns smoother wording. This is a model prompt, not text post-processing." />
-                </div>
-              </div>
+              <label>
+                <span className={`${labelClass} flex items-center gap-1`}>
+                  Chunk size (ms)
+                  <InfoIcon title="R2T2 audio streaming chunk duration in milliseconds (typically 160). When set, Tiginal generates chunk timeline, speaker diarization, and SRT subtitles. Leave empty to disable." />
+                </span>
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="20"
+                  step="20"
+                  value={form.options?.chunkSizeMs ?? ''}
+                  placeholder="e.g. 160 (empty to disable)"
+                  onChange={event => updateOption(
+                    'chunkSizeMs',
+                    event.target.value ? Number.parseInt(event.target.value, 10) : null,
+                  )}
+                />
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2 py-1 text-xs text-text-muted">
+              <Toggle
+                size="small"
+                label="Transcript smoothing"
+                checked={form.options?.smooth ?? false}
+                onChange={value => updateOption('smooth', value)}
+              />
+              Smooth
+              <InfoIcon title="Adds the instruction 'Smooth the text' to the recognition prompt so the model returns smoother wording. This is a model prompt, not text post-processing." />
             </div>
 
             <label className="block">

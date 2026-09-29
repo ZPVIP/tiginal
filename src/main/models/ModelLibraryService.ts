@@ -58,6 +58,23 @@ const CURATED_MODELS: readonly MarketModel[] = [
     featured: true,
     sourceUrl: 'https://huggingface.co/netease-youdao/Confucius4-T3PO-GGUF',
   },
+  {
+    id: 'huggingface:onnx-community/Nemotron-3-Diarization-ONNX:main',
+    name: 'Nemotron-3-Diarization-ONNX',
+    author: 'onnx-community',
+    source: 'huggingface',
+    repoId: 'onnx-community/Nemotron-3-Diarization-ONNX',
+    revision: 'main',
+    updatedAt: null,
+    downloads: null,
+    likes: null,
+    license: 'other',
+    formats: ['other'],
+    capabilities: ['file-batch'],
+    favorite: false,
+    featured: true,
+    sourceUrl: 'https://huggingface.co/onnx-community/Nemotron-3-Diarization-ONNX',
+  },
 ];
 
 type DownloadOrigin = Pick<MarketModel, 'source' | 'repoId' | 'revision'>;

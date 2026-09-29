@@ -29,6 +29,7 @@ export function defaultSpeechProviderOptions(): SpeechProviderOptions {
     systemPrompt: '',
     latencyMode: 'native',
     terminology: [],
+    chunkSizeMs: 160,
   };
 }
 

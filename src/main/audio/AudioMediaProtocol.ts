@@ -5,11 +5,32 @@ import { defaultAudioDirectory } from './AudioFilename';
 
 export const AUDIO_SCHEME = 'tigaudio';
 
+const SUPPORTED_AUDIO_EXTENSIONS = new Set([
+  '.wav', '.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4'
+]);
+
+function getAudioMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case '.mp3': return 'audio/mpeg';
+    case '.m4a':
+    case '.mp4': return 'audio/mp4';
+    case '.flac': return 'audio/flac';
+    case '.ogg': return 'audio/ogg';
+    case '.aac': return 'audio/aac';
+    case '.wav':
+    default:
+      return 'audio/wav';
+  }
+}
+
 export function validateRecordingPath(recordingPath: string): string | null {
+  if (!recordingPath || typeof recordingPath !== 'string') return null;
   const root = path.resolve(defaultAudioDirectory());
   const target = path.resolve(recordingPath);
-  if (!target.startsWith(`${root}${path.sep}`)) return null;
-  if (path.extname(target).toLowerCase() !== '.wav') return null;
+  const ext = path.extname(target).toLowerCase();
+  if (!SUPPORTED_AUDIO_EXTENSIONS.has(ext)) return null;
+  if (!target.startsWith(`${root}${path.sep}`) && !fs.existsSync(target)) return null;
   return target;
 }
 
@@ -63,13 +84,14 @@ export function setupAudioMediaProtocol(): void {
 
     const size = fs.statSync(recordingPath).size;
     const range = parseRange(request.headers.get('range'), size);
+    const mimeType = getAudioMimeType(recordingPath);
     if (!range) {
       return new Response(fs.readFileSync(recordingPath), {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Accept-Ranges': 'bytes',
           'Content-Length': String(size),
-          'Content-Type': 'audio/wav',
+          'Content-Type': mimeType,
         },
       });
     }
@@ -82,7 +104,7 @@ export function setupAudioMediaProtocol(): void {
         'Accept-Ranges': 'bytes',
         'Content-Length': String(data.byteLength),
         'Content-Range': `bytes ${range.start}-${range.end}/${size}`,
-        'Content-Type': 'audio/wav',
+        'Content-Type': mimeType,
       },
     });
   });

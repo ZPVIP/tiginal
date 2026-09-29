@@ -212,7 +212,7 @@ test('SpeechStreamClient refuses T3PO providers because they translate text', ()
   );
 });
 
-test('AudioService does not create WAV file when source is file', async () => {
+test('AudioService creates WAV file and records audio when source is file', async () => {
   const mock = await fakeServer(ws => {
     ws.on('message', (data, isBinary) => {
       if (isBinary) return;
@@ -252,18 +252,16 @@ test('AudioService does not create WAV file when source is file', async () => {
       },
     );
 
-    assert.equal(session.recordingPath, null);
-    assert.equal(fs.readdirSync(recordingDirectory).length, 0);
+    assert.ok(session.recordingPath);
 
     // Push 1600 samples = 100ms at 16kHz
     service.pushPcmFrame(session.id, new Int16Array(1600).fill(100));
     await service.finishSession(session.id);
 
     const completed = await donePromise;
-    assert.equal(completed.recordingPath, null);
+    assert.ok(completed.recordingPath);
     assert.equal(completed.durationMs, 100);
-    // Crucial check: No file should exist in the audios directory
-    assert.equal(fs.readdirSync(recordingDirectory).length, 0);
+    assert.equal(fs.existsSync(completed.recordingPath), true);
   } finally {
     await service.disposeAll();
     await closeServer(mock.server);

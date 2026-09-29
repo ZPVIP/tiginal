@@ -31,7 +31,7 @@ export class AudioSessionRepository {
     `).run(
       record.id,
       record.source.kind,
-      record.source.kind === 'file' ? record.source.name : null,
+      record.source.kind === 'file' ? (record.source.path || record.source.name) : null,
       record.recordingPath,
       record.providerId,
       record.language,
@@ -40,6 +40,18 @@ export class AudioSessionRepository {
       timestamp,
       timestamp,
     );
+  }
+
+  hasRecording(recordingPath: string): boolean {
+    if (!recordingPath) return false;
+    try {
+      const row = this.db.prepare(
+        'SELECT id FROM audio_sessions WHERE recording_path = ? LIMIT 1'
+      ).get(recordingPath);
+      return Boolean(row);
+    } catch {
+      return false;
+    }
   }
 
   updateStatus(id: string, status: AudioSessionStatus, durationMs: number): void {

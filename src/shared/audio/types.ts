@@ -44,6 +44,15 @@ export interface SpeechProviderOptions {
   latencyMode: TranslationLatencyMode;
   /** T3PO: terminology entries written as `source=target`, or a single term kept unchanged. */
   terminology: string[];
+  /** R2T2: chunk size in milliseconds for streaming frame slicing (e.g. 160). If null/empty/0, chunk/diar/srt are not generated. */
+  chunkSizeMs?: number | null;
+}
+
+export interface AudioSessionArtifacts {
+  transcript?: string;
+  chunks?: string;
+  speakers?: string;
+  srt?: string;
 }
 
 export interface SpeechProvider {
@@ -142,7 +151,7 @@ export type AudioSessionSource =
   | { kind: 'microphone' }
   | { kind: 'system' }
   | { kind: 'mixed' }
-  | { kind: 'file'; name: string };
+  | { kind: 'file'; name: string; path?: string };
 
 export interface AudioInputCapabilities {
   sources: readonly AudioInputSourceKind[];
@@ -244,7 +253,14 @@ export type AudioSessionEvent =
   | { kind: 'session-created'; session: AudioSessionSnapshot }
   | { kind: 'provider-event'; sessionId: string; event: TranscriptEvent }
   | { kind: 'translation-event'; sessionId: string; event: TranslationSessionEvent }
-  | { kind: 'completed'; sessionId: string; recordingPath: string | null; durationMs: number; translation?: string }
+  | {
+      kind: 'completed';
+      sessionId: string;
+      recordingPath: string | null;
+      durationMs: number;
+      translation?: string;
+      artifacts?: AudioSessionArtifacts;
+    }
   | { kind: 'failed'; sessionId: string; recordingPath: string | null; message: string };
 
 export interface PushPcmFrameInput {
@@ -278,5 +294,7 @@ export interface AudioRendererApi {
   abortSession(sessionId: string): Promise<void>;
   deleteRecording(recordingPath: string): Promise<void>;
   getRecordingUrl(recordingPath: string): Promise<string>;
+  getRecordingArtifacts(recordingPath: string): Promise<AudioSessionArtifacts>;
+  rediarizeRecording(recordingPath: string): Promise<AudioSessionArtifacts>;
   onSessionEvent(listener: (event: AudioSessionEvent) => void): () => void;
 }

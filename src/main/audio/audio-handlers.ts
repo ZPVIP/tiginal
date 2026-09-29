@@ -262,4 +262,12 @@ export function setupAudioHandlers(): void {
     if (typeof value !== 'string' || !value.trim()) throw new Error('Recording path is required');
     return toRecordingUrl(value);
   });
+  ipcMain.handle('audio:get-recording-artifacts', (_event, value: unknown) => {
+    if (typeof value !== 'string' || !value.trim()) throw new Error('Recording path is required');
+    return getAudioService().getRecordingArtifacts(value);
+  });
+  ipcMain.handle('audio:rediarize-recording', (_event, value: unknown) => {
+    if (typeof value !== 'string' || !value.trim()) throw new Error('Recording path is required');
+    return getAudioService().rediarizeRecording(value);
+  });
 }

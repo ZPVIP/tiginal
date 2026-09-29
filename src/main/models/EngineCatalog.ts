@@ -199,6 +199,36 @@ export const ENGINE_SPECS: readonly EngineSpec[] = [
       MAX_SESSION_DURATION,
     ],
   },
+  {
+    id: 'tiginal-diarize',
+    name: 'Tiginal Diarize',
+    description: 'Local speaker diarization engine powered by NVIDIA Nemotron-3 ONNX.',
+    categories: ['speech'],
+    platforms: ['darwin', 'linux', 'win32'],
+    architectures: ['arm64', 'x64'],
+    capabilities: ['file-batch'],
+    probes: [{ commandCandidates: ['tiginal-diarize'], args: ['--version'] }],
+    installHints: {
+      darwin: [
+        'brew tap ZPVIP/tiginal-diarize https://github.com/ZPVIP/tiginal-diarize && brew install tiginal-diarize',
+        'Or download from GitHub Releases and place in PATH.',
+      ],
+      linux: [
+        'cargo install --git https://github.com/ZPVIP/tiginal-diarize',
+        'Or download prebuilt binary to /usr/local/bin.',
+      ],
+      win32: ['Download tiginal-diarize.exe and add it to system PATH.'],
+    },
+    parameters: [
+      {
+        kind: 'text',
+        key: 'modelPath',
+        label: 'Model path',
+        defaultValue: '',
+        placeholder: '~/.cache/tiginal/models/nemotron-3-diarization/model_quantized.onnx',
+      },
+    ],
+  },
 ];
 
 export function engineSpec(id: ModelEngineId): EngineSpec {

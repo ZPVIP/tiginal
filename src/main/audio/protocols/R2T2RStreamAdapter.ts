@@ -7,6 +7,7 @@ import {
   type SpeechSessionOptions,
 } from '../../../shared/audio/r2t2';
 import type { SpeechProvider, TranscriptEvent } from '../../../shared/audio/types';
+import { smartJoinText, separateGluedWords } from '../../../shared/audio/textUtils';
 import {
   isRecord,
   numberField,
@@ -45,9 +46,10 @@ function firstRecognitionText(record: Record<string, unknown>, keys: readonly st
 
 function appendRecognitionText(state: SpeechProtocolState, incoming: string): TranscriptEvent | null {
   if (!incoming) return null;
+  const cleanedIncoming = separateGluedWords(incoming);
   const previous = state.committedText;
-  if (previous.endsWith(incoming)) return null;
-  const fullText = incoming.startsWith(previous) ? incoming : `${previous}${incoming}`;
+  if (previous.endsWith(cleanedIncoming)) return null;
+  const fullText = cleanedIncoming.startsWith(previous) ? cleanedIncoming : smartJoinText(previous, cleanedIncoming);
   const delta = fullText.slice(previous.length);
   if (!delta) return null;
   state.committedText = fullText;

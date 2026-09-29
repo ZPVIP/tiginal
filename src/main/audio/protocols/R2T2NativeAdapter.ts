@@ -6,6 +6,7 @@ import {
   type SpeechSessionOptions,
 } from '../../../shared/audio/r2t2';
 import type { SpeechProvider, TranscriptEvent } from '../../../shared/audio/types';
+import { smartJoinText } from '../../../shared/audio/textUtils';
 import {
   isRecord,
   parseProtocolPayload,
@@ -71,8 +72,10 @@ export class R2T2NativeAdapter implements SpeechProtocolAdapter {
 
     const delta = stringField(message, ['text', 'delta_text', 'delta']);
     if (delta) {
-      state.committedText += delta;
-      events.push({ kind: 'committed', text: delta, fullText: state.committedText });
+      const nextFull = smartJoinText(state.committedText, delta);
+      const actualDelta = nextFull.slice(state.committedText.length);
+      state.committedText = nextFull;
+      events.push({ kind: 'committed', text: actualDelta, fullText: state.committedText });
     }
 
     const partial = stringField(message, ['partial', 'partial_text']);

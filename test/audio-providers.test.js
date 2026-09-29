@@ -225,7 +225,7 @@ test('provider options keep only slow or fast mode and drop the legacy VAD flag'
   const legacy = parseSpeechProviderInput(customInput({
     options: { bookedWords: [], useVad: true, smooth: true, mode: 'turbo', systemPrompt: '' },
   }));
-  assert.deepEqual(legacy.options, { bookedWords: [], smooth: true, mode: 'slow', systemPrompt: '', latencyMode: 'native', terminology: [] });
+  assert.deepEqual(legacy.options, { bookedWords: [], smooth: true, mode: 'slow', systemPrompt: '', latencyMode: 'native', terminology: [], chunkSizeMs: null });
 
   const fast = parseSpeechProviderInput(customInput({
     options: { bookedWords: [], smooth: false, mode: 'fast', systemPrompt: '' },

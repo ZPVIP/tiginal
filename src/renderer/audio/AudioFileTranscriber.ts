@@ -79,11 +79,15 @@ export class AudioFileTranscriber {
       }
     });
 
+    const filePath = (window as any).electron?.webUtils?.getPathForFile?.(file)
+      || (file as any).path
+      || undefined;
+
     const { buffer, context } = await decodeFile(file);
     try {
       this.session = await audio.createSession({
         ...input,
-        source: { kind: 'file', name: file.name },
+        source: { kind: 'file', name: file.name, path: filePath },
       });
       await this.sendBuffer(buffer);
       const sessionId = this.session?.id;

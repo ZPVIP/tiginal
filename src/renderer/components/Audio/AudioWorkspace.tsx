@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AudioLines, FileAudio, FolderOpen, Mic, Radio, Trash2, Volume2, Waves } from 'lucide-react';
+import { AudioLines, FileAudio, FolderOpen, Mic, Radio, Sparkles, Trash2, Volume2, Waves } from 'lucide-react';
 import {
   isR2T2Protocol,
   shouldShowSystemAudioPermissionGuide,
@@ -28,8 +28,9 @@ import { AudioControlsPanel } from './AudioControlsPanel';
 import { AudioWaveformPlayer } from './AudioWaveformPlayer';
 import { LiveWaveformCanvas } from './LiveWaveformCanvas';
 import { SystemAudioPermissionDialog } from './SystemAudioPermissionDialog';
-import { TranscriptEditor } from './TranscriptEditor';
+import { TranscriptEditor, type TranscriptTab } from './TranscriptEditor';
 import { TranslationEditor } from './TranslationEditor';
+import type { AudioSessionArtifacts } from '../../../shared/audio/types';
 
 const SYSTEM_AUDIO_PERMISSION_GUIDE_DISMISSED_KEY = 'tiginal:system-audio-permission-guide-dismissed';
 
@@ -149,6 +150,9 @@ export function AudioWorkspace() {
   const [partialText, setPartialText] = useState('');
   const [editableText, setEditableText] = useState('');
   const [transcriptDirty, setTranscriptDirty] = useState(false);
+  const [artifacts, setArtifacts] = useState<AudioSessionArtifacts>({});
+  const [transcriptTab, setTranscriptTab] = useState<TranscriptTab>('transcript');
+  const [isDiarizing, setIsDiarizing] = useState(false);
   const [state, setState] = useState<WorkbenchState>({ kind: 'idle' });
 
   // Translation states
@@ -351,6 +355,8 @@ export function AudioWorkspace() {
     setPartialText('');
     setEditableText('');
     setTranscriptDirty(false);
+    setArtifacts({});
+    setTranscriptTab('transcript');
     setCommittedTranslation('');
     setEditableTranslation('');
     setTranslationDirty(false);
@@ -368,6 +374,17 @@ export function AudioWorkspace() {
     }
   }, []);
 
+  const loadRecordingArtifacts = useCallback(async (path: string) => {
+    const audio = window.electron?.audio;
+    if (!audio || !path) return;
+    try {
+      const loaded = await audio.getRecordingArtifacts(path);
+      setArtifacts(loaded || {});
+    } catch {
+      setArtifacts({});
+    }
+  }, []);
+
   const handleRevealInFolder = useCallback(async (filePath: string) => {
     if (!filePath) return;
     try {
@@ -379,7 +396,7 @@ export function AudioWorkspace() {
 
   const handleDeleteRecording = useCallback(async (filePath: string) => {
     if (!filePath) return;
-    if (!window.confirm('Are you sure you want to delete this recording file?')) {
+    if (!window.confirm('Are you sure you want to delete this recording and all its text/subtitle files?')) {
       return;
     }
     try {
@@ -387,11 +404,33 @@ export function AudioWorkspace() {
       if (recordingPath === filePath) {
         setRecordingPath('');
         setRecordingUrl('');
+        setArtifacts({});
+        setCommittedText('');
+        setPartialText('');
+        setEditableText('');
+        setTranscriptDirty(false);
+        setTranscriptTab('transcript');
       }
     } catch (err) {
       console.error('Failed to delete recording:', err);
     }
   }, [recordingPath]);
+
+  const handleRediarize = useCallback(async (filePath: string) => {
+    const audio = window.electron?.audio;
+    if (!audio || !filePath) return;
+    setIsDiarizing(true);
+    try {
+      const updated = await audio.rediarizeRecording(filePath);
+      setArtifacts(updated);
+      setTranscriptTab('speakers');
+    } catch (err) {
+      console.error('Failed to rediarize recording:', err);
+      window.alert(`Diarization failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsDiarizing(false);
+    }
+  }, []);
 
   // A failed session keeps what was already transcribed, now in the editable transcript box.
   const failWithTranscript = useCallback((message: string) => {
@@ -492,6 +531,12 @@ export function AudioWorkspace() {
       activeRecordingPathRef.current = recPath;
       if (activeSourceRef.current !== 'file' && recPath) void loadRecordingUrl(recPath);
 
+      if (event.artifacts) {
+        setArtifacts(event.artifacts);
+      } else if (recPath) {
+        void loadRecordingArtifacts(recPath);
+      }
+
       if (event.translation) {
         setEditableTranslation(event.translation);
         setCommittedTranslation(event.translation);
@@ -508,7 +553,7 @@ export function AudioWorkspace() {
       failWithTranscript(event.message);
       return;
     }
-  }, [failWithTranscript, loadRecordingUrl]);
+  }, [failWithTranscript, loadRecordingArtifacts, loadRecordingUrl]);
 
   const confirmDiscardEdits = useCallback((): boolean => {
     if (!transcriptDirty && !translationDirty) return true;
@@ -897,6 +942,12 @@ export function AudioWorkspace() {
           dirty={transcriptDirty}
           busy={busy}
           error={state.kind === 'failed' ? formatErrorMessage(state.message) : null}
+          artifacts={artifacts}
+          activeTab={transcriptTab}
+          canRediarize={Boolean(recordingPath && (editableText || committedText))}
+          isDiarizing={isDiarizing}
+          onRediarize={() => void handleRediarize(recordingPath)}
+          onTabChange={setTranscriptTab}
           onChange={value => {
             setEditableText(value);
             setTranscriptDirty(true);
@@ -957,6 +1008,15 @@ export function AudioWorkspace() {
                   className="rounded p-0.5 text-text-muted transition-colors hover:bg-surface-light hover:text-text-main"
                 >
                   <FolderOpen size={13} />
+                </button>
+                <button
+                  type="button"
+                  title="Redo speaker diarization (Nemotron-3)"
+                  disabled={isDiarizing || busy}
+                  onClick={() => void handleRediarize(recordingPath)}
+                  className="rounded p-0.5 text-text-muted transition-colors hover:bg-surface-light hover:text-text-main disabled:opacity-40"
+                >
+                  <Sparkles size={13} className={isDiarizing ? 'animate-spin text-primary' : ''} />
                 </button>
                 <span className="truncate font-mono text-[11px]" title={recordingPath}>
                   {formatTildePath(recordingPath)}

@@ -1,4 +1,4 @@
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, webUtils } from 'electron';
 import type {
   AudioCaptureDiagnostic,
   AudioRendererApi,
@@ -49,6 +49,8 @@ const audio: AudioRendererApi = {
   abortSession: (sessionId: string) => ipcRenderer.invoke('audio:abort-session', sessionId),
   deleteRecording: (recordingPath: string) => ipcRenderer.invoke('audio:delete-recording', recordingPath),
   getRecordingUrl: (recordingPath: string) => ipcRenderer.invoke('audio:get-recording-url', recordingPath),
+  getRecordingArtifacts: (recordingPath: string) => ipcRenderer.invoke('audio:get-recording-artifacts', recordingPath),
+  rediarizeRecording: (recordingPath: string) => ipcRenderer.invoke('audio:rediarize-recording', recordingPath),
   onSessionEvent: (listener: (event: AudioSessionEvent) => void) => {
     const subscription = (_event: Electron.IpcRendererEvent, event: AudioSessionEvent) => listener(event);
     ipcRenderer.on('audio:session-event', subscription);
@@ -101,6 +103,15 @@ window.electron = {
     const subscription = (_event: any, ...args: any[]) => func(...args);
     ipcRenderer.on(channel, subscription);
     return () => ipcRenderer.removeListener(channel, subscription);
+  },
+  webUtils: {
+    getPathForFile: (file: File) => {
+      try {
+        return webUtils.getPathForFile(file);
+      } catch {
+        return (file as any).path || '';
+      }
+    },
   },
   audio,
   models,

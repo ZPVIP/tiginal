@@ -82,6 +82,9 @@ function parseOptions(value: unknown): SpeechProviderOptions {
       : defaults.latencyMode,
     // T3PO-ws accepts at most 200 terminology entries per session.
     terminology: parseStringArray(value.terminology, 200),
+    chunkSizeMs: typeof value.chunkSizeMs === 'number' && Number.isFinite(value.chunkSizeMs) && value.chunkSizeMs > 0
+      ? Math.round(value.chunkSizeMs)
+      : null,
   };
 }
 

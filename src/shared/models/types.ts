@@ -5,6 +5,7 @@ export const MODEL_ENGINE_IDS = [
   'mlx-lm',
   'mlx-audio',
   'r2t2-runtime',
+  'tiginal-diarize',
 ] as const;
 
 export type ModelEngineId = typeof MODEL_ENGINE_IDS[number];
