@@ -161,7 +161,7 @@ export class AudioFileTranscriber {
         if (!sessionId) break;
         audio.pushPcmFrame({
           sessionId,
-          frame: frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength),
+          frame: frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength) as ArrayBuffer,
         });
         framesInBurst += 1;
         if (framesInBurst >= FRAMES_PER_BURST) {
@@ -178,7 +178,7 @@ export class AudioFileTranscriber {
         if (!sessionId) break;
         audio.pushPcmFrame({
           sessionId,
-          frame: frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength),
+          frame: frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength) as ArrayBuffer,
         });
       }
       this.callbacks.onProgress?.(1);

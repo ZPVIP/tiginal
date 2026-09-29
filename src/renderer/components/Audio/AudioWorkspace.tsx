@@ -461,9 +461,6 @@ export function AudioWorkspace() {
             setTranslationStatus(transEvt.status);
           }
           return;
-        case 'deciding':
-          setTranslationStatus('deciding');
-          return;
         case 'wait':
           setTranslationStatus('waiting');
           return;
