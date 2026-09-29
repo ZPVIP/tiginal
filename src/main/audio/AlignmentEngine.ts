@@ -42,32 +42,221 @@ export interface AlignedSegment {
   text: string;
 }
 
-export function defaultDiarizeModelPath(): string {
-  const candidates = [
-    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'nemotron-3-diarization', 'model_quantized.onnx'),
-    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'onnx-community--Nemotron-3-Diarization-ONNX--main', 'model_quantized.onnx'),
+export interface DiscoveredModel {
+  path: string;
+  name: string;
+  sizeBytes: number;
+  kind: 'nemotron' | 'mms-align' | 'whisper';
+  isRecommended: boolean;
+  label: string;
+}
+
+export interface DiscoveredDiarizeModels {
+  nemotron: DiscoveredModel[];
+  mmsAlign: DiscoveredModel[];
+  whisper: DiscoveredModel[];
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${(bytes / 1024).toFixed(0)} KB`;
+}
+
+function scanFilesRecursively(dir: string, maxDepth = 3, currentDepth = 0): string[] {
+  if (!fs.existsSync(dir) || currentDepth > maxDepth) return [];
+  const results: string[] = [];
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        results.push(...scanFilesRecursively(fullPath, maxDepth, currentDepth + 1));
+      } else if (entry.isFile()) {
+        results.push(fullPath);
+      }
+    }
+  } catch {
+    // Ignore directory scan errors
+  }
+  return results;
+}
+
+function getSavedSetting(key: string): string | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getDatabase } = require('../../services/database/database');
+    return getDatabase().getSetting(key);
+  } catch {
+    return null;
+  }
+}
+
+export function scanDiscoveredDiarizeModels(customRoot?: string): DiscoveredDiarizeModels {
+  const rootDirs = [
+    path.join(os.homedir(), '.cache', 'tiginal', 'models'),
   ];
-  return candidates.find(p => fs.existsSync(p)) || candidates[0];
+  const settingDir = getSavedSetting('tiginal_diarize_custom_dir');
+  if (settingDir && fs.existsSync(settingDir) && !rootDirs.includes(settingDir)) {
+    rootDirs.unshift(settingDir);
+  }
+  if (customRoot && fs.existsSync(customRoot) && !rootDirs.includes(customRoot)) {
+    rootDirs.unshift(customRoot);
+  }
+
+  const allFiles = new Set<string>();
+  for (const root of rootDirs) {
+    for (const file of scanFilesRecursively(root, 3)) {
+      allFiles.add(file);
+    }
+  }
+
+  const nemotron: DiscoveredModel[] = [];
+  const mmsAlign: DiscoveredModel[] = [];
+  const whisper: DiscoveredModel[] = [];
+
+  for (const filePath of allFiles) {
+    const fileName = path.basename(filePath);
+    const lowerPath = filePath.toLowerCase();
+    let sizeBytes = 0;
+    try {
+      sizeBytes = fs.statSync(filePath).size;
+    } catch {
+      continue;
+    }
+
+    // 1. Nemotron models
+    if (fileName.endsWith('.onnx') && (lowerPath.includes('nemotron') || lowerPath.includes('diarization'))) {
+      const isQuantized = fileName.includes('quantized');
+      nemotron.push({
+        path: filePath,
+        name: fileName,
+        sizeBytes,
+        kind: 'nemotron',
+        isRecommended: isQuantized,
+        label: `${fileName} (${formatFileSize(sizeBytes)})${isQuantized ? ' - Recommended' : ''}`,
+      });
+    }
+
+    // 2. MMS-Align models
+    if (fileName.endsWith('.onnx') && (lowerPath.includes('mms') || lowerPath.includes('wav2vec2') || lowerPath.includes('align'))) {
+      let score = 50;
+      let note = '';
+      if (fileName === 'model_q4.onnx') {
+        score = 100;
+        note = ' - Recommended (Fast & Accurate)';
+      } else if (fileName === 'model_q4f16.onnx') {
+        score = 95;
+        note = ' - Quantized';
+      } else if (fileName === 'model_fp16.onnx') {
+        score = 90;
+        note = ' - Half Precision';
+      } else if (fileName === 'model.onnx') {
+        score = 80;
+        note = ' - Full Precision';
+      }
+      mmsAlign.push({
+        path: filePath,
+        name: fileName,
+        sizeBytes,
+        kind: 'mms-align',
+        isRecommended: score === 100,
+        label: `${fileName} (${formatFileSize(sizeBytes)})${note}`,
+      });
+    }
+
+    // 3. Whisper models
+    if (fileName.endsWith('.bin') && !fileName.endsWith('.mlmodelc.zip')) {
+      let score = 40;
+      let note = '';
+      if (fileName === 'ggml-large-v3-turbo.bin') {
+        score = 100;
+        note = ' - Recommended (Best Accuracy & Turbo Speed)';
+      } else if (fileName.includes('large-v3-turbo-q5_0')) {
+        score = 95;
+        note = ' - Quantized Turbo';
+      } else if (fileName.includes('large-v3-turbo-q8_0')) {
+        score = 90;
+        note = ' - Quantized Turbo';
+      } else if (fileName === 'ggml-large-v3.bin') {
+        score = 85;
+        note = ' - Large v3';
+      } else if (fileName === 'ggml-medium.bin') {
+        score = 75;
+      } else if (fileName === 'ggml-small.bin') {
+        score = 70;
+        note = ' - Lightweight';
+      } else if (fileName === 'ggml-base.bin') {
+        score = 60;
+      } else if (fileName === 'ggml-tiny.bin') {
+        score = 50;
+      }
+      whisper.push({
+        path: filePath,
+        name: fileName,
+        sizeBytes,
+        kind: 'whisper',
+        isRecommended: score === 100,
+        label: `${fileName} (${formatFileSize(sizeBytes)})${note}`,
+      });
+    }
+  }
+
+  // Sort by priority (recommended first, then name/size)
+  const sortModels = (items: DiscoveredModel[]) => {
+    return items.sort((a, b) => {
+      if (a.isRecommended && !b.isRecommended) return -1;
+      if (!a.isRecommended && b.isRecommended) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  };
+
+  return {
+    nemotron: sortModels(nemotron),
+    mmsAlign: sortModels(mmsAlign),
+    whisper: sortModels(whisper),
+  };
+}
+
+export function defaultDiarizeModelPath(): string {
+  const custom = getSavedSetting('tiginal_diarize_nemotron_model');
+  if (custom && fs.existsSync(custom)) {
+    return custom;
+  }
+  const discovered = scanDiscoveredDiarizeModels().nemotron;
+  if (discovered.length > 0) {
+    return discovered[0].path;
+  }
+  return path.join(os.homedir(), '.cache', 'tiginal', 'models', 'nemotron-3-diarization', 'model_quantized.onnx');
 }
 
 export function defaultAlignModelPath(): string | undefined {
-  const candidates = [
-    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'mms-align', 'model.onnx'),
-    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'onnx-community--mms-300m-onnx--main', 'model.onnx'),
-    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'facebook--mms-1b-all--main', 'model.onnx'),
-  ];
-  return candidates.find(p => fs.existsSync(p));
+  const custom = getSavedSetting('tiginal_diarize_align_model');
+  if (custom && fs.existsSync(custom)) {
+    return custom;
+  }
+  const discovered = scanDiscoveredDiarizeModels().mmsAlign;
+  if (discovered.length > 0) {
+    return discovered[0].path;
+  }
+  return undefined;
 }
 
 export function defaultWhisperModelPath(): string | undefined {
-  const candidates = [
-    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'whisper', 'ggml-large-v3-turbo.bin'),
-    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'whisper', 'ggml-base.bin'),
-    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'whisper', 'ggml-small.bin'),
-    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'ggerganov--whisper.cpp--main', 'ggml-large-v3-turbo.bin'),
-    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'ggerganov--whisper.cpp--main', 'ggml-base.bin'),
-  ];
-  return candidates.find(p => fs.existsSync(p));
+  const custom = getSavedSetting('tiginal_diarize_whisper_model');
+  if (custom && fs.existsSync(custom)) {
+    return custom;
+  }
+  const discovered = scanDiscoveredDiarizeModels().whisper;
+  if (discovered.length > 0) {
+    return discovered[0].path;
+  }
+  return undefined;
 }
 
 export interface TiginalDiarizeOptions {
