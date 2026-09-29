@@ -55,8 +55,9 @@ import * as crypto from 'crypto';
 import defaults from './defaults.json';
 import { themes } from '../renderer/themes';
 
-// Set app name for macOS menu bar
+// Set app name for macOS menu bar and system identity
 app.name = 'Tiginal';
+app.setAppUserModelId('com.pengzhang.tiginal');
 
 // Attached images and recordings are served over custom schemes. Electron accepts
 // only one registerSchemesAsPrivileged call, before the app is ready.
