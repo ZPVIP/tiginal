@@ -34,8 +34,58 @@ export function formatSrtTime(ms: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(millis).padStart(3, '0')}`;
 }
 
+export interface AlignedSegment {
+  speaker: number;
+  speaker_label: string;
+  start_ms: number;
+  end_ms: number;
+  text: string;
+}
+
 export function defaultDiarizeModelPath(): string {
-  return path.join(os.homedir(), '.cache', 'tiginal', 'models', 'nemotron-3-diarization', 'model_quantized.onnx');
+  const candidates = [
+    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'nemotron-3-diarization', 'model_quantized.onnx'),
+    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'onnx-community--Nemotron-3-Diarization-ONNX--main', 'model_quantized.onnx'),
+  ];
+  return candidates.find(p => fs.existsSync(p)) || candidates[0];
+}
+
+export function defaultAlignModelPath(): string | undefined {
+  const candidates = [
+    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'mms-align', 'model.onnx'),
+    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'onnx-community--mms-300m-onnx--main', 'model.onnx'),
+    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'facebook--mms-1b-all--main', 'model.onnx'),
+  ];
+  return candidates.find(p => fs.existsSync(p));
+}
+
+export function defaultWhisperModelPath(): string | undefined {
+  const candidates = [
+    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'whisper', 'ggml-large-v3-turbo.bin'),
+    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'whisper', 'ggml-base.bin'),
+    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'whisper', 'ggml-small.bin'),
+    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'ggerganov--whisper.cpp--main', 'ggml-large-v3-turbo.bin'),
+    path.join(os.homedir(), '.cache', 'tiginal', 'models', 'ggerganov--whisper.cpp--main', 'ggml-base.bin'),
+  ];
+  return candidates.find(p => fs.existsSync(p));
+}
+
+export interface TiginalDiarizeOptions {
+  modelPath?: string;
+  transcriptPath?: string;
+  transcribe?: boolean;
+  whisperModelPath?: string;
+  alignModelPath?: string;
+  language?: string;
+  writeArtifacts?: boolean;
+}
+
+export interface FullDiarizationResult {
+  turns: SpeakerTurn[];
+  transcript?: string;
+  segments?: AlignedSegment[];
+  diar_text?: string;
+  srt?: string;
 }
 
 /**
@@ -43,13 +93,44 @@ export function defaultDiarizeModelPath(): string {
  */
 export async function runTiginalDiarize(
   audioPath: string,
-  modelPath?: string,
+  modelPathOrOptions?: string | TiginalDiarizeOptions,
 ): Promise<SpeakerTurn[]> {
+  const options = typeof modelPathOrOptions === 'string'
+    ? { modelPath: modelPathOrOptions }
+    : modelPathOrOptions;
+  const result = await runTiginalDiarizePipeline(audioPath, options);
+  return result.turns;
+}
+
+export async function runTiginalDiarizePipeline(
+  audioPath: string,
+  options: TiginalDiarizeOptions = {},
+): Promise<FullDiarizationResult> {
   return new Promise((resolve, reject) => {
-    const customModel = modelPath || defaultDiarizeModelPath();
+    const customModel = options.modelPath || defaultDiarizeModelPath();
     const args = [audioPath];
     if (fs.existsSync(customModel)) {
       args.push('-m', customModel);
+    }
+    if (options.transcriptPath && fs.existsSync(options.transcriptPath)) {
+      args.push('-t', options.transcriptPath);
+    }
+    const alignModel = options.alignModelPath || defaultAlignModelPath();
+    if (alignModel && fs.existsSync(alignModel)) {
+      args.push('--align-model', alignModel);
+    }
+    if (options.transcribe) {
+      args.push('--transcribe');
+      const whisperModel = options.whisperModelPath || defaultWhisperModelPath();
+      if (whisperModel && fs.existsSync(whisperModel)) {
+        args.push('--whisper-model', whisperModel);
+      }
+    }
+    if (options.language) {
+      args.push('-l', options.language);
+    }
+    if (options.writeArtifacts) {
+      args.push('--write-artifacts');
     }
 
     // Try system PATH first
@@ -81,8 +162,21 @@ export async function runTiginalDiarize(
         return;
       }
       try {
-        const parsed = JSON.parse(stdout.trim()) as SpeakerTurn[];
-        resolve(parsed);
+        const rawJson = stdout.trim();
+        const parsed = JSON.parse(rawJson);
+        if (Array.isArray(parsed)) {
+          resolve({ turns: parsed as SpeakerTurn[] });
+        } else if (parsed && typeof parsed === 'object') {
+          resolve({
+            turns: parsed.turns || [],
+            transcript: parsed.transcript,
+            segments: parsed.segments,
+            diar_text: parsed.diar_text,
+            srt: parsed.srt,
+          });
+        } else {
+          resolve({ turns: [] });
+        }
       } catch (err) {
         reject(new Error(`Failed to parse tiginal-diarize JSON output: ${err instanceof Error ? err.message : String(err)}`));
       }

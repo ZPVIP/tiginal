@@ -7,11 +7,12 @@ import {
   BUILT_IN_R2T2_TRIAL_ENDPOINT,
   BUILT_IN_R2T2_TRIAL_ID,
   BUILT_IN_R2T2_TRIAL_MAX_SECONDS,
+  BUILT_IN_WHISPER_ID,
 } from '../../shared/audio/types';
 import { defaultSpeechProviderOptions } from '../../shared/audio/r2t2';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 38;
+const SCHEMA_VERSION = 39;
 
 /**
  * Database service for Tiginal
@@ -220,6 +221,10 @@ export class DatabaseService {
 
     if (currentVersion < 38) {
       this.migrateV38();
+    }
+
+    if (currentVersion < 39) {
+      this.migrateV39();
     }
 
     // Update schema version
@@ -1302,6 +1307,28 @@ export class DatabaseService {
     if (!this.db) throw new Error('Database not initialized');
     const row = this.db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key) as { value: string } | undefined;
     return row?.value || null;
+  }
+
+  /** Migration v39: add built-in local whisper provider. */
+  private migrateV39(): void {
+    if (!this.db) throw new Error('Database not initialized');
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT OR IGNORE INTO speech_providers (
+        id, name, protocol, endpoint, auth_mode, credential_encrypted,
+        built_in_kind, user_modified, max_session_seconds, default_language,
+        options_json, enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, NULL, 'whisper-local', 0, NULL, 'auto', ?, 1, ?, ?)
+    `).run(
+      BUILT_IN_WHISPER_ID,
+      'Local Whisper (tiginal-diarize)',
+      'whisper-local',
+      'local://whisper',
+      'none',
+      JSON.stringify(defaultSpeechProviderOptions()),
+      now,
+      now,
+    );
   }
 
   /**

@@ -1,7 +1,8 @@
-import type {
-  AudioSessionEvent,
-  AudioSessionSnapshot,
-  CreateAudioSessionInput,
+import {
+  BUILT_IN_WHISPER_ID,
+  type AudioSessionEvent,
+  type AudioSessionSnapshot,
+  type CreateAudioSessionInput,
 } from '../../shared/audio/types';
 import { StreamingPcm16Framer } from '../../shared/audio/pcm';
 
@@ -82,6 +83,30 @@ export class AudioFileTranscriber {
     const filePath = (window as any).electron?.webUtils?.getPathForFile?.(file)
       || (file as any).path
       || undefined;
+
+    const isWhisperDirect = input.providerId === BUILT_IN_WHISPER_ID && Boolean(filePath);
+    if (isWhisperDirect) {
+      try {
+        this.session = await audio.createSession({
+          ...input,
+          source: { kind: 'file', name: file.name, path: filePath },
+        });
+        this.callbacks.onProgress?.(0.5);
+        const sessionId = this.session?.id;
+        if (!this.cancelled && !this.finishedByService && sessionId) {
+          await audio.finishSession(sessionId);
+        }
+      } catch (error) {
+        const sessionId = this.session?.id;
+        if (sessionId) await audio.abortSession(sessionId);
+        throw error;
+      } finally {
+        this.session = null;
+        this.removeSessionListener?.();
+        this.removeSessionListener = null;
+      }
+      return;
+    }
 
     const { buffer, context } = await decodeFile(file);
     try {

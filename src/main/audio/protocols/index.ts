@@ -9,6 +9,8 @@ export function createSpeechProtocolAdapter(protocol: SpeechProviderProtocol): S
       return new R2T2RStreamAdapter();
     case 'r2t2-native':
       return new R2T2NativeAdapter();
+    case 'whisper-local':
+      throw new Error('whisper-local is an offline engine and does not use a WebSocket adapter');
     case 't3po':
       throw new Error('T3PO is a text translation service and cannot transcribe audio');
   }

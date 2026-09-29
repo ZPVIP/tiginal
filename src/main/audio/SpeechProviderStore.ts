@@ -5,6 +5,7 @@ import {
   BUILT_IN_R2T2_TRIAL_ENDPOINT,
   BUILT_IN_R2T2_TRIAL_MAX_SECONDS,
   BUILT_IN_R2T2_TRIAL_TOKEN,
+  BUILT_IN_WHISPER_ID,
   SPEECH_AUTH_MODES,
   SPEECH_PROVIDER_PROTOCOLS,
   type SpeechProviderOptions,
@@ -112,9 +113,13 @@ function optionalPositiveSeconds(value: unknown): number | null {
 }
 
 export function normalizeSpeechEndpoint(rawEndpoint: string): NormalizedEndpoint {
+  const trimmed = rawEndpoint.trim();
+  if (trimmed.startsWith('local://')) {
+    return { endpoint: trimmed };
+  }
   let url: URL;
   try {
-    url = new URL(rawEndpoint.trim());
+    url = new URL(trimmed);
   } catch {
     throw new Error('Speech endpoint must be a valid WebSocket URL');
   }
@@ -207,6 +212,22 @@ function publicProvider(row: SpeechProviderRow): SpeechProvider {
     updatedAt: row.updatedAt,
   };
 }
+
+export const BUILT_IN_WHISPER_PROVIDER: SpeechProvider = {
+  id: BUILT_IN_WHISPER_ID,
+  name: 'Local Whisper (tiginal-diarize)',
+  protocol: 'whisper-local',
+  endpoint: 'local://whisper',
+  authMode: 'none',
+  hasCredential: true,
+  builtInKind: null,
+  userModified: false,
+  maxSessionSeconds: null,
+  defaultLanguage: 'auto',
+  options: defaultSpeechProviderOptions(),
+  createdAt: 0,
+  updatedAt: 0,
+};
 
 function usesBundledTrialCredential(row: SpeechProviderRow): boolean {
   if (row.credentialEncrypted !== null) return false;
@@ -348,6 +369,9 @@ export class SpeechProviderStore {
   }
 
   require(id: string): ResolvedSpeechProvider {
+    if (id === BUILT_IN_WHISPER_ID) {
+      return { provider: BUILT_IN_WHISPER_PROVIDER, credential: null };
+    }
     const row = this.requireRow(id);
     let credential: string | null = null;
     if (usesBundledTrialCredential(row)) {

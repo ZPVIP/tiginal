@@ -1,6 +1,7 @@
 export const SPEECH_PROVIDER_PROTOCOLS = [
   'r2t2-rstream',
   'r2t2-native',
+  'whisper-local',
   't3po',
 ] as const;
 export type SpeechProviderProtocol = typeof SPEECH_PROVIDER_PROTOCOLS[number];
@@ -8,6 +9,7 @@ export type SpeechProviderProtocol = typeof SPEECH_PROVIDER_PROTOCOLS[number];
 export const SPEECH_PROVIDER_PROTOCOL_OPTIONS = [
   { protocol: 'r2t2-rstream', label: 'R2T2 rstream', defaultPath: '/asr' },
   { protocol: 'r2t2-native', label: 'R2T2 native', defaultPath: '/asr_stream_api_v1' },
+  { protocol: 'whisper-local', label: 'Local Whisper (tiginal-diarize)', defaultPath: 'local://whisper' },
   { protocol: 't3po', label: 'T3PO', defaultPath: '/ws/translate' },
 ] as const satisfies readonly { protocol: SpeechProviderProtocol; label: string; defaultPath: string }[];
 
@@ -15,6 +17,10 @@ export type R2T2Protocol = Exclude<SpeechProviderProtocol, 't3po'>;
 
 export function isR2T2Protocol(protocol: SpeechProviderProtocol): protocol is R2T2Protocol {
   return protocol !== 't3po';
+}
+
+export function isWhisperProtocol(protocol: SpeechProviderProtocol): boolean {
+  return protocol === 'whisper-local';
 }
 
 export const R2T2_RECOGNITION_MODES = ['slow', 'fast'] as const;
@@ -27,6 +33,8 @@ export const BUILT_IN_R2T2_TRIAL_ID = 'builtin-r2t2-online-demo';
 export const BUILT_IN_R2T2_TRIAL_TOKEN = 'pwacGhcJQbZg0rzlOM0nrCVmmuU5S29iDIH1V2r2j6w';
 export const BUILT_IN_R2T2_TRIAL_ENDPOINT = 'wss://r2t2.youdao.com/asr';
 export const BUILT_IN_R2T2_TRIAL_MAX_SECONDS = 30;
+
+export const BUILT_IN_WHISPER_ID = 'builtin-whisper-local';
 
 export const TRANSLATION_LATENCY_MODES = ['low', 'native', 'high'] as const;
 export type TranslationLatencyMode = typeof TRANSLATION_LATENCY_MODES[number];

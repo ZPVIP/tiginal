@@ -202,11 +202,11 @@ export const ENGINE_SPECS: readonly EngineSpec[] = [
   {
     id: 'tiginal-diarize',
     name: 'Tiginal Diarize',
-    description: 'Local speaker diarization engine powered by NVIDIA Nemotron-3 ONNX.',
+    description: 'Local speaker diarization & alignment engine powered by NVIDIA Nemotron-3 ONNX, MMS-Align, and Whisper.',
     categories: ['speech'],
     platforms: ['darwin', 'linux', 'win32'],
     architectures: ['arm64', 'x64'],
-    capabilities: ['file-batch'],
+    capabilities: ['speech-recognition', 'file-batch'],
     probes: [{ commandCandidates: ['tiginal-diarize'], args: ['--version'] }],
     installHints: {
       darwin: [
@@ -223,9 +223,23 @@ export const ENGINE_SPECS: readonly EngineSpec[] = [
       {
         kind: 'text',
         key: 'modelPath',
-        label: 'Model path',
+        label: 'Nemotron Diarize Model Path',
         defaultValue: '',
         placeholder: '~/.cache/tiginal/models/nemotron-3-diarization/model_quantized.onnx',
+      },
+      {
+        kind: 'text',
+        key: 'alignModelPath',
+        label: 'MMS-Align Model Path',
+        defaultValue: '',
+        placeholder: '~/.cache/tiginal/models/mms-align/model.onnx',
+      },
+      {
+        kind: 'text',
+        key: 'whisperModelPath',
+        label: 'Whisper GGML Model Path',
+        defaultValue: '',
+        placeholder: '~/.cache/tiginal/models/whisper/ggml-large-v3-turbo.bin',
       },
     ],
   },
