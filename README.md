@@ -74,6 +74,23 @@ The app is not signed with an Apple Developer ID yet, so macOS blocks the first 
 xattr -dr com.apple.quarantine /Applications/Tiginal.app
 ```
 
+## Uninstall on macOS
+
+To completely uninstall Tiginal and clean up system permissions and cached data:
+
+```bash
+# 1. Reset Screen & System Audio Recording permission in macOS TCC
+tccutil reset ScreenCapture com.pengzhang.tiginal
+
+# 2. Remove the application bundle
+rm -rf /Applications/Tiginal.app
+
+# 3. (Optional) Remove application settings and cache
+rm -rf ~/Library/Application\ Support/Tiginal
+rm -rf ~/Library/Caches/Tiginal
+rm -rf ~/.cache/tiginal
+```
+
 ## Build from Source
 
 Official packages are published for macOS only. On Windows and Linux, build Tiginal yourself. You need Node.js 24 and Git; the native modules ship prebuilt binaries, so no C++ toolchain is required.
