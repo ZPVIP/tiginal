@@ -80,7 +80,7 @@ To completely uninstall Tiginal and clean up system permissions and cached data:
 
 ```bash
 # 1. Reset Screen & System Audio Recording permission in macOS TCC
-tccutil reset ScreenCapture com.pengzhang.tiginal
+tccutil reset ScreenCapture com.tiginal.app
 
 # 2. Remove the application bundle
 rm -rf /Applications/Tiginal.app

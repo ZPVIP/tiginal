@@ -334,4 +334,4 @@ for (const stream of this.streams) {
 | **缺少 Chromium 回环 Feature Switches** | Chromium 底层拒绝激活 loopback 音频管道 | 启动时注入 `MacLoopbackAudioForScreenShare` 和 `MacSckSystemAudioLoopbackOverride` 开关 |
 | **开发环境授权错误对象** | 仅勾选了 Tiginal，开发运行依然报错 | 开发模式下为拉起进程的终端（iTerm2/VS Code/Cursor）授予屏幕录制权限 |
 | **双源混音直接叠加** | 麦克风与系统声音音量过大出现削波爆音 | 使用 Web Audio API 分别接入 `GainNode(0.5)` 再合并到 AudioWorklet 进行重采样 |
-| **卸载或权限错乱残留** | 重新安装后系统设置出现失效残留或无法勾选 | 执行 `tccutil reset ScreenCapture com.pengzhang.tiginal` 清理 TCC 权限数据库残留 |
+| **卸载或权限错乱残留** | 重新安装后系统设置出现失效残留或无法勾选 | 执行 `tccutil reset ScreenCapture com.tiginal.app` 清理 TCC 权限数据库残留 |

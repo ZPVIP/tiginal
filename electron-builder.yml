@@ -1,4 +1,4 @@
-appId: com.pengzhang.tiginal
+appId: com.tiginal.app
 productName: Tiginal
 directories:
   output: release
