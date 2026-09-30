@@ -68,7 +68,7 @@ export class AudioService {
       return true;
     }
     const ext = path.extname(target).toLowerCase();
-    const supported = ['.wav', '.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4'];
+    const supported = ['.wav', '.mp3', '.m4a', '.aac', '.flac', '.ogg', '.opus', '.webm', '.wma', '.mp4', '.mkv', '.mov', '.txt', '.srt'];
     if (!supported.includes(ext)) {
       return false;
     }
@@ -365,7 +365,7 @@ export class AudioService {
       throw new Error('An active recording cannot be deleted');
     }
 
-    const stem = target.replace(/\.[^/.]+$/i, '');
+    const stem = target.replace(/(-diar)?\.[^/.]+$/i, '');
     const candidateFiles = [
       target,
       `${stem}.txt`,
@@ -384,12 +384,45 @@ export class AudioService {
     }
   }
 
+  deleteRecordingArtifact(recordingPath: string, artifactType: 'transcript' | 'speakers' | 'srt'): AudioSessionArtifacts {
+    const target = path.resolve(recordingPath);
+    if (!this.isAllowedAudioPath(target)) {
+      throw new Error('Recording path is outside the Tiginal audio directory');
+    }
+    if ([...this.sessions.values()].some(session => session.snapshot.recordingPath && path.resolve(session.snapshot.recordingPath) === target)) {
+      throw new Error('An active recording artifact cannot be deleted');
+    }
+
+    const stem = target.replace(/(-diar)?\.[^/.]+$/i, '');
+    let fileToDelete: string;
+    if (artifactType === 'transcript') {
+      fileToDelete = `${stem}.txt`;
+    } else if (artifactType === 'speakers') {
+      fileToDelete = `${stem}-diar.txt`;
+    } else if (artifactType === 'srt') {
+      fileToDelete = `${stem}.srt`;
+    } else {
+      throw new Error(`Unknown artifact type: ${artifactType}`);
+    }
+
+    if (fs.existsSync(fileToDelete)) {
+      try {
+        fs.unlinkSync(fileToDelete);
+      } catch (err) {
+        console.error(`Failed to delete recording artifact ${fileToDelete}:`, err);
+        throw err;
+      }
+    }
+
+    return this.getRecordingArtifacts(recordingPath);
+  }
+
   getRecordingArtifacts(recordingPath: string): AudioSessionArtifacts {
     const target = path.resolve(recordingPath);
     if (!this.isAllowedAudioPath(target)) {
       return {};
     }
-    const stem = target.replace(/\.[^/.]+$/i, '');
+    const stem = target.replace(/(-diar)?\.[^/.]+$/i, '');
     const artifacts: AudioSessionArtifacts = {};
 
     const txtPath = `${stem}.txt`;
@@ -416,40 +449,62 @@ export class AudioService {
     return artifacts;
   }
 
+  private rediarizeAbortController: AbortController | null = null;
+
+  cancelRediarize(): void {
+    if (this.rediarizeAbortController) {
+      this.rediarizeAbortController.abort();
+      this.rediarizeAbortController = null;
+    }
+  }
+
   async rediarizeRecording(recordingPath: string): Promise<AudioSessionArtifacts> {
     const target = path.resolve(recordingPath);
     if (!this.isAllowedAudioPath(target)) {
       throw new Error('Recording path is outside the Tiginal audio directory');
     }
     if (!fs.existsSync(target)) {
-      throw new Error(`Audio file not found: ${target}`);
+      throw new Error(`音频文件未找到: ${target}`);
     }
 
-    const stem = target.replace(/\.[^/.]+$/i, '');
+    const stem = target.replace(/(-diar)?\.[^/.]+$/i, '');
     const artifacts: AudioSessionArtifacts = this.getRecordingArtifacts(recordingPath);
     const txtPath = `${stem}.txt`;
 
     let transcriptText = artifacts.transcript || '';
     if (!transcriptText && fs.existsSync(txtPath)) {
-      transcriptText = fs.readFileSync(txtPath, 'utf-8');
-      artifacts.transcript = transcriptText;
+      try {
+        transcriptText = fs.readFileSync(txtPath, 'utf-8');
+        artifacts.transcript = transcriptText;
+      } catch { /* ignore */ }
     }
 
-    if (!transcriptText) {
-      throw new Error('No transcript text found for this audio file. Please transcribe it first.');
+    if (!transcriptText || !fs.existsSync(txtPath)) {
+      throw new Error('未找到该音频对应的文本文件（.txt）。请先生成转录文本。');
     }
 
-    const pipelineResult = await runTiginalDiarizePipeline(target, {
-      transcriptPath: txtPath,
-      writeArtifacts: true,
-    });
-    if (pipelineResult.diar_text) {
-      artifacts.speakers = pipelineResult.diar_text;
+    this.cancelRediarize();
+    const abortCtrl = new AbortController();
+    this.rediarizeAbortController = abortCtrl;
+
+    try {
+      const pipelineResult = await runTiginalDiarizePipeline(target, {
+        transcriptPath: txtPath,
+        writeArtifacts: true,
+        signal: abortCtrl.signal,
+      });
+      if (pipelineResult.diar_text) {
+        artifacts.speakers = pipelineResult.diar_text;
+      }
+      if (pipelineResult.srt) {
+        artifacts.srt = pipelineResult.srt;
+      }
+      return artifacts;
+    } finally {
+      if (this.rediarizeAbortController === abortCtrl) {
+        this.rediarizeAbortController = null;
+      }
     }
-    if (pipelineResult.srt) {
-      artifacts.srt = pipelineResult.srt;
-    }
-    return artifacts;
   }
 
   private requireRecordingSession(sessionId: string): ActiveSession {

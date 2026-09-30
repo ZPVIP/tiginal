@@ -48,9 +48,12 @@ const audio: AudioRendererApi = {
   finishSession: (sessionId: string) => ipcRenderer.invoke('audio:finish-session', sessionId),
   abortSession: (sessionId: string) => ipcRenderer.invoke('audio:abort-session', sessionId),
   deleteRecording: (recordingPath: string) => ipcRenderer.invoke('audio:delete-recording', recordingPath),
+  deleteRecordingArtifact: (recordingPath: string, artifactType: 'transcript' | 'speakers' | 'srt') =>
+    ipcRenderer.invoke('audio:delete-recording-artifact', { recordingPath, artifactType }),
   getRecordingUrl: (recordingPath: string) => ipcRenderer.invoke('audio:get-recording-url', recordingPath),
   getRecordingArtifacts: (recordingPath: string) => ipcRenderer.invoke('audio:get-recording-artifacts', recordingPath),
   rediarizeRecording: (recordingPath: string) => ipcRenderer.invoke('audio:rediarize-recording', recordingPath),
+  cancelRediarize: () => ipcRenderer.invoke('audio:cancel-rediarize'),
   onSessionEvent: (listener: (event: AudioSessionEvent) => void) => {
     const subscription = (_event: Electron.IpcRendererEvent, event: AudioSessionEvent) => listener(event);
     ipcRenderer.on('audio:session-event', subscription);

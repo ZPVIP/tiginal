@@ -1,4 +1,5 @@
-import { Check, Copy, Languages, LoaderCircle, Pencil, Trash2 } from 'lucide-react';
+import { Languages, LoaderCircle, Pencil, Trash2 } from 'lucide-react';
+import { CopyButton } from '../ui/CopyButton';
 
 export interface TranslationEditorProps {
   committedText: string;
@@ -96,20 +97,22 @@ export function TranslationEditor({
             )}
             <span>{isTranslating ? 'Translating...' : displayText ? 'Re-translate' : 'Translate'}</span>
           </button>
-          <button
-            type="button"
+          <CopyButton
             title="Copy translation"
             disabled={!displayText}
-            onClick={onCopy}
+            onCopy={onCopy}
+            iconSize={14}
             className="rounded-md p-1.5 text-text-muted hover:bg-surface-light hover:text-text-main disabled:opacity-30"
-          >
-            <Copy size={14} />
-          </button>
+          />
           <button
             type="button"
             title="Clear translation"
             disabled={isRealtimeActive || isTranslating || !displayText}
-            onClick={onClear}
+            onClick={() => {
+              if (isRealtimeActive || isTranslating || !displayText) return;
+              if (!window.confirm('是不是要真的清除翻译？')) return;
+              onClear();
+            }}
             className="rounded-md p-1.5 text-text-muted hover:bg-red-400/10 hover:text-red-400 disabled:opacity-30"
           >
             <Trash2 size={14} />

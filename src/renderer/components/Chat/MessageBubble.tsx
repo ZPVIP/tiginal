@@ -3,7 +3,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { clsx } from 'clsx';
-import { Copy, Check, ChevronDown, ChevronRight, Brain, Maximize2, Minimize2, Pencil, FileText, Monitor, Smartphone, Activity, Database, DatabaseZap, CircleHelp } from 'lucide-react';
+import { ChevronDown, ChevronRight, Brain, Maximize2, Minimize2, Pencil, FileText, Monitor, Smartphone, Activity, Database, DatabaseZap, CircleHelp } from 'lucide-react';
+import { CopyButton } from '../ui/CopyButton';
 import { TigiCat } from '../icons/TigiCat';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 
@@ -160,24 +161,7 @@ function ReasoningBlock({ content }: { content: string }) {
 
 
 export function MessageBubble({ role, content, timestamp, reasoning, images, onEdit, promptTokens, completionTokens, cachedTokens, cacheStatus, titleTokens, totalTokens, requestPromptTokens, requestCompletionTokens, requestCachedTokens, requestCacheStatus, requestTotalTokens, sessionTokens }: MessageProps) {
-  const [copied, setCopied] = useState(false);
-  const [copiedPlain, setCopiedPlain] = useState(false);
-  const [copiedRendered, setCopiedRendered] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleCopyPlain = () => {
-      if (contentRef.current) {
-          navigator.clipboard.writeText(contentRef.current.innerText);
-          setCopiedPlain(true);
-          setTimeout(() => setCopiedPlain(false), 2000);
-      }
-  };
 
   const handleCopyRendered = async () => {
       if (contentRef.current) {
@@ -193,9 +177,6 @@ export function MessageBubble({ role, content, timestamp, reasoning, images, onE
                   'text/plain': blobText 
               })];
               await navigator.clipboard.write(data);
-              
-              setCopiedRendered(true);
-              setTimeout(() => setCopiedRendered(false), 2000);
           } catch (err) {
               console.error('Failed to copy rendered:', err);
           }
@@ -322,34 +303,36 @@ export function MessageBubble({ role, content, timestamp, reasoning, images, onE
                isUser && "justify-end"
            )}>
                {/* Copy Markdown (Original) */}
-               <button 
-                 onClick={handleCopy}
-                 className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1"
+               <CopyButton 
+                 text={content}
+                 className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1 disabled:opacity-60"
                  title="Copy Markdown"
+                 iconSize={14}
                >
-                   {copied ? <Check size={14} /> : <Copy size={14} />}
                    <span className="text-[10px]">MD</span>
-               </button>
+               </CopyButton>
 
                {/* Copy Plain Text */}
-               <button 
-                 onClick={handleCopyPlain}
-                 className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1"
+               <CopyButton 
+                 text={() => contentRef.current?.innerText || ''}
+                 className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1 disabled:opacity-60"
                  title="Copy Plain Text"
+                 iconSize={14}
+                 defaultIcon={<FileText size={14} className="shrink-0" />}
                >
-                   {copiedPlain ? <Check size={14} /> : <FileText size={14} />}
                    <span className="text-[10px]">TXT</span>
-               </button>
+               </CopyButton>
 
                {/* Copy Rendered */}
-               <button 
-                 onClick={handleCopyRendered}
-                 className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1"
+               <CopyButton 
+                 onCopy={handleCopyRendered}
+                 className="p-1.5 text-text-muted hover:text-text-main transition-colors rounded hover:bg-surface flex items-center gap-1 disabled:opacity-60"
                  title="Copy Rich Text (for Word/Docs)"
+                 iconSize={14}
+                 defaultIcon={<Monitor size={14} className="shrink-0" />}
                >
-                   {copiedRendered ? <Check size={14} /> : <Monitor size={14} />}
                    <span className="text-[10px]">Rich</span>
-               </button>
+               </CopyButton>
 
                {!isUser && currentCacheStatus && (
                    <div

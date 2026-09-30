@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Copy, CheckCircle2, RotateCw, ExternalLink } from 'lucide-react';
+import { X, CheckCircle2, RotateCw, ExternalLink } from 'lucide-react';
+import { CopyButton } from '../ui/CopyButton';
 
 interface CopilotAuthModalProps {
   isOpen: boolean;
@@ -89,10 +90,6 @@ export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModa
     }, interval * 1000 + 100); // Add a small buffer
   };
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(userCode);
-  };
-
   if (!isOpen) return null;
 
   return (
@@ -119,13 +116,12 @@ export function CopilotAuthModal({ isOpen, onClose, onSuccess }: CopilotAuthModa
                  <p className="text-sm text-text-muted mb-2">Device Code</p>
                  <div className="flex items-center justify-center gap-3">
                     <code className="text-2xl font-mono text-primary font-bold tracking-wider">{userCode}</code>
-                    <button 
-                       onClick={handleCopyCode}
-                       className="p-2 hover:bg-surface-hover rounded-lg text-text-muted hover:text-text-main transition-colors"
+                    <CopyButton
+                       text={userCode}
+                       className="p-2 hover:bg-surface-hover rounded-lg text-text-muted hover:text-text-main transition-colors disabled:opacity-60"
                        title="Copy Code"
-                    >
-                        <Copy size={18} />
-                    </button>
+                       iconSize={18}
+                    />
                  </div>
               </div>
 

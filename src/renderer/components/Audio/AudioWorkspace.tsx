@@ -86,7 +86,7 @@ function statusLabel(state: WorkbenchState): string {
     case 'requesting-permission': return 'Requesting audio permission';
     case 'connecting': return 'Connecting to speech provider';
     case 'recording': return 'Listening';
-    case 'transcribing-file': return state.phase || `Transcribing ${Math.round(state.progress * 100)}%`;
+    case 'transcribing-file': return '';
     case 'finalizing': return 'Finalizing transcript and recording';
     case 'ready': return 'Complete';
     case 'failed': return 'Session failed';
@@ -396,7 +396,17 @@ export function AudioWorkspace() {
 
   const handleDeleteRecording = useCallback(async (filePath: string) => {
     if (!filePath) return;
-    if (!window.confirm('Are you sure you want to delete this recording and all its text/subtitle files?')) {
+    const baseName = filePath.split(/[/\\]/).pop() || '';
+    const stem = baseName.replace(/(-diar)?\.[^/.]+$/i, '');
+    const filesToDelete = [
+      baseName,
+      `${stem}.txt`,
+      `${stem}-diar.txt`,
+      `${stem}.srt`,
+    ];
+
+    const confirmMsg = `确定要删除该录音及所有相关文件吗？\n\n将删除以下文件：\n${filesToDelete.join('\n')}`;
+    if (!window.confirm(confirmMsg)) {
       return;
     }
     try {
@@ -413,23 +423,45 @@ export function AudioWorkspace() {
       }
     } catch (err) {
       console.error('Failed to delete recording:', err);
+      window.alert(`删除录音失败：${err instanceof Error ? err.message : String(err)}`);
     }
   }, [recordingPath]);
 
   const handleRediarize = useCallback(async (filePath: string) => {
     const audio = window.electron?.audio;
-    if (!audio || !filePath) return;
+    if (!audio || !filePath) {
+      window.alert('未找到音频文件。');
+      return;
+    }
+    if (!artifacts.transcript && !committedText && !editableText) {
+      window.alert('未找到该音频对应的转录文本。请先进行语音转录。');
+      return;
+    }
     setIsDiarizing(true);
     try {
       const updated = await audio.rediarizeRecording(filePath);
       setArtifacts(updated);
       setTranscriptTab('speakers');
     } catch (err) {
-      console.error('Failed to rediarize recording:', err);
-      window.alert(`Diarization failed: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('cancelled') || msg.includes('Cancelled')) {
+        console.log('Diarization was cancelled by user');
+      } else {
+        console.error('Failed to rediarize recording:', err);
+        window.alert(`角色分离失败：${msg}`);
+      }
     } finally {
       setIsDiarizing(false);
     }
+  }, [artifacts.transcript, committedText, editableText]);
+
+  const handleCancelDiarize = useCallback(async () => {
+    try {
+      await window.electron?.audio?.cancelRediarize();
+    } catch (err) {
+      console.error('Failed to cancel diarization:', err);
+    }
+    setIsDiarizing(false);
   }, []);
 
   // A failed session keeps what was already transcribed, now in the editable transcript box.
@@ -658,7 +690,13 @@ export function AudioWorkspace() {
     if (captureRef.current || fileTranscriberRef.current || !audioFile || !selectedProvider || !confirmDiscardEdits()) return;
     resetTranscript();
     setRecordingUrl('');
-    setRecordingPath('');
+    const filePath = window.electron?.webUtils?.getPathForFile?.(audioFile)
+      || (audioFile as any).path
+      || '';
+    setRecordingPath(filePath);
+    activeRecordingPathRef.current = filePath;
+    setArtifacts({});
+    setTranscriptTab('transcript');
     activeSourceRef.current = 'file';
     setState({ kind: 'connecting' });
     const transcriber = new AudioFileTranscriber({
@@ -763,19 +801,114 @@ export function AudioWorkspace() {
     setRecordingUrl('');
     if (!file) {
       setFileUrl('');
+      setRecordingPath('');
+      activeRecordingPathRef.current = '';
+      setArtifacts({});
+      resetTranscript();
+      setState({ kind: 'idle' });
       return;
     }
     setFileUrl(URL.createObjectURL(file));
     void inspectAudioFile(file)
       .then(setFileMetadata)
       .catch(error => setState({ kind: 'failed', message: `This audio file could not be decoded. ${messageFromError(error)}` }));
-  }, [busy]);
+
+    const filePath = window.electron?.webUtils?.getPathForFile?.(file)
+      || (file as any).path
+      || '';
+
+    if (filePath) {
+      setRecordingPath(filePath);
+      activeRecordingPathRef.current = filePath;
+      void (async () => {
+        try {
+          const audio = window.electron?.audio;
+          if (!audio) return;
+          const loaded = await audio.getRecordingArtifacts(filePath);
+          if (loaded && (loaded.transcript || loaded.speakers || loaded.srt)) {
+            setArtifacts(loaded);
+            if (loaded.transcript) {
+              committedTextRef.current = loaded.transcript;
+              setCommittedText(loaded.transcript);
+              setEditableText(loaded.transcript);
+              setPartialText('');
+              setTranscriptDirty(false);
+            } else {
+              committedTextRef.current = '';
+              setCommittedText('');
+              setEditableText('');
+              setPartialText('');
+              setTranscriptDirty(false);
+            }
+            if (loaded.speakers) {
+              setTranscriptTab('speakers');
+            } else if (loaded.srt) {
+              setTranscriptTab('srt');
+            } else {
+              setTranscriptTab('transcript');
+            }
+            setState({ kind: 'ready' });
+          } else {
+            setArtifacts({});
+            resetTranscript();
+            setTranscriptTab('transcript');
+            setState({ kind: 'idle' });
+          }
+        } catch (err) {
+          console.error('Failed to load existing artifacts for file:', err);
+          setArtifacts({});
+          resetTranscript();
+          setTranscriptTab('transcript');
+          setState({ kind: 'idle' });
+        }
+      })();
+    } else {
+      setRecordingPath('');
+      activeRecordingPathRef.current = '';
+      setArtifacts({});
+      resetTranscript();
+      setTranscriptTab('transcript');
+      setState({ kind: 'idle' });
+    }
+  }, [busy, resetTranscript]);
 
   const clearTranscript = useCallback(() => {
     if (transcriptDirty && !window.confirm('Discard your transcript edits?')) return;
     resetTranscript();
     if (!busy) setState({ kind: 'idle' });
   }, [busy, resetTranscript, transcriptDirty]);
+
+  const handleDeleteTranscriptArtifact = useCallback(async (tab: TranscriptTab) => {
+    if (tab === 'transcript') {
+      if (recordingPath) {
+        try {
+          const updated = await window.electron?.audio?.deleteRecordingArtifact(recordingPath, 'transcript');
+          setArtifacts(updated || {});
+        } catch (err) {
+          console.error('Failed to delete transcript artifact:', err);
+        }
+      }
+      resetTranscript();
+      if (!busy) setState({ kind: 'idle' });
+      return;
+    }
+
+    if (recordingPath) {
+      try {
+        const updated = await window.electron?.audio?.deleteRecordingArtifact(recordingPath, tab);
+        setArtifacts(updated || {});
+      } catch (err) {
+        console.error(`Failed to delete ${tab} artifact:`, err);
+      }
+    } else {
+      setArtifacts(prev => {
+        const next = { ...prev };
+        delete next[tab];
+        return next;
+      });
+    }
+    setTranscriptTab('transcript');
+  }, [busy, recordingPath, resetTranscript]);
 
   const copyTranscript = useCallback(() => {
     const text = editable ? editableText : `${committedText}${partialText}`;
@@ -961,9 +1094,10 @@ export function AudioWorkspace() {
           error={state.kind === 'failed' ? formatErrorMessage(state.message) : null}
           artifacts={artifacts}
           activeTab={transcriptTab}
-          canRediarize={Boolean(recordingPath && (editableText || committedText))}
+          canRediarize={Boolean(recordingPath)}
           isDiarizing={isDiarizing}
           onRediarize={() => void handleRediarize(recordingPath)}
+          onCancelDiarize={handleCancelDiarize}
           onTabChange={setTranscriptTab}
           onChange={value => {
             setEditableText(value);
@@ -971,6 +1105,8 @@ export function AudioWorkspace() {
           }}
           onCopy={copyTranscript}
           onClear={clearTranscript}
+          recordingPath={recordingPath}
+          onDeleteArtifact={handleDeleteTranscriptArtifact}
         />
         <TranslationEditor
           committedText={committedTranslation}
@@ -1014,7 +1150,7 @@ export function AudioWorkspace() {
                 : source === 'mixed'
                   ? <AudioLines size={13} />
                   : <Mic size={13} />}
-            <span className="shrink-0">{statusLabel(state)}</span>
+            {statusLabel(state) ? <span className="shrink-0">{statusLabel(state)}</span> : null}
             {state.kind === 'recording' && <Radio size={12} className="animate-pulse text-red-400" />}
             {recordingPath && (
               <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
@@ -1026,26 +1162,19 @@ export function AudioWorkspace() {
                 >
                   <FolderOpen size={13} />
                 </button>
-                <button
-                  type="button"
-                  title="Redo speaker diarization (Nemotron-3)"
-                  disabled={isDiarizing || busy}
-                  onClick={() => void handleRediarize(recordingPath)}
-                  className="rounded p-0.5 text-text-muted transition-colors hover:bg-surface-light hover:text-text-main disabled:opacity-40"
-                >
-                  <Sparkles size={13} className={isDiarizing ? 'animate-spin text-primary' : ''} />
-                </button>
                 <span className="truncate font-mono text-[11px]" title={recordingPath}>
                   {formatTildePath(recordingPath)}
                 </span>
-                <button
-                  type="button"
-                  title="Delete recording"
-                  onClick={() => void handleDeleteRecording(recordingPath)}
-                  className="rounded p-0.5 text-text-muted transition-colors hover:bg-red-400/10 hover:text-red-400"
-                >
-                  <Trash2 size={13} />
-                </button>
+                {source !== 'file' && (
+                  <button
+                    type="button"
+                    title="Delete recording"
+                    onClick={() => void handleDeleteRecording(recordingPath)}
+                    className="rounded p-0.5 text-text-muted transition-colors hover:bg-red-400/10 hover:text-red-400"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </div>
             )}
           </div>

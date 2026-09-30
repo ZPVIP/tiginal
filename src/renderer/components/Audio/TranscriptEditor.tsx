@@ -1,8 +1,24 @@
 import { useState } from 'react';
-import { AlertCircle, Copy, LoaderCircle, Sparkles, Trash2 } from 'lucide-react';
+import { AlertCircle, LoaderCircle, Sparkles, Trash2, X } from 'lucide-react';
 import type { AudioSessionArtifacts } from '../../../shared/audio/types';
+import { CopyButton } from '../ui/CopyButton';
 
 export type TranscriptTab = 'transcript' | 'speakers' | 'srt';
+
+export function getTabFileName(recordingPath: string, tab: TranscriptTab): string {
+  if (!recordingPath) return '';
+  const base = recordingPath.split(/[/\\]/).pop() || '';
+  const stem = base.replace(/(-diar)?\.[^/.]+$/i, '');
+  if (!stem) return '';
+  switch (tab) {
+    case 'transcript':
+      return `${stem}.txt`;
+    case 'speakers':
+      return `${stem}-diar.txt`;
+    case 'srt':
+      return `${stem}.srt`;
+  }
+}
 
 interface TranscriptEditorProps {
   committedText: string;
@@ -14,13 +30,16 @@ interface TranscriptEditorProps {
   error?: string | null;
   artifacts?: AudioSessionArtifacts;
   activeTab?: TranscriptTab;
+  recordingPath?: string;
   canRediarize?: boolean;
   isDiarizing?: boolean;
   onRediarize?(): void;
+  onCancelDiarize?(): void;
   onTabChange?(tab: TranscriptTab): void;
   onChange(value: string): void;
-  onCopy(): void;
+  onCopy?(): void;
   onClear(): void;
+  onDeleteArtifact?(tab: TranscriptTab): void;
 }
 
 export function TranscriptEditor(props: TranscriptEditorProps) {
@@ -39,7 +58,7 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
     {
       id: 'speakers',
       label: 'Speakers',
-      enabled: Boolean(props.artifacts?.speakers),
+      enabled: Boolean(props.artifacts?.speakers || props.canRediarize),
       tooltip: props.artifacts?.speakers
         ? 'Diarized transcript with speaker labels (-diar.txt)'
         : 'Available when Nemotron + MMS-Align diarization is generated',
@@ -68,10 +87,47 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
     }
   };
 
-  const handleCopyCurrent = () => {
-    const text = getCurrentTextToCopy();
-    if (!text) return;
-    void navigator.clipboard.writeText(text);
+  const canDeleteCurrent = (): boolean => {
+    if (props.busy) return false;
+    switch (currentTab) {
+      case 'speakers':
+        return Boolean(props.artifacts?.speakers);
+      case 'srt':
+        return Boolean(props.artifacts?.srt);
+      case 'transcript':
+      default:
+        return Boolean(props.editableText || streamingText || props.artifacts?.transcript);
+    }
+  };
+
+  const getDeleteTitle = (): string => {
+    const fileName = getTabFileName(props.recordingPath || '', currentTab);
+    if (fileName) return `Delete ${fileName}`;
+    switch (currentTab) {
+      case 'speakers':
+        return 'Delete speakers diarization';
+      case 'srt':
+        return 'Delete SRT subtitle';
+      case 'transcript':
+      default:
+        return 'Clear transcript';
+    }
+  };
+
+  const handleDeleteCurrent = () => {
+    if (!canDeleteCurrent()) return;
+    const fileName = getTabFileName(props.recordingPath || '', currentTab);
+    const confirmMessage = fileName
+      ? `是不是要真的删除 ${fileName}?`
+      : (currentTab === 'transcript' ? '是不是要真的清空文本？' : `是不是要真的删除 ${currentTab}?`);
+
+    if (!window.confirm(confirmMessage)) return;
+
+    if (props.onDeleteArtifact) {
+      props.onDeleteArtifact(currentTab);
+    } else {
+      props.onClear();
+    }
   };
 
   return (
@@ -114,32 +170,44 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
               <span className="truncate">{props.error}</span>
             </span>
           )}
-          {props.canRediarize && (
-            <button
-              type="button"
-              title="Redo speaker diarization (Nemotron + MMS-Align) and generate Speakers, SRT"
-              disabled={props.busy || props.isDiarizing}
-              onClick={props.onRediarize}
-              className="mr-1 flex items-center gap-1.5 rounded-md border border-border bg-surface-light px-2 py-1 text-xs text-text-muted hover:border-primary hover:text-text-main disabled:opacity-40"
-            >
-              <Sparkles size={12} className={props.isDiarizing ? 'animate-spin text-primary' : 'text-primary'} />
-              <span>{props.isDiarizing ? 'Diarizing...' : 'Diarize'}</span>
-            </button>
+          {currentTab === 'speakers' && props.canRediarize && (
+            <div className="mr-1 flex items-center gap-1">
+              <button
+                type="button"
+                title="Redo speaker diarization (Nemotron + MMS-Align) and generate Speakers, SRT"
+                disabled={props.busy || props.isDiarizing}
+                onClick={props.onRediarize}
+                className="flex items-center gap-1.5 rounded-md border border-border bg-surface-light px-2 py-1 text-xs text-text-muted hover:border-primary hover:text-text-main disabled:opacity-40"
+              >
+                <Sparkles size={12} className={props.isDiarizing ? 'animate-spin text-primary' : 'text-primary'} />
+                <span>{props.isDiarizing ? 'Diarizing...' : 'Diarize'}</span>
+              </button>
+              {props.isDiarizing && (
+                <button
+                  type="button"
+                  title="Cancel diarization"
+                  onClick={props.onCancelDiarize}
+                  className="flex items-center gap-1 rounded-md border border-accent-danger/40 bg-accent-danger/10 px-2 py-1 text-xs text-accent-danger hover:bg-accent-danger/20 transition-colors"
+                >
+                  <X size={12} />
+                  <span>Cancel</span>
+                </button>
+              )}
+            </div>
           )}
-          <button
-            type="button"
+          <CopyButton
+            key={currentTab}
             title={`Copy ${currentTab}`}
             disabled={!getCurrentTextToCopy()}
-            onClick={handleCopyCurrent}
+            text={getCurrentTextToCopy}
+            iconSize={14}
             className="rounded-md p-1.5 text-text-muted hover:bg-surface-light hover:text-text-main disabled:opacity-30"
-          >
-            <Copy size={14} />
-          </button>
+          />
           <button
             type="button"
-            title="Clear transcript"
-            disabled={props.busy || !(props.editableText || streamingText)}
-            onClick={props.onClear}
+            title={getDeleteTitle()}
+            disabled={!canDeleteCurrent()}
+            onClick={handleDeleteCurrent}
             className="rounded-md p-1.5 text-text-muted hover:bg-red-400/10 hover:text-red-400 disabled:opacity-30"
           >
             <Trash2 size={14} />

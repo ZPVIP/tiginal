@@ -163,3 +163,48 @@ test('existing audio file input does not create duplicate audio and saves artifa
   assert.equal(fs.existsSync(userAudioPath), false);
   assert.equal(fs.existsSync(expectedTxt), false);
 });
+
+test('AudioService.deleteRecordingArtifact deletes only the selected artifact file', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tiginal-artifact-delete-'));
+  t.after(() => {
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  const stem = '2026-09-29_00-09-14ZM6';
+  const wavPath = path.join(directory, `${stem}.wav`);
+  const txtPath = path.join(directory, `${stem}.txt`);
+  const diarPath = path.join(directory, `${stem}-diar.txt`);
+  const srtPath = path.join(directory, `${stem}.srt`);
+
+  fs.writeFileSync(wavPath, 'wav data');
+  fs.writeFileSync(txtPath, 'plain text');
+  fs.writeFileSync(diarPath, 'Speaker 1: hello');
+  fs.writeFileSync(srtPath, '1\n00:00:00,160 --> 00:00:01,000\nhello\n');
+
+  const service = new AudioService({}, {}, directory);
+
+  // 1. Delete SRT
+  const afterSrt = service.deleteRecordingArtifact(wavPath, 'srt');
+  assert.equal(fs.existsSync(srtPath), false);
+  assert.equal(fs.existsSync(wavPath), true);
+  assert.equal(fs.existsSync(txtPath), true);
+  assert.equal(fs.existsSync(diarPath), true);
+  assert.equal(afterSrt.srt, undefined);
+  assert.equal(afterSrt.speakers, 'Speaker 1: hello');
+  assert.equal(afterSrt.transcript, 'plain text');
+
+  // 2. Delete Speakers
+  const afterSpeakers = service.deleteRecordingArtifact(wavPath, 'speakers');
+  assert.equal(fs.existsSync(diarPath), false);
+  assert.equal(fs.existsSync(wavPath), true);
+  assert.equal(fs.existsSync(txtPath), true);
+  assert.equal(afterSpeakers.speakers, undefined);
+  assert.equal(afterSpeakers.transcript, 'plain text');
+
+  // 3. Delete Transcript
+  const afterTxt = service.deleteRecordingArtifact(wavPath, 'transcript');
+  assert.equal(fs.existsSync(txtPath), false);
+  assert.equal(fs.existsSync(wavPath), true);
+  assert.equal(afterTxt.transcript, undefined);
+});
+

@@ -264,6 +264,7 @@ export interface TiginalDiarizeOptions {
   language?: string;
   writeArtifacts?: boolean;
   onProgress?: (progress: number, stage?: string) => void;
+  signal?: AbortSignal;
 }
 
 export interface FullDiarizationResult {
@@ -330,6 +331,21 @@ export async function runTiginalDiarizePipeline(
       },
     });
 
+    let isAborted = false;
+    if (options.signal) {
+      if (options.signal.aborted) {
+        isAborted = true;
+        try { proc.kill('SIGTERM'); } catch {}
+        reject(new Error('Diarization was cancelled'));
+        return;
+      }
+      options.signal.addEventListener('abort', () => {
+        isAborted = true;
+        try { proc.kill('SIGTERM'); } catch {}
+        reject(new Error('Diarization was cancelled'));
+      }, { once: true });
+    }
+
     let stdout = '';
     let stderr = '';
 
@@ -373,11 +389,13 @@ export async function runTiginalDiarizePipeline(
     });
 
     proc.on('error', err => {
+      if (isAborted) return;
       console.error(`[TiginalDiarize] Spawn error:`, err);
       reject(new Error(`Failed to spawn tiginal-diarize: ${err.message}`));
     });
 
     proc.on('close', code => {
+      if (isAborted) return;
       const elapsedMs = Date.now() - startTime;
       console.log(`[TiginalDiarize] Process exited with code ${code} in ${elapsedMs}ms`);
       if (code !== 0) {

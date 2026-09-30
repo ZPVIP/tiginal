@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Copy,
   Loader2,
   Play,
   RefreshCw,
@@ -9,6 +8,7 @@ import {
   TerminalSquare,
   Trash2,
 } from 'lucide-react';
+import { CopyButton } from '../ui/CopyButton';
 import type {
   DownloadedModel,
   EngineParameterDefinition,
@@ -140,25 +140,18 @@ function ModelLaunchRow({
   const selectedModel = models.find(model => model.path === modelPath);
   const commandLine = instance?.commandLine;
 
-  const copyCommand = async () => {
-    if (!commandLine) return;
-    await navigator.clipboard.writeText(commandLine);
-  };
-
   return (
     <div className="border-b border-border px-3 py-3 last:border-b-0">
       {instance && (
         <div className="mb-2 flex items-center gap-2 text-[11px] text-text-muted">
           <span>Model Engine: <span className="text-text-main">{engine.name}</span></span>
-          <button
-            type="button"
+          <CopyButton
             disabled={!commandLine}
             title={commandLine || 'Command line will be available after the first start.'}
-            onClick={() => void copyCommand()}
+            text={commandLine || ''}
+            iconSize={12}
             className="rounded p-1 text-text-muted hover:bg-surface-light hover:text-text-main disabled:opacity-40"
-          >
-            <Copy size={12} />
-          </button>
+          />
         </div>
       )}
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(150px,0.65fr)_repeat(4,36px)] items-end gap-2">

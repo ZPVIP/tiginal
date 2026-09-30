@@ -273,6 +273,20 @@ export function setupAudioHandlers(): void {
     if (typeof value !== 'string' || !value.trim()) throw new Error('Recording path is required');
     getAudioService().deleteRecording(value);
   });
+  ipcMain.handle('audio:delete-recording-artifact', (_event, value: unknown) => {
+    if (typeof value !== 'object' || value === null) {
+      throw new Error('Invalid delete-recording-artifact request');
+    }
+    const recordingPath = Reflect.get(value, 'recordingPath');
+    const artifactType = Reflect.get(value, 'artifactType');
+    if (typeof recordingPath !== 'string' || !recordingPath.trim()) {
+      throw new Error('Recording path is required');
+    }
+    if (artifactType !== 'transcript' && artifactType !== 'speakers' && artifactType !== 'srt') {
+      throw new Error('Valid artifactType is required');
+    }
+    return getAudioService().deleteRecordingArtifact(recordingPath, artifactType);
+  });
   ipcMain.handle('audio:get-recording-url', (_event, value: unknown) => {
     if (typeof value !== 'string' || !value.trim()) throw new Error('Recording path is required');
     return toRecordingUrl(value);
@@ -284,5 +298,8 @@ export function setupAudioHandlers(): void {
   ipcMain.handle('audio:rediarize-recording', (_event, value: unknown) => {
     if (typeof value !== 'string' || !value.trim()) throw new Error('Recording path is required');
     return getAudioService().rediarizeRecording(value);
+  });
+  ipcMain.handle('audio:cancel-rediarize', () => {
+    getAudioService().cancelRediarize();
   });
 }

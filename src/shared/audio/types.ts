@@ -300,8 +300,10 @@ export interface AudioRendererApi {
   finishSession(sessionId: string): Promise<FinishSessionResult | null>;
   abortSession(sessionId: string): Promise<void>;
   deleteRecording(recordingPath: string): Promise<void>;
+  deleteRecordingArtifact(recordingPath: string, artifactType: 'transcript' | 'speakers' | 'srt'): Promise<AudioSessionArtifacts>;
   getRecordingUrl(recordingPath: string): Promise<string>;
   getRecordingArtifacts(recordingPath: string): Promise<AudioSessionArtifacts>;
   rediarizeRecording(recordingPath: string): Promise<AudioSessionArtifacts>;
+  cancelRediarize(): Promise<void>;
   onSessionEvent(listener: (event: AudioSessionEvent) => void): () => void;
 }
