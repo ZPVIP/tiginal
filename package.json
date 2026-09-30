@@ -34,7 +34,7 @@
     "tesseract.js@7.0.0": false
   },
   "author": "",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "@types/better-sqlite3": "^7.6.13",

@@ -1,212 +1,185 @@
 # Tiginal
 
-A cross-platform terminal emulator built with Electron, xterm.js, and node-pty.
+English | [中文](README.zh.md)
 
-## Features
+> **All-in-One AI-Powered Developer Workstation & Swiss Army Knife for the AI Era**  
+> Unifying an **Intelligent AI Agent + Audio & Speech Lab + Native Fast Terminal + Local Model Engine + Secret Vault** into a single cohesive experience—eliminating the friction of switching across terminals, web browsers, translation tools, and ad-hoc scripts.
 
-- 🖥️ Cross-platform (macOS, Windows, Linux)
-- ⚡ Native PTY for true terminal experience
-- 🎨 Beautiful Catppuccin-inspired theme
-- 📜 Smart command history & suggestions
-- ⭐ Favorite commands with AI normalization
-- 🛡️ Blacklist patterns (regex) for commands & directories
-- 🧹 Auto-cleanup of low-frequency history
-- 🔐 SSH server management (encrypted storage) - *coming soon*
-- ☁️ Multi-device sync - *coming soon*
-- 🪟 Split Panes (Cmd+\ for split, Cmd+Opt+Arrow for nav)
+---
 
-## Master Key Encryption
+## 🌟 Key Features
 
-[Master Key Encryption Explained](README-KEY.md)
+### 1. 🤖 AI Chat & Agent Assistant (AI Copilot & MCP)
+- **Multi-Model Immersive Chat**: Seamlessly interacts with top-tier cloud models and local offline LLMs. Supports real-time Reasoning Effort / chain-of-thought folding, multi-session isolation, syntax highlighting, and instant copy feedback.
+- **Model Context Protocol (MCP) Ecosystem**:
+  - Full native support for the open MCP standard, unlocking endless external tools and data sources.
+  - Supports both **stdio** (local subprocess) and **Streamable HTTP / SSE** (remote server) transports.
+  - Fine-grained per-server tool toggles and reusable profile snapshots.
+- **Built-in Web Search & Deep Fetching**:
+  - `WebSearch`: High-speed concurrent search aggregation across DuckDuckGo, Google, and Bing without browser overhead, extracting titles, URLs, and summaries.
+  - `WebFetch`: Built-in full Chromium rendering environment to scrape dynamic SPAs and JavaScript-heavy pages.
+- **Human-in-the-Loop Security Approval**: Intelligently inspects high-risk commands and file operations (Tool-aware approval), auto-authorizing safe read-only operations while prompting for confirmation on destructive actions.
 
-## AI Web Tools
+---
 
-- `WebSearch` uses `fetch()` to request DuckDuckGo, Google, or Bing search-result HTML. Cheerio extracts the title, URL, and snippet from each result, which Tiginal returns to the model in a numbered format. It does not open each result page.
-- `WebFetch` loads a specific URL in a hidden Electron `BrowserWindow`. It waits for JavaScript-rendered content, then returns the page title, URL, and body text to the model.
+### 2. 🎙️ Audio & Speech Lab
+- **All-Scenario Tri-Source Audio Capture**:
+  - 🎤 **Microphone Capture**: Everyday voice notes and personal speaking.
+  - 🔊 **System Audio Recording**: Built on macOS ScreenCaptureKit—**no virtual audio drivers (such as BlackHole or Soundflower) needed** to record computer audio directly (video calls, webinars, podcasts, web streams).
+  - 🔀 **Mixed Audio Capture**: Records microphone voice + computer speaker playback simultaneously—the ultimate companion for two-way interviews, meetings, and tutorials.
+- **Local Offline Whisper Transcription**:
+  - Zero privacy leakage. Dispatches local lightweight and high-precision Whisper models directly on-device with no internet connectivity required.
+- **Remote / Self-Hosted Streaming STT (R2T2)**：
+  - Sub-second word-by-word streaming transcriptions; built-in repetitive flooding suppression and seamless rollover for extended recording sessions.
+- **Speaker Diarization & SRT Generation (Nemotron-3 + MMS-Align)**:
+  - Deeply integrated with the native high-performance Rust engine `tiginal-diarize`, combining acoustic forced alignment with Nemotron-3 speaker separation.
+  - Generates labeled conversational transcripts (`-diar.txt`) and standard subtitle files (`.srt`) with intelligent sentence-level line wrapping to prevent horizontal overflow.
+  - Supports one-click **Redo Diarization** on existing text and real-time **Cancel** controls.
+- **Real-Time & Static Simultaneous Translation (T3PO)**:
+  - Bidirectional English-Chinese streaming simultaneous translation with configurable latency modes (`low`, `native`, `high`).
+  - Supports custom Technical Terms dictionaries (`source=target`) and customized Translation Instructions.
+- **Intelligent Audio Artifact Management**:
+  - **Auto-Artifact Discovery**: Loading any local audio file immediately scans and loads existing `.txt`, `-diar.txt`, and `.srt` files into their respective tabs.
+  - **Granular Artifact Deletion**: Delete individual tab files with clear confirmation dialogs displaying the exact filename; multi-file deletion dialogs present each related file on its own line; external audio files hide full-delete buttons to prevent accidental loss.
+  - **Global 3-Second Copy Feedback**: Instant green checkmark indicator that locks for 3 seconds before restoring to prevent accidental duplicate clicks.
 
-`WebSearch` is faster and works well for discovery. Use `WebFetch` when the model needs the content of a specific page.
+---
 
-## Command History & Suggestions
+### 3. ⚡ Smart Terminal
+- **Native PTY Performance**: Powered by Electron + xterm.js + node-pty, delivering lightning-fast, native command-line responsiveness.
+- **Split Panes Matrix**: Split workspaces horizontally and vertically, navigating between panes with rapid keyboard shortcuts.
+- **Smart History & Frequency-Based Suggestions**: Contextual auto-suggestions sorted by real-world usage patterns.
+- **Regex Blacklist Filtering**: Define custom regex rules to exclude passwords, API tokens, or one-off commands from cluttering shell history.
+- **Automated Low-Frequency Cleanup**: Built-in score-based decay engine that purges stale and rare commands automatically.
+- **Elegant Themes**: Crafted with Catppuccin color palettes and polished micro-animations.
 
-Commands are automatically recorded and suggested as you type (prefix match, sorted by frequency).
+---
 
-### Auto-filter (not recorded)
-- `cd` commands (uses separate directory history)
-- Multi-line commands (`\n` or trailing `\`)
-- Compound commands (`&&` or `||`)
-- Commands matching blacklist patterns
+### 4. 🧠 Local Models & Engines (Model Library & Engines)
+- **Smart Model Asset Scanning**: Automatically detects local GGUF models, Hugging Face caches, and custom directories with commit-hash revision detection and multi-quantization categorization (e.g. Q4_K_M, Q8_0).
+- **Resumable Chunked Downloads**: Robust Range & ETag-backed downloading engine for multi-gigabyte models that resumes cleanly after network interruptions.
+- **Engine Lifecycle Supervisor**: Directly hosts and schedules local runtimes (such as llama.cpp and tiginal-diarize) while tracking process health and hardware utilization.
 
-### Blacklist
-Add regex patterns to exclude specific commands/directories from history.
-Example: `git commit -am(.*)` will prevent all such commits from being recorded.
+---
 
-### Cleanup
-Configure auto-cleanup in Settings → Terminal → General to remove entries with low usage scores.
+### 5. 🔐 Master Key & Credentials Vault
+- **Master Key-Derived Encryption**: Uses master-key AES encryption to securely protect all API tokens, SSH keys, and sensitive environment configs.
+- **Zero-Trust Ephemeral Materialization**: Securely injects temporary environment variables and files on demand only during task execution, immediately purging them upon completion to eliminate the risk of committing plaintext `.env` files.
 
-## Keyboard Shortcuts
+---
+
+## ⚙️ Exploring Settings: Endless Possibilities
+
+Tiginal provides extensive customization options through its settings interface:
+
+| Settings Tab | Capabilities & Configuration Possibilities |
+|---|---|
+| **AI Providers** | • Pre-configured integrations with OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Groq, OpenRouter, and more.<br>• Native **GitHub Copilot** authentication workflow.<br>• Connect any OpenAI-compatible local or private endpoints (e.g. vLLM, Ollama, LocalAI).<br>• Automatically syncs models.dev metadata to configure context limits, token limits, and Reasoning Effort. |
+| **Model Library & Engines** | • Scan and index local model directories.<br>• Download GGUF models with automatic resume and version grouping.<br>• Manage local inference runtimes: executable paths, startup flags, and platform optimizations. |
+| **Speech Providers** | • Select STT backends: Local offline Whisper or remote R2T2 streaming endpoints.<br>• Configure preferred languages, concurrency, and rollover policies.<br>• Configure T3PO translation endpoints (WebSocket streaming or LLM backends). |
+| **MCP & Agent Skills** | • Add, edit, and orchestrate MCP servers (local stdio commands or remote SSE URLs).<br>• Enable or disable individual tools with profile snapshots.<br>• Import and mount domain-specific Agent Skills. |
+| **Credentials Vault** | • Master Key initialization, locking, and status monitoring.<br>• Manage isolated environment variable groups (Production, Staging, Local).<br>• Audit materialization events and credential usage logs. |
+| **Terminal & Shortcuts** | • Choose preferred shell binary (zsh, bash, fish, PowerShell).<br>• Customize fonts, font sizes, cursors, and Catppuccin themes.<br>• Configure history scoring parameters and blacklist regexes.<br>• Remap global keyboard shortcuts. |
+| **System & Permissions** | • Diagnose and manage macOS Screen and System Audio capture permissions with guided recovery. |
+
+---
+
+## ⌨️ Keyboard Shortcuts
 
 | Shortcut | Action |
-|----------|--------|
-| `Cmd + T` | New Tab |
+|---|---|
+| `Cmd + T` | New Terminal Tab |
 | `Cmd + W` | Close Tab |
-| `Cmd + 1-9` | Switch Tab |
+| `Cmd + 1-9` | Switch to Tab |
 | `Cmd + \` | Split Pane Right |
-| `Cmd + Opt + Arrows` | Navigate Panes |
-| `Cmd + Shift + W` | Close Pane |
+| `Cmd + Opt + Arrows` | Navigate Across Panes |
+| `Cmd + Shift + W` | Close Current Pane |
 
-## Development
+---
 
-```bash
-# Install dependencies
-npm install
+## 🚀 Installation (macOS)
 
-# Start in development mode
-npm start
-```
+Download official prebuilt binaries from [GitHub Releases](https://github.com/ZPVIP/tiginal/releases):
+- Apple Silicon (M1/M2/M3/M4): `Tiginal-x.x.x-arm64.dmg`
+- Intel Macs: `Tiginal-x.x.x.dmg`
 
-## Install on macOS
-
-Download the `.dmg` for your Mac from [Releases](https://github.com/ZPVIP/tiginal/releases): `Tiginal-x.x.x-arm64.dmg` for Apple silicon, `Tiginal-x.x.x.dmg` for Intel.
-
-The app is not signed with an Apple Developer ID yet, so macOS blocks the first launch. Open Tiginal once, then go to System Settings > Privacy & Security and click Open Anyway. If macOS reports that the app is damaged, remove the download quarantine and open it again:
-
+Because the app is distributed with ad-hoc signing, macOS may gate the first launch. If prompted, go to **System Settings > Privacy & Security** and click **Open Anyway**. If macOS reports the bundle is damaged, run:
 ```bash
 xattr -dr com.apple.quarantine /Applications/Tiginal.app
 ```
 
-## Uninstall on macOS
+> **Important: System Audio Capture Permission**  
+> When first attempting system audio recording, check and enable Tiginal under **System Settings > Privacy & Security > Screen & System Audio Recording**. Quit and reopen Tiginal after modifying permissions.
 
-To completely uninstall Tiginal and clean up system permissions and cached data:
+---
+
+## 🛠️ Development & Building from Source
+
+Prerequisites: Node.js >= 22, Git.
 
 ```bash
-# 1. Reset Screen & System Audio Recording permission in macOS TCC
+# 1. Clone the repository
+git clone https://github.com/ZPVIP/tiginal.git
+cd tiginal
+
+# 2. Install dependencies and run tests
+npm ci
+npm test
+
+# 3. Start development mode
+npm start
+
+# 4. Package distribution binaries
+npm run dist
+```
+
+Output packages will be generated inside the `release/` directory.
+
+---
+
+## 🗑️ Complete Uninstall (macOS)
+
+To cleanly remove Tiginal along with system permissions and caches:
+
+```bash
+# 1. Reset Screen & System Audio Recording TCC permissions
 tccutil reset ScreenCapture com.tiginal.app
 
-# 2. Remove the application bundle
+# 2. Remove application bundle
 rm -rf /Applications/Tiginal.app
 
-# 3. (Optional) Remove application settings and cache
+# 3. Clean up app configurations, databases, and caches
 rm -rf ~/Library/Application\ Support/Tiginal
 rm -rf ~/Library/Caches/Tiginal
 rm -rf ~/.cache/tiginal
 ```
 
-## Build from Source
+---
 
-Official packages are published for macOS only. On Windows and Linux, build Tiginal yourself. You need Node.js 24 and Git; the native modules ship prebuilt binaries, so no C++ toolchain is required.
-
-```bash
-git clone https://github.com/ZPVIP/tiginal.git
-cd tiginal
-npm ci
-npm run dist
-```
-
-`npm run dist` compiles the app and packages it for the current platform without uploading anything. Output files are in the `release/` directory.
-
-| Platform | Files |
-|----------|-------|
-| macOS | `Tiginal-x.x.x-arm64.dmg`, `Tiginal-x.x.x.dmg`, and matching `-mac.zip` files |
-| Windows | `Tiginal Setup x.x.x.exe` |
-| Linux | `Tiginal-x.x.x.AppImage`, `tiginal_x.x.x_amd64.deb` |
-
-## Build and install a macOS release locally
-
-Use this process to build a release-mode app and install it on the same Mac without uploading a GitHub release. The macOS system application directory is `/Applications`, with an uppercase `A`.
-
-1. Install the exact dependencies from `package-lock.json` and run the test suite:
-
-```bash
-npm ci
-npm test
-```
-
-2. Build the release packages:
-
-```bash
-npm run dist
-```
-
-The build creates Intel and Apple silicon disk images in `release/`. Use the Apple silicon image on an `arm64` Mac. Use the image without an architecture suffix on an Intel Mac.
-
-3. Open the disk image for your Mac.
-
-For Apple silicon:
-
-```bash
-open "release/Tiginal-$(node -p "require('./package.json').version")-arm64.dmg"
-```
-
-For Intel:
-
-```bash
-open "release/Tiginal-$(node -p "require('./package.json').version").dmg"
-```
-
-4. Drag **Tiginal** into **Applications** in the disk image window. If Finder finds an older copy, quit Tiginal and choose **Replace**.
-
-5. Eject the disk image, then open the installed app:
-
-```bash
-open /Applications/Tiginal.app
-```
-
-The project applies an ad-hoc signature because it does not have an Apple Developer ID certificate. If macOS blocks the first launch, open **System Settings > Privacy & Security** and click **Open Anyway**. If macOS reports that the app is damaged, remove its download quarantine and open it again:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Tiginal.app
-open /Applications/Tiginal.app
-```
-
-Verify the installed bundle and its executable architecture:
-
-```bash
-codesign --verify --deep --strict --verbose=2 /Applications/Tiginal.app
-file /Applications/Tiginal.app/Contents/MacOS/Tiginal
-```
-
-After the first system-audio capture attempt, add and enable Tiginal under **System Settings > Privacy & Security > Screen & System Audio Recording**. Quit and reopen Tiginal after changing this permission.
-
-## Publishing a Release (maintainers)
-
-Releases are built on a maintainer's Mac and uploaded to a draft GitHub release. Continuous integration is not used.
-
-One-time setup: create a fine-grained GitHub token limited to `ZPVIP/tiginal` with the Contents: Read and write permission, then store it in the login keychain. The command prompts for the token, so it never appears in shell history:
-
-```bash
-security add-generic-password -a "$USER" -s tiginal-github-release -w
-```
-
-For each release, set the version, push the commit and tag, and run the release script:
-
-```bash
-npm version 0.2.0
-git push --follow-tags
-npm run release
-```
-
-`npm run release` refuses to run with uncommitted changes or an unpushed tag. It reinstalls dependencies, runs the tests, builds the x64 and arm64 packages, and uploads them to a draft release named after the tag. Review the draft on GitHub, then publish it there or with `gh release edit v0.2.0 --draft=false`.
-
-## Architecture
+## 🏗️ Architecture
 
 ```
-src/
-├── main/           # Electron main process
-│   ├── index.ts    # Entry point
-│   ├── pty.ts      # PTY management
-│   ├── ipc.ts      # IPC handlers
-│   └── preload.ts  # Context bridge
-├── renderer/       # Frontend
-│   ├── terminal.ts # xterm.js wrapper
-│   └── styles.css  # Theme
-└── shared/         # Shared types
-
-services/           # Service layer (reserved)
-├── ssh/            # SSH server management
-├── history/        # Command history
-└── ai/             # AI suggestions
+tiginal/
+├── src/
+│   ├── main/                 # Electron main process
+│   │   ├── audio/            # Audio capture, R2T2, T3PO, AlignmentEngine, PlatformCapture
+│   │   ├── models/           # Model library scanner, resumable downloader, engine supervisor
+│   │   ├── services/         # MCP client, credential encryption & materialization
+│   │   ├── pty.ts            # Native PTY orchestration
+│   │   └── preload.ts        # Secure context bridge
+│   ├── renderer/             # React renderer process
+│   │   ├── components/Audio/ # Audio workspace, waveforms, transcript/speakers/SRT editors
+│   │   ├── components/Chat/  # AI chat interface & MessageBubble
+│   │   ├── components/Settings/ # Settings management panels
+│   │   └── components/Terminal/ # xterm.js terminal integration & pane management
+│   └── shared/               # Shared type definitions and IPC schemas
+└── tiginal-diarize/          # High-performance Rust diarization and alignment engine
 ```
 
-## License
+---
 
-MIT
+## 📄 License
+
+This project is licensed under the **GNU General Public License v3.0 or later (GPL-3.0-or-later)** - see the [LICENSE](LICENSE) file for details.
+
+Third-party libraries, dependencies, and AI model weight licensing details are documented in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
