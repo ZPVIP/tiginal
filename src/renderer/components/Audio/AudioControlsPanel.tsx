@@ -1,4 +1,4 @@
-import { AudioLines, ChevronDown, FileAudio, Mic, Square, Volume2, X } from 'lucide-react';
+import { AudioLines, ChevronDown, FileAudio, Loader2, Mic, Square, Volume2, X } from 'lucide-react';
 import type {
   AudioInputSourceKind,
   SpeechProvider,
@@ -49,6 +49,7 @@ interface AudioControlsPanelProps {
   canStart: boolean;
   isFinalizing: boolean;
   fileProgress: number;
+  filePhase?: string;
   onStart(): void;
   onStop(): void;
   onCancel(): void;
@@ -361,8 +362,17 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
 
       <div className="shrink-0 border-t border-border p-4">
         {props.source === 'file' && props.isActive && (
-          <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-surface-light">
-            <div className="h-full bg-primary transition-[width]" style={{ width: `${Math.round(props.fileProgress * 100)}%` }} />
+          <div className="mb-3 space-y-1">
+            <div className="flex justify-between text-[11px] text-text-muted">
+              <span>{props.filePhase || 'Transcribing...'}</span>
+              <span className="font-mono font-medium text-text-main">{Math.round(props.fileProgress * 100)}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-surface-light">
+              <div
+                className="h-full bg-primary transition-all duration-200 ease-out"
+                style={{ width: `${Math.round(props.fileProgress * 100)}%` }}
+              />
+            </div>
           </div>
         )}
         <div className="flex gap-2">
@@ -384,7 +394,15 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
                 onClick={props.onStop}
                 className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-40"
               >
-                <Square size={14} /> Stop
+                {props.isFinalizing ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> Finalizing...
+                  </>
+                ) : (
+                  <>
+                    <Square size={14} /> Stop
+                  </>
+                )}
               </button>
               <button
                 type="button"

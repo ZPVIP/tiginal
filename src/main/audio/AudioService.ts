@@ -6,6 +6,7 @@ import type {
   AudioSessionEvent,
   AudioSessionSnapshot,
   CreateAudioSessionInput,
+  FinishSessionResult,
   TranscriptEvent,
 } from '../../shared/audio/types';
 import { isR2T2Protocol } from '../../shared/audio/types';
@@ -17,13 +18,7 @@ import { SpeechStreamClient } from './SpeechStreamClient';
 import type { SpeechProviderStore } from './SpeechProviderStore';
 import type { TranslationService } from './TranslationService';
 import type { StreamingTranslator } from './T3POWebSocketTranslator';
-import { ChunkTimelineWriter, type ChunkTimelineEntry } from './ChunkTimelineWriter';
 import {
-  alignChunksWithSpeakers,
-  buildDiarizedText,
-  buildSrtContent,
-  ensureChunkEntriesFromTranscript,
-  runTiginalDiarize,
   runTiginalDiarizePipeline,
 } from './AlignmentEngine';
 import { suppressRepetitiveLoops } from '../../shared/audio/textUtils';
@@ -36,7 +31,6 @@ const FILE_QUEUE_TARGET_BYTES = 512 * 1_024;
 interface ActiveSession {
   snapshot: AudioSessionSnapshot;
   writer: PcmWavWriter | null;
-  chunkWriter?: ChunkTimelineWriter | null;
   committedText: string;
   totalSamples: number;
   language: string;
@@ -84,7 +78,7 @@ export class AudioService {
     if ([...this.sessions.values()].some(session => session.snapshot.recordingPath && path.resolve(session.snapshot.recordingPath) === target)) {
       return true;
     }
-    return false;
+    return fs.existsSync(target);
   }
 
   async createSession(
@@ -142,16 +136,6 @@ export class AudioService {
       language,
       startedAt,
     });
-    const rawChunkSize = provider.options?.chunkSizeMs;
-    const chunkSizeMs = (typeof rawChunkSize === 'number' && rawChunkSize > 0)
-      ? rawChunkSize
-      : (rawChunkSize === 0)
-        ? null
-        : 160;
-
-    const chunkWriter = (recordingPath && chunkSizeMs && chunkSizeMs > 0)
-      ? new ChunkTimelineWriter(`${recordingPath.replace(/\.[^/.]+$/i, '')}-chunk.txt`, chunkSizeMs)
-      : null;
     const isWhisper = provider.protocol === 'whisper-local';
     const client = isWhisper
       ? null
@@ -161,7 +145,6 @@ export class AudioService {
     const session: ActiveSession = {
       snapshot,
       writer,
-      chunkWriter,
       committedText: '',
       totalSamples: 0,
       language,
@@ -219,22 +202,26 @@ export class AudioService {
     }
   }
 
-  async finishSession(sessionId: string): Promise<void> {
+  async finishSession(sessionId: string): Promise<FinishSessionResult | null> {
     const session = this.sessions.get(sessionId);
-    if (!session || session.state === 'finalizing') return;
+    if (!session || session.state === 'finalizing') return null;
     session.state = 'finalizing';
-    this.clearLimitTimer(session);
-    this.repository.updateStatus(sessionId, 'finalizing', this.getSessionDurationMs(session));
+    const resolved = this.providers.require(session.snapshot.providerId);
+    const isWhisper = resolved.provider.protocol === 'whisper-local';
+    console.log(`[AudioService] Finishing session ${sessionId} (protocol=${resolved.provider.protocol}, isWhisper=${isWhisper})`);
+
     try {
       if (session.client) {
+        console.log(`[AudioService] Waiting for speech stream client to finish decoding and close for session ${sessionId}...`);
         await session.client.finish();
+        console.log(`[AudioService] Speech stream client finished. Committed text chars: ${session.committedText?.length || 0}`);
       }
       let translationResult: string | undefined;
       if (session.translator) {
         try {
           translationResult = await session.translator.flush();
         } catch (err) {
-          console.error('Translation flush failed:', err);
+          console.error('[AudioService] Translation flush failed:', err);
         }
       }
       const durationMs = this.getSessionDurationMs(session);
@@ -244,9 +231,6 @@ export class AudioService {
       let transcriptText = suppressRepetitiveLoops(session.committedText || '');
       artifacts.transcript = transcriptText;
 
-      const resolved = this.providers.require(session.snapshot.providerId);
-      const isWhisper = resolved.provider.protocol === 'whisper-local';
-
       if (recordingPath) {
         const stem = recordingPath.replace(/\.[^/.]+$/i, '');
         const txtPath = `${stem}.txt`;
@@ -254,16 +238,21 @@ export class AudioService {
         if (isWhisper) {
           try {
             const lang = session.language || 'auto';
+            console.log(`[AudioService] Launching tiginal-diarize Whisper pipeline for ${recordingPath} (lang=${lang})`);
             const whisperRes = await runTiginalDiarizePipeline(recordingPath, {
               transcribe: true,
               language: lang,
               writeArtifacts: true,
+              onProgress: (progress, phase) => {
+                session.emit({ kind: 'progress', sessionId, progress, phase });
+              },
             });
             if (whisperRes.transcript) {
               transcriptText = suppressRepetitiveLoops(whisperRes.transcript);
               session.committedText = transcriptText;
               this.repository.updateTranscript(sessionId, transcriptText);
               artifacts.transcript = transcriptText;
+              console.log(`[AudioService] Whisper transcription complete: ${transcriptText.length} chars, segments: ${whisperRes.segments?.length || 0}`);
               session.emit({
                 kind: 'provider-event',
                 sessionId,
@@ -273,6 +262,8 @@ export class AudioService {
                   fullText: transcriptText,
                 },
               });
+            } else {
+              console.warn('[AudioService] Whisper finished but returned empty transcript');
             }
             if (whisperRes.diar_text) {
               artifacts.speakers = whisperRes.diar_text;
@@ -281,97 +272,64 @@ export class AudioService {
               artifacts.srt = whisperRes.srt;
             }
           } catch (whisperErr) {
-            console.error('Whisper transcription pipeline failed:', whisperErr);
+            console.error('[AudioService] Whisper transcription pipeline failed:', whisperErr);
+            session.emit({
+              kind: 'provider-event',
+              sessionId,
+              event: {
+                kind: 'error',
+                code: 'WHISPER_ERROR',
+                message: `Local Whisper failed: ${errorMessage(whisperErr)}`,
+              },
+            });
           }
         } else {
           // 1. Always save .txt with repetition loops suppressed
           try {
             fs.writeFileSync(txtPath, transcriptText, 'utf-8');
+            console.log(`[AudioService] Plain transcript saved to ${txtPath} (${transcriptText.length} chars)`);
           } catch (err) {
-            console.error(`Failed to write plain transcript to ${txtPath}:`, err);
+            console.error(`[AudioService] Failed to write plain transcript to ${txtPath}:`, err);
           }
 
-          // 2. Chunks timeline (saved as backup / chunks artifact)
-          const chunkPath = `${stem}-chunk.txt`;
-          const rawChunkSize = session.chunkWriter?.chunkSizeMs ?? 160;
-          let entries: ChunkTimelineEntry[] = [];
-
-          if (session.chunkWriter) {
-            if (session.chunkWriter.getEntries().length === 0 && transcriptText) {
-              const synth = ensureChunkEntriesFromTranscript(
-                transcriptText,
-                Math.max(durationMs, 1000),
-                rawChunkSize,
-              );
-              for (const entry of synth) {
-                session.chunkWriter.recordDelta(entry.timestampMs, entry.text);
-              }
-            }
-            session.chunkWriter.finalize();
-            entries = [...session.chunkWriter.getEntries()];
-            artifacts.chunks = session.chunkWriter.getTextContent();
-          } else if (transcriptText.trim()) {
-            entries = ensureChunkEntriesFromTranscript(
-              transcriptText,
-              Math.max(durationMs, 1000),
-              rawChunkSize,
-            );
-            const writer = new ChunkTimelineWriter(chunkPath, rawChunkSize);
-            for (const entry of entries) {
-              writer.recordDelta(entry.timestampMs, entry.text);
-            }
-            writer.finalize();
-            artifacts.chunks = writer.getTextContent();
-          }
-
-          // 3. MMS-Align + Nemotron Diarization pipeline
+          // 2. MMS-Align + Nemotron Diarization pipeline
           try {
+            console.log(`[AudioService] Launching tiginal-diarize speaker diarization for ${recordingPath}`);
             const pipelineResult = await runTiginalDiarizePipeline(recordingPath, {
               transcriptPath: txtPath,
               writeArtifacts: true,
+              onProgress: (progress, phase) => {
+                session.emit({ kind: 'progress', sessionId, progress, phase });
+              },
             });
-            if (pipelineResult.diar_text && pipelineResult.srt) {
+            if (pipelineResult.diar_text) {
               artifacts.speakers = pipelineResult.diar_text;
+            }
+            if (pipelineResult.srt) {
               artifacts.srt = pipelineResult.srt;
-            } else if (entries.length > 0) {
-              const segments = alignChunksWithSpeakers(entries, pipelineResult.turns, rawChunkSize);
-              const diarText = buildDiarizedText(segments);
-              const srtText = buildSrtContent(segments);
-              fs.writeFileSync(`${stem}-diar.txt`, diarText, 'utf-8');
-              fs.writeFileSync(`${stem}.srt`, srtText, 'utf-8');
-              artifacts.speakers = diarText;
-              artifacts.srt = srtText;
             }
+            console.log(`[AudioService] Speaker diarization completed: turns=${pipelineResult.turns?.length || 0}`);
           } catch (diarErr) {
-            console.warn('Speaker diarization pipeline skipped or failed:', diarErr);
-            if (entries.length > 0) {
-              try {
-                const turns = await runTiginalDiarize(recordingPath);
-                const segments = alignChunksWithSpeakers(entries, turns, rawChunkSize);
-                const diarText = buildDiarizedText(segments);
-                const srtText = buildSrtContent(segments);
-                fs.writeFileSync(`${stem}-diar.txt`, diarText, 'utf-8');
-                fs.writeFileSync(`${stem}.srt`, srtText, 'utf-8');
-                artifacts.speakers = diarText;
-                artifacts.srt = srtText;
-              } catch (fallbackErr) {
-                console.warn('Fallback diarization failed:', fallbackErr);
-              }
-            }
+            console.warn('[AudioService] Speaker diarization pipeline skipped or failed:', diarErr);
           }
         }
       }
 
+      console.log(`[AudioService] Session ${sessionId} marked as completed in ${durationMs}ms`);
       this.repository.updateStatus(sessionId, 'completed', durationMs);
-      session.emit({
-        kind: 'completed',
+      const result: FinishSessionResult = {
         sessionId,
         recordingPath,
         durationMs,
         translation: translationResult,
         artifacts,
+      };
+      session.emit({
+        kind: 'completed',
+        ...result,
       });
       this.sessions.delete(sessionId);
+      return result;
     } catch (error) {
       await this.failSession(sessionId, errorMessage(error), session);
       throw error;
@@ -397,7 +355,10 @@ export class AudioService {
 
   deleteRecording(recordingPath: string): void {
     const target = path.resolve(recordingPath);
-    if (!this.isAllowedAudioPath(target)) {
+    const root = path.resolve(this.audioDirectory);
+    const isUnderAudioDir = target.startsWith(`${root}${path.sep}`);
+    const isTrackedRecording = Boolean(this.repository && typeof this.repository.hasRecording === 'function' && this.repository.hasRecording(target));
+    if (!isUnderAudioDir && !isTrackedRecording) {
       throw new Error('Recording path is outside the Tiginal audio directory');
     }
     if ([...this.sessions.values()].some(session => session.snapshot.recordingPath && path.resolve(session.snapshot.recordingPath) === target)) {
@@ -408,7 +369,6 @@ export class AudioService {
     const candidateFiles = [
       target,
       `${stem}.txt`,
-      `${stem}-chunk.txt`,
       `${stem}-diar.txt`,
       `${stem}.srt`,
     ];
@@ -436,13 +396,6 @@ export class AudioService {
     if (fs.existsSync(txtPath)) {
       try {
         artifacts.transcript = fs.readFileSync(txtPath, 'utf-8');
-      } catch { /* ignore */ }
-    }
-
-    const chunkPath = `${stem}-chunk.txt`;
-    if (fs.existsSync(chunkPath)) {
-      try {
-        artifacts.chunks = fs.readFileSync(chunkPath, 'utf-8');
       } catch { /* ignore */ }
     }
 
@@ -482,75 +435,20 @@ export class AudioService {
       artifacts.transcript = transcriptText;
     }
 
-    // 1. Try MMS-Align pipeline directly first
-    if (transcriptText) {
-      try {
-        const pipelineResult = await runTiginalDiarizePipeline(target, {
-          transcriptPath: txtPath,
-          writeArtifacts: true,
-        });
-        if (pipelineResult.diar_text && pipelineResult.srt) {
-          artifacts.speakers = pipelineResult.diar_text;
-          artifacts.srt = pipelineResult.srt;
-          return artifacts;
-        }
-      } catch (pipelineErr) {
-        console.warn('MMS-Align pipeline rediarize skipped, falling back to chunk timeline:', pipelineErr);
-      }
+    if (!transcriptText) {
+      throw new Error('No transcript text found for this audio file. Please transcribe it first.');
     }
 
-    // 2. Resolve or reconstruct chunk entries fallback
-    let entries: ChunkTimelineEntry[] = [];
-    const chunkPath = `${stem}-chunk.txt`;
-    if (fs.existsSync(chunkPath)) {
-      const content = fs.readFileSync(chunkPath, 'utf-8');
-      const rawEntries = content.split('\n')
-        .map(line => line.trim())
-        .filter(Boolean)
-        .map(line => {
-          const [timeStr, ...rest] = line.split('\t');
-          return { timestampMs: Number.parseInt(timeStr, 10) || 0, text: rest.join('\t') };
-        });
-      // Suppress flood repetitions in chunk entries
-      entries = [];
-      for (const e of rawEntries) {
-        const len = entries.length;
-        if (len >= 2 && entries[len - 1].text === e.text && entries[len - 2].text === e.text) {
-          continue;
-        }
-        entries.push(e);
-      }
+    const pipelineResult = await runTiginalDiarizePipeline(target, {
+      transcriptPath: txtPath,
+      writeArtifacts: true,
+    });
+    if (pipelineResult.diar_text) {
+      artifacts.speakers = pipelineResult.diar_text;
     }
-
-    if (entries.length === 0 && transcriptText) {
-      const stat = fs.statSync(target);
-      const approxDurationMs = Math.round((Math.max(0, stat.size - 44) / 32000) * 1000) || 5000;
-      entries = ensureChunkEntriesFromTranscript(transcriptText, approxDurationMs, 160);
-      const writer = new ChunkTimelineWriter(chunkPath, 160);
-      for (const entry of entries) {
-        writer.recordDelta(entry.timestampMs, entry.text);
-      }
-      writer.finalize();
-      artifacts.chunks = writer.getTextContent();
+    if (pipelineResult.srt) {
+      artifacts.srt = pipelineResult.srt;
     }
-
-    if (entries.length === 0) {
-      throw new Error('No transcript text or chunk timeline found for this audio file. Please transcribe it first.');
-    }
-
-    // 3. Fallback chunk alignment
-    const turns = await runTiginalDiarize(target);
-    const segments = alignChunksWithSpeakers(entries, turns, 160);
-    const diarText = buildDiarizedText(segments);
-    const srtText = buildSrtContent(segments);
-
-    const diarPath = `${stem}-diar.txt`;
-    const srtPath = `${stem}.srt`;
-    fs.writeFileSync(diarPath, diarText, 'utf-8');
-    fs.writeFileSync(srtPath, srtText, 'utf-8');
-
-    artifacts.speakers = diarText;
-    artifacts.srt = srtText;
     return artifacts;
   }
 
@@ -568,17 +466,9 @@ export class AudioService {
       session.committedText = event.fullText;
       this.repository.updateTranscript(sessionId, event.fullText);
       session.translator?.pushCommittedText(event.text);
-      if (session.chunkWriter) {
-        const currentMs = Math.round((session.totalSamples / R2T2_SAMPLE_RATE) * 1000);
-        session.chunkWriter.recordDelta(currentMs, event.text);
-      }
     } else if (event.kind === 'final') {
       session.committedText = event.text;
       this.repository.updateTranscript(sessionId, event.text);
-      if (session.chunkWriter && session.chunkWriter.getEntries().length === 0 && event.text) {
-        const currentMs = Math.round((session.totalSamples / R2T2_SAMPLE_RATE) * 1000);
-        session.chunkWriter.recordDelta(currentMs, event.text);
-      }
     }
     if (event.kind === 'error' && session.state === 'recording') {
       void this.failSession(sessionId, event.message);

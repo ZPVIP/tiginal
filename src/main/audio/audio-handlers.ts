@@ -1,4 +1,5 @@
 import { app, ipcMain, shell, systemPreferences, type IpcMainEvent } from 'electron';
+import * as fs from 'fs';
 import { getDatabase } from '../../services/database/database';
 import { getCrypto } from '../../services/ssh/CryptoService';
 import type {
@@ -15,6 +16,7 @@ import { AudioSessionRepository } from './AudioSessionRepository';
 import { testSpeechConnection } from './SpeechStreamClient';
 import { testT3POConnection } from './T3POWebSocketTranslator';
 import { parseSpeechProviderInput, SpeechProviderStore } from './SpeechProviderStore';
+import { defaultWhisperModelPath } from './AlignmentEngine';
 import { TranslationService } from './TranslationService';
 import { getModelRuntimeSupervisor } from '../models/model-handlers';
 import { appendAudioCaptureDiagnostic } from './AudioCaptureDiagnostics';
@@ -112,7 +114,12 @@ function parseAudioSource(value: unknown): CreateAudioSessionInput['source'] {
   if (kind === 'file') {
     const name = Reflect.get(value, 'name');
     if (typeof name !== 'string' || !name.trim()) throw new Error('Audio file name is required');
-    return { kind, name: name.trim() };
+    const path = Reflect.get(value, 'path');
+    return {
+      kind,
+      name: name.trim(),
+      ...(typeof path === 'string' && path.trim() ? { path: path.trim() } : {}),
+    };
   }
   throw new Error('Audio source is invalid');
 }
@@ -215,6 +222,14 @@ export function setupAudioHandlers(): void {
       const resolved = providerStore().resolveForTest(input);
       if (resolved.provider.protocol === 't3po') {
         await testT3POConnection(resolved.provider, resolved.credential);
+      } else if (resolved.provider.protocol === 'whisper-local') {
+        const whisperModel = defaultWhisperModelPath();
+        if (!whisperModel || !fs.existsSync(whisperModel)) {
+          return {
+            success: false,
+            error: 'No Whisper model found. Please download one in Settings -> Model Engines or place it in ~/.cache/tiginal/models',
+          };
+        }
       } else {
         await testSpeechConnection(resolved.provider, resolved.credential);
       }

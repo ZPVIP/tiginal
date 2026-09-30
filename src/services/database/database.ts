@@ -12,7 +12,7 @@ import {
 import { defaultSpeechProviderOptions } from '../../shared/audio/r2t2';
 
 // Database schema version for migrations
-const SCHEMA_VERSION = 39;
+const SCHEMA_VERSION = 40;
 
 /**
  * Database service for Tiginal
@@ -225,6 +225,10 @@ export class DatabaseService {
 
     if (currentVersion < 39) {
       this.migrateV39();
+    }
+
+    if (currentVersion < 40) {
+      this.migrateV40();
     }
 
     // Update schema version
@@ -1309,26 +1313,73 @@ export class DatabaseService {
     return row?.value || null;
   }
 
-  /** Migration v39: add built-in local whisper provider. */
+  /** Migration v39: add built-in local whisper provider (superseded by v40). */
   private migrateV39(): void {
+    // Superseded by migrateV40 which updates table constraints first.
+  }
+
+  /** Migration v40: update speech_providers schema to support whisper-local protocol and built-in whisper provider. */
+  private migrateV40(): void {
     if (!this.db) throw new Error('Database not initialized');
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT OR IGNORE INTO speech_providers (
-        id, name, protocol, endpoint, auth_mode, credential_encrypted,
-        built_in_kind, user_modified, max_session_seconds, default_language,
-        options_json, enabled, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, NULL, 'whisper-local', 0, NULL, 'auto', ?, 1, ?, ?)
-    `).run(
-      BUILT_IN_WHISPER_ID,
-      'Local Whisper (tiginal-diarize)',
-      'whisper-local',
-      'local://whisper',
-      'none',
-      JSON.stringify(defaultSpeechProviderOptions()),
-      now,
-      now,
-    );
+
+    const foreignKeys = this.db.pragma('foreign_keys', { simple: true });
+    this.db.pragma('foreign_keys = OFF');
+    try {
+      this.db.transaction(() => {
+        this.db!.exec(`
+          CREATE TABLE speech_providers_v40 (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            protocol TEXT NOT NULL CHECK (protocol IN ('r2t2-rstream', 'r2t2-native', 'whisper-local', 't3po')),
+            endpoint TEXT NOT NULL,
+            auth_mode TEXT NOT NULL CHECK (auth_mode IN ('none', 'query-token', 'handshake-secret')),
+            credential_encrypted TEXT,
+            built_in_kind TEXT CHECK (built_in_kind IS NULL OR built_in_kind IN ('r2t2-online-trial', 'whisper-local')),
+            user_modified INTEGER NOT NULL DEFAULT 0,
+            max_session_seconds INTEGER,
+            default_language TEXT NOT NULL,
+            options_json TEXT NOT NULL DEFAULT '{}',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+
+          INSERT INTO speech_providers_v40 (
+            id, name, protocol, endpoint, auth_mode, credential_encrypted,
+            built_in_kind, user_modified, max_session_seconds, default_language,
+            options_json, enabled, created_at, updated_at
+          )
+          SELECT
+            id, name, protocol, endpoint, auth_mode, credential_encrypted,
+            built_in_kind, user_modified, max_session_seconds, default_language,
+            options_json, enabled, created_at, updated_at
+          FROM speech_providers;
+
+          DROP TABLE speech_providers;
+          ALTER TABLE speech_providers_v40 RENAME TO speech_providers;
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_speech_providers_built_in
+            ON speech_providers(built_in_kind)
+            WHERE built_in_kind IS NOT NULL;
+        `);
+
+        const now = Date.now();
+        this.db!.prepare(`
+          INSERT OR IGNORE INTO speech_providers (
+            id, name, protocol, endpoint, auth_mode, credential_encrypted,
+            built_in_kind, user_modified, max_session_seconds, default_language,
+            options_json, enabled, created_at, updated_at
+          ) VALUES (?, ?, 'whisper-local', 'local://whisper', 'none', NULL, 'whisper-local', 0, NULL, 'auto', ?, 1, ?, ?)
+        `).run(
+          BUILT_IN_WHISPER_ID,
+          'Local Whisper (tiginal-diarize)',
+          JSON.stringify(defaultSpeechProviderOptions()),
+          now,
+          now,
+        );
+      })();
+    } finally {
+      this.db.pragma(`foreign_keys = ${foreignKeys ? 'ON' : 'OFF'}`);
+    }
   }
 
   /**

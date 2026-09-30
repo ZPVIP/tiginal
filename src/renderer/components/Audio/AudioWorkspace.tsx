@@ -39,7 +39,7 @@ type WorkbenchState =
   | { kind: 'requesting-permission' }
   | { kind: 'connecting' }
   | { kind: 'recording' }
-  | { kind: 'transcribing-file'; progress: number }
+  | { kind: 'transcribing-file'; progress: number; phase?: string }
   | { kind: 'finalizing' }
   | { kind: 'ready' }
   | { kind: 'failed'; message: string };
@@ -86,7 +86,7 @@ function statusLabel(state: WorkbenchState): string {
     case 'requesting-permission': return 'Requesting audio permission';
     case 'connecting': return 'Connecting to speech provider';
     case 'recording': return 'Listening';
-    case 'transcribing-file': return `Transcribing ${Math.round(state.progress * 100)}%`;
+    case 'transcribing-file': return state.phase || `Transcribing ${Math.round(state.progress * 100)}%`;
     case 'finalizing': return 'Finalizing transcript and recording';
     case 'ready': return 'Complete';
     case 'failed': return 'Session failed';
@@ -518,18 +518,32 @@ export function AudioWorkspace() {
       }
     }
 
+    if (event.kind === 'progress') {
+      setState(current => (
+        current.kind === 'connecting' || current.kind === 'transcribing-file'
+          ? { kind: 'transcribing-file', progress: event.progress, phase: event.phase }
+          : current
+      ));
+      return;
+    }
+
     if (event.kind === 'completed') {
-      const finalText = committedTextRef.current;
+      const finalText = committedTextRef.current || event.artifacts?.transcript || '';
+      committedTextRef.current = finalText;
       captureRef.current = null;
       setEditableText(finalText);
+      setCommittedText(finalText);
       setPartialText('');
       const recPath = event.recordingPath ?? '';
       setRecordingPath(recPath);
       activeRecordingPathRef.current = recPath;
       if (activeSourceRef.current !== 'file' && recPath) void loadRecordingUrl(recPath);
 
-      if (event.artifacts) {
+      if (event.artifacts && (event.artifacts.speakers || event.artifacts.srt || event.artifacts.transcript)) {
         setArtifacts(event.artifacts);
+        if (event.artifacts.speakers) {
+          setTranscriptTab('speakers');
+        }
       } else if (recPath) {
         void loadRecordingArtifacts(recPath);
       }
@@ -648,9 +662,9 @@ export function AudioWorkspace() {
     activeSourceRef.current = 'file';
     setState({ kind: 'connecting' });
     const transcriber = new AudioFileTranscriber({
-      onProgress: progress => setState(current => (
+      onProgress: (progress, phase) => setState(current => (
         current.kind === 'connecting' || current.kind === 'transcribing-file'
-          ? { kind: 'transcribing-file', progress }
+          ? { kind: 'transcribing-file', progress, phase }
           : current
       )),
       onSessionEvent: handleSessionEvent,
@@ -682,6 +696,10 @@ export function AudioWorkspace() {
       failWithTranscript(messageFromError(error));
     } finally {
       fileTranscriberRef.current = null;
+      setState(current => (current.kind === 'transcribing-file' ? { kind: 'ready' } : current));
+      if (activeRecordingPathRef.current) {
+        void loadRecordingArtifacts(activeRecordingPathRef.current);
+      }
     }
   }, [
     audioFile,
@@ -815,6 +833,7 @@ export function AudioWorkspace() {
   const playerUrl = source === 'file' ? fileUrl : recordingUrl;
   const canStart = Boolean(selectedProvider) && (source !== 'file' || Boolean(audioFile));
   const fileProgress = state.kind === 'transcribing-file' ? state.progress : 0;
+  const filePhase = state.kind === 'transcribing-file' ? state.phase : undefined;
 
   const selectedEngine = useMemo(
     () => translationCandidates.find(c => c.id === translationEngineId),
@@ -927,6 +946,7 @@ export function AudioWorkspace() {
           canStart={canStart}
           isFinalizing={state.kind === 'finalizing'}
           fileProgress={fileProgress}
+          filePhase={filePhase}
           onStart={start}
           onStop={() => void stop()}
           onCancel={() => void cancel()}

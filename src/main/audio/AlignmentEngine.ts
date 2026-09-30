@@ -2,11 +2,8 @@ import * as child_process from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { ChunkTimelineEntry } from './ChunkTimelineWriter';
 import {
   cleanSegmentText,
-  smartJoinText,
-  suppressRepetitiveLoops,
 } from '../../shared/audio/textUtils';
 
 export interface SpeakerTurn {
@@ -240,10 +237,9 @@ export function defaultAlignModelPath(): string | undefined {
   if (custom && fs.existsSync(custom)) {
     return custom;
   }
-  const discovered = scanDiscoveredDiarizeModels().mmsAlign;
-  if (discovered.length > 0) {
-    return discovered[0].path;
-  }
+  // Do NOT auto-inject MMS-Align by default.
+  // Full-sequence Wav2Vec2 self-attention has O(N^2) memory complexity and causes
+  // 45GB+ RAM explosion on audio files, whereas Nemotron diarization alone is fast (5s, 150MB).
   return undefined;
 }
 
@@ -267,6 +263,7 @@ export interface TiginalDiarizeOptions {
   alignModelPath?: string;
   language?: string;
   writeArtifacts?: boolean;
+  onProgress?: (progress: number, stage?: string) => void;
 }
 
 export interface FullDiarizationResult {
@@ -322,6 +319,9 @@ export async function runTiginalDiarizePipeline(
       args.push('--write-artifacts');
     }
 
+    console.log(`[TiginalDiarize] Spawning: tiginal-diarize ${args.join(' ')}`);
+    const startTime = Date.now();
+
     // Try system PATH first
     const proc = child_process.spawn('tiginal-diarize', args, {
       env: {
@@ -337,19 +337,54 @@ export async function runTiginalDiarizePipeline(
       stdout += data.toString();
     });
 
+    let maxProgress = 0;
+    const reportProgress = (progress: number, stage?: string) => {
+      maxProgress = Math.max(maxProgress, Math.min(1.0, progress));
+      options.onProgress?.(maxProgress, stage);
+    };
+
     proc.stderr.on('data', data => {
-      stderr += data.toString();
+      const chunk = data.toString();
+      stderr += chunk;
+      for (const line of chunk.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        console.log(`[TiginalDiarize:log] ${trimmed}`);
+
+        // tiginal-diarize pipeline order:
+        // 1. Nemotron Diarization runs FIRST (0% - 25% of overall duration)
+        const diarMatch = trimmed.match(/\[progress\]\s+diarization:\s*(\d+)/i);
+        if (diarMatch) {
+          const pct = Math.min(100, Math.max(0, parseInt(diarMatch[1], 10)));
+          const overall = options.transcribe
+            ? Math.min(0.25, Math.max(0.01, (pct / 100) * 0.25))
+            : Math.min(0.95, (pct / 100) * 0.95);
+          reportProgress(overall, `Analyzing speakers (${pct}%)`);
+        }
+
+        // 2. Whisper Transcription runs SECOND (25% - 95% of overall duration)
+        const whisperMatch = trimmed.match(/\[progress\]\s+whisper:\s*(\d+)/i);
+        if (whisperMatch) {
+          const pct = Math.min(100, Math.max(0, parseInt(whisperMatch[1], 10)));
+          const overall = Math.min(0.95, Math.max(0.25, 0.25 + (pct / 100) * 0.70));
+          reportProgress(overall, `Transcribing speech (${pct}%)`);
+        }
+      }
     });
 
     proc.on('error', err => {
+      console.error(`[TiginalDiarize] Spawn error:`, err);
       reject(new Error(`Failed to spawn tiginal-diarize: ${err.message}`));
     });
 
     proc.on('close', code => {
+      const elapsedMs = Date.now() - startTime;
+      console.log(`[TiginalDiarize] Process exited with code ${code} in ${elapsedMs}ms`);
       if (code !== 0) {
         reject(new Error(`tiginal-diarize exited with code ${code}: ${stderr || stdout}`));
         return;
       }
+      reportProgress(1.0, 'Completed');
       try {
         const rawJson = stdout.trim();
         const parsed = JSON.parse(rawJson);
@@ -371,200 +406,6 @@ export async function runTiginalDiarizePipeline(
       }
     });
   });
-}
-
-const INCOMPLETE_TRAILING_WORDS = new Set([
-  'and', 'or', 'but', 'so', 'because', 'to', 'the', 'a', 'an', 'that', 'this', 'for', 'of', 'in', 'on', 'at', 'by',
-  'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
-  'will', 'would', 'shall', 'should', 'can', 'could', 'may', 'might', 'must',
-  'i', 'you', 'he', 'she', 'it', 'we', 'they', 'my', 'your', 'his', 'her', 'its', 'our', 'their',
-  'what', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how', 'there',
-]);
-
-interface CandidateSentence {
-  text: string;
-  charStart: number;
-  charEnd: number;
-  rawStartMs: number;
-  rawEndMs: number;
-  smoothStartMs: number;
-  smoothEndMs: number;
-}
-
-/**
- * Aligns chunk timeline entries with speaker turns.
- * Guarantees syntactic sentence integrity (never breaks mid-clause)
- * and uses smooth monotonic interpolation to align chunk batches with Nemotron turns.
- */
-export function alignChunksWithSpeakers(
-  entries: readonly ChunkTimelineEntry[],
-  turns: readonly SpeakerTurn[],
-  _chunkSizeMs = 160,
-  _lookaheadLatencyMs = 300,
-): DiarizedSegment[] {
-  if (entries.length === 0) return [];
-  if (turns.length === 0) {
-    let fullText = '';
-    for (const e of entries) {
-      fullText = smartJoinText(fullText, e.text);
-    }
-    fullText = cleanSegmentText(fullText);
-    const startMs = entries[0].timestampMs;
-    const endMs = entries[entries.length - 1].timestampMs;
-    return [{
-      speakerId: 0,
-      speakerLabel: 'Speaker 1',
-      startMs,
-      endMs,
-      text: fullText,
-    }];
-  }
-
-  // 1. Build continuous text and character-to-chunk arrival timestamp mapping
-  let fullText = '';
-  const charArrivalTimes: number[] = [];
-
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    if (!entry.text) continue;
-
-    const prevEntry = i > 0 ? entries[i - 1] : null;
-    // If a large silence gap occurs (> 3500ms) and the previous text was not an incomplete connector,
-    // ensure an utterance boundary (period) separates the phrases
-    if (prevEntry && (entry.timestampMs - prevEntry.timestampMs) > 3500 && fullText.length > 0) {
-      const trimmed = fullText.trim();
-      const lastWord = trimmed.split(/\s+/).pop()?.toLowerCase().replace(/[^a-z']/g, '') || '';
-      const endsWithPunct = /[.?!。？！\n]$/.test(trimmed);
-      const nextStartsCap = /^[A-Z]/.test(entry.text.trim());
-
-      if (!endsWithPunct && nextStartsCap && !INCOMPLETE_TRAILING_WORDS.has(lastWord)) {
-        fullText += '. ';
-        charArrivalTimes.push(prevEntry.timestampMs, prevEntry.timestampMs);
-      }
-    }
-
-    const beforeLen = fullText.length;
-    fullText = smartJoinText(fullText, entry.text);
-    const afterLen = fullText.length;
-    for (let k = beforeLen; k < afterLen; k++) {
-      charArrivalTimes.push(entry.timestampMs);
-    }
-  }
-
-  fullText = suppressRepetitiveLoops(fullText);
-
-  // 2. Extract full syntactic sentences (never breaking mid-clause or on commas)
-  const sentenceRegex = /([^.?!。？！\n]+[.?!。？！]+|[^.?!。？！\n]+$)/g;
-  let match: RegExpExecArray | null;
-  const candidates: CandidateSentence[] = [];
-
-  while ((match = sentenceRegex.exec(fullText)) !== null) {
-    const raw = match[0];
-    const charStart = match.index;
-    const charEnd = match.index + raw.length;
-    const cleaned = cleanSegmentText(raw);
-    if (!cleaned) continue;
-
-    const rawStartMs = charArrivalTimes[charStart] ?? (entries[0]?.timestampMs ?? 0);
-    const rawEndMs = charArrivalTimes[Math.min(charArrivalTimes.length - 1, charEnd - 1)] ?? rawStartMs;
-
-    candidates.push({
-      text: cleaned,
-      charStart,
-      charEnd,
-      rawStartMs,
-      rawEndMs: Math.max(rawEndMs, rawStartMs + 100),
-      smoothStartMs: 0,
-      smoothEndMs: 0,
-    });
-  }
-
-  if (candidates.length === 0) return [];
-
-  // 3. Smooth timestamps across WebSocket chunk arrival batches
-  let prevAnchorMs = 0;
-  for (let i = 0; i < candidates.length; ) {
-    let j = i;
-    while (j < candidates.length && candidates[j].rawEndMs === candidates[i].rawEndMs) {
-      j++;
-    }
-    const batchArrivalMs = candidates[i].rawEndMs;
-    const batchCount = j - i;
-
-    let totalChars = 0;
-    for (let k = i; k < j; k++) totalChars += candidates[k].text.length;
-
-    const spanMs = Math.max(batchCount * 800, batchArrivalMs - prevAnchorMs);
-    const spanStartMs = Math.max(0, batchArrivalMs - spanMs);
-
-    let currentMs = spanStartMs;
-    for (let k = i; k < j; k++) {
-      const fraction = totalChars > 0 ? (candidates[k].text.length / totalChars) : (1 / batchCount);
-      const dur = Math.max(600, Math.round(spanMs * fraction));
-      candidates[k].smoothStartMs = currentMs;
-      candidates[k].smoothEndMs = currentMs + dur;
-      currentMs += dur;
-    }
-
-    prevAnchorMs = batchArrivalMs;
-    i = j;
-  }
-
-  // 4. Assign each complete sentence to the best overlapping Nemotron turn
-  const assigned = candidates.map(sentence => {
-    const sStart = sentence.smoothStartMs;
-    const sEnd = sentence.smoothEndMs;
-
-    let bestSpeaker = turns[0]?.speaker ?? 0;
-    let maxOverlap = 0;
-    let minDistance = Infinity;
-    let closestSpeaker = bestSpeaker;
-
-    for (const turn of turns) {
-      const overlapStart = Math.max(sStart, turn.start_ms);
-      const overlapEnd = Math.min(sEnd, turn.end_ms);
-      const overlap = Math.max(0, overlapEnd - overlapStart);
-      if (overlap > maxOverlap) {
-        maxOverlap = overlap;
-        bestSpeaker = turn.speaker;
-      }
-      const turnMid = (turn.start_ms + turn.end_ms) / 2;
-      const sMid = (sStart + sEnd) / 2;
-      const dist = Math.abs(turnMid - sMid);
-      if (dist < minDistance) {
-        minDistance = dist;
-        closestSpeaker = turn.speaker;
-      }
-    }
-
-    const finalSpeaker = maxOverlap > 0 ? bestSpeaker : closestSpeaker;
-    return {
-      speakerId: finalSpeaker,
-      speakerLabel: `Speaker ${finalSpeaker + 1}`,
-      startMs: sStart,
-      endMs: sEnd,
-      text: sentence.text,
-    };
-  });
-
-  // 5. Merge consecutive sentences from the same speaker if silence gap <= 2000ms
-  const merged: DiarizedSegment[] = [];
-  for (const seg of assigned) {
-    const prev = merged.length > 0 ? merged[merged.length - 1] : null;
-    const gap = prev ? seg.startMs - prev.endMs : 0;
-    if (prev && prev.speakerId === seg.speakerId && gap <= 2000) {
-      prev.endMs = Math.max(prev.endMs, seg.endMs);
-      prev.text = smartJoinText(prev.text, seg.text);
-    } else {
-      merged.push({ ...seg });
-    }
-  }
-
-  for (const seg of merged) {
-    seg.text = cleanSegmentText(seg.text);
-  }
-
-  return merged.filter(seg => seg.text.length > 0);
 }
 
 /**
@@ -623,39 +464,4 @@ export function buildSrtContent(segments: readonly DiarizedSegment[]): string {
   }
 
   return blocks.join('\n');
-}
-
-/**
- * Reconstructs synthetic chunk timeline entries from a transcript and audio duration.
- * Used for retry diarization when original -chunk.txt was missing.
- */
-export function ensureChunkEntriesFromTranscript(
-  transcript: string,
-  totalDurationMs: number,
-  chunkSizeMs = 160,
-): ChunkTimelineEntry[] {
-  const clean = cleanSegmentText(transcript);
-  if (!clean) return [];
-
-  // Split into sentences using punctuation while preserving punctuation attached to each sentence
-  const rawSentences = clean.split(/([。？！，；?!;,]+)/).filter(Boolean);
-  const parts: string[] = [];
-  for (let i = 0; i < rawSentences.length; i += 2) {
-    const text = (rawSentences[i] || '') + (rawSentences[i + 1] || '');
-    const cleanedPart = cleanSegmentText(text);
-    if (cleanedPart) parts.push(cleanedPart);
-  }
-  if (parts.length === 0) parts.push(clean);
-
-  const durationPerPart = Math.max(chunkSizeMs, Math.round(totalDurationMs / parts.length));
-  const entries: ChunkTimelineEntry[] = [];
-  let currentMs = 0;
-  for (const part of parts) {
-    currentMs += durationPerPart;
-    entries.push({
-      timestampMs: Math.min(totalDurationMs, currentMs),
-      text: part,
-    });
-  }
-  return entries;
 }

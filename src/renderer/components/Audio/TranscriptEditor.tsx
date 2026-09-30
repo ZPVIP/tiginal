@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AlertCircle, Copy, LoaderCircle, Sparkles, Trash2 } from 'lucide-react';
 import type { AudioSessionArtifacts } from '../../../shared/audio/types';
 
-export type TranscriptTab = 'transcript' | 'chunks' | 'speakers' | 'srt';
+export type TranscriptTab = 'transcript' | 'speakers' | 'srt';
 
 interface TranscriptEditorProps {
   committedText: string;
@@ -37,20 +37,12 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
       tooltip: 'Full plain transcript (.txt)',
     },
     {
-      id: 'chunks',
-      label: 'Chunks',
-      enabled: Boolean(props.artifacts?.chunks),
-      tooltip: props.artifacts?.chunks
-        ? 'Raw streaming chunk timestamps and text (-chunk.txt)'
-        : 'Available when Chunk size is configured and generated',
-    },
-    {
       id: 'speakers',
       label: 'Speakers',
       enabled: Boolean(props.artifacts?.speakers),
       tooltip: props.artifacts?.speakers
         ? 'Diarized transcript with speaker labels (-diar.txt)'
-        : 'Available when Chunk size and Nemotron diarization are generated',
+        : 'Available when Nemotron + MMS-Align diarization is generated',
     },
     {
       id: 'srt',
@@ -58,7 +50,7 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
       enabled: Boolean(props.artifacts?.srt),
       tooltip: props.artifacts?.srt
         ? 'SubRip subtitle format with timestamps (.srt)'
-        : 'Available when Chunk size and Nemotron diarization are generated',
+        : 'Available when Nemotron + MMS-Align diarization is generated',
     },
   ];
 
@@ -66,8 +58,6 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
 
   const getCurrentTextToCopy = (): string => {
     switch (currentTab) {
-      case 'chunks':
-        return props.artifacts?.chunks || '';
       case 'speakers':
         return props.artifacts?.speakers || '';
       case 'srt':
@@ -127,7 +117,7 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
           {props.canRediarize && (
             <button
               type="button"
-              title="Redo speaker diarization (Nemotron-3) and generate Chunks, Speakers, SRT"
+              title="Redo speaker diarization (Nemotron + MMS-Align) and generate Speakers, SRT"
               disabled={props.busy || props.isDiarizing}
               onClick={props.onRediarize}
               className="mr-1 flex items-center gap-1.5 rounded-md border border-border bg-surface-light px-2 py-1 text-xs text-text-muted hover:border-primary hover:text-text-main disabled:opacity-40"
@@ -182,13 +172,6 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
               )}
             </div>
           )
-        ) : currentTab === 'chunks' ? (
-          <pre
-            className="h-full min-h-48 w-full max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words break-all rounded-xl border border-border bg-surface/60 p-4 font-mono text-xs leading-5 text-text-main"
-            style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', overflowX: 'hidden' }}
-          >
-            {props.artifacts?.chunks || 'No chunk timeline available.'}
-          </pre>
         ) : currentTab === 'speakers' ? (
           <div
             className="h-full min-h-48 w-full max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words break-all rounded-xl border border-border bg-surface/60 p-4 text-sm leading-6 text-text-main"

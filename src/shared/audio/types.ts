@@ -52,13 +52,10 @@ export interface SpeechProviderOptions {
   latencyMode: TranslationLatencyMode;
   /** T3PO: terminology entries written as `source=target`, or a single term kept unchanged. */
   terminology: string[];
-  /** R2T2: chunk size in milliseconds for streaming frame slicing (e.g. 160). If null/empty/0, chunk/diar/srt are not generated. */
-  chunkSizeMs?: number | null;
 }
 
 export interface AudioSessionArtifacts {
   transcript?: string;
-  chunks?: string;
   speakers?: string;
   srt?: string;
 }
@@ -70,7 +67,7 @@ export interface SpeechProvider {
   endpoint: string;
   authMode: SpeechAuthMode;
   hasCredential: boolean;
-  builtInKind: 'r2t2-online-trial' | null;
+  builtInKind: 'r2t2-online-trial' | 'whisper-local' | null;
   userModified: boolean;
   maxSessionSeconds: number | null;
   defaultLanguage: string;
@@ -257,18 +254,20 @@ export interface AudioSessionSnapshot {
   translation?: AudioSessionTranslationConfig;
 }
 
+export interface FinishSessionResult {
+  sessionId: string;
+  recordingPath: string | null;
+  durationMs: number;
+  translation?: string;
+  artifacts?: AudioSessionArtifacts;
+}
+
 export type AudioSessionEvent =
   | { kind: 'session-created'; session: AudioSessionSnapshot }
   | { kind: 'provider-event'; sessionId: string; event: TranscriptEvent }
   | { kind: 'translation-event'; sessionId: string; event: TranslationSessionEvent }
-  | {
-      kind: 'completed';
-      sessionId: string;
-      recordingPath: string | null;
-      durationMs: number;
-      translation?: string;
-      artifacts?: AudioSessionArtifacts;
-    }
+  | { kind: 'progress'; sessionId: string; progress: number; phase?: string }
+  | ({ kind: 'completed' } & FinishSessionResult)
   | { kind: 'failed'; sessionId: string; recordingPath: string | null; message: string };
 
 export interface PushPcmFrameInput {
@@ -298,7 +297,7 @@ export interface AudioRendererApi {
   pushPcmFrame(input: PushPcmFrameInput): void;
   /** Resolves once the speech server has taken most of the queued audio; IPC keeps it ordered after earlier frames. */
   waitForAudioCapacity(sessionId: string): Promise<void>;
-  finishSession(sessionId: string): Promise<void>;
+  finishSession(sessionId: string): Promise<FinishSessionResult | null>;
   abortSession(sessionId: string): Promise<void>;
   deleteRecording(recordingPath: string): Promise<void>;
   getRecordingUrl(recordingPath: string): Promise<string>;

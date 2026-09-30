@@ -23,7 +23,7 @@ interface SpeechProviderRow {
   endpoint: string;
   authMode: SpeechAuthMode;
   credentialEncrypted: string | null;
-  builtInKind: 'r2t2-online-trial' | null;
+  builtInKind: 'r2t2-online-trial' | 'whisper-local' | null;
   userModified: boolean;
   maxSessionSeconds: number | null;
   defaultLanguage: string;
@@ -83,9 +83,6 @@ function parseOptions(value: unknown): SpeechProviderOptions {
       : defaults.latencyMode,
     // T3PO-ws accepts at most 200 terminology entries per session.
     terminology: parseStringArray(value.terminology, 200),
-    chunkSizeMs: typeof value.chunkSizeMs === 'number' && Number.isFinite(value.chunkSizeMs) && value.chunkSizeMs > 0
-      ? Math.round(value.chunkSizeMs)
-      : null,
   };
 }
 
@@ -173,7 +170,9 @@ function parseSpeechProviderRow(value: unknown): SpeechProviderRow {
   if (!isSpeechProviderProtocol(protocol) || !isSpeechAuthMode(authMode)) {
     throw new Error('Speech provider row has an unsupported protocol or authentication mode');
   }
-  const builtInKind = value.built_in_kind === 'r2t2-online-trial' ? value.built_in_kind : null;
+  const builtInKind = value.built_in_kind === 'r2t2-online-trial' || value.built_in_kind === 'whisper-local'
+    ? value.built_in_kind
+    : null;
   return {
     id: requiredString(value, 'id'),
     name: requiredString(value, 'name'),
@@ -220,7 +219,7 @@ export const BUILT_IN_WHISPER_PROVIDER: SpeechProvider = {
   endpoint: 'local://whisper',
   authMode: 'none',
   hasCredential: true,
-  builtInKind: null,
+  builtInKind: 'whisper-local',
   userModified: false,
   maxSessionSeconds: null,
   defaultLanguage: 'auto',
@@ -370,7 +369,12 @@ export class SpeechProviderStore {
 
   require(id: string): ResolvedSpeechProvider {
     if (id === BUILT_IN_WHISPER_ID) {
-      return { provider: BUILT_IN_WHISPER_PROVIDER, credential: null };
+      try {
+        const row = this.requireRow(id);
+        return { provider: publicProvider(row), credential: null };
+      } catch {
+        return { provider: BUILT_IN_WHISPER_PROVIDER, credential: null };
+      }
     }
     const row = this.requireRow(id);
     let credential: string | null = null;

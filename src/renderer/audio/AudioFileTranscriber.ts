@@ -12,7 +12,7 @@ export interface AudioFileMetadata {
 }
 
 export interface AudioFileTranscriberCallbacks {
-  onProgress?(progress: number): void;
+  onProgress?(progress: number, phase?: string): void;
   onSessionEvent?(event: AudioSessionEvent): void;
 }
 
@@ -73,6 +73,9 @@ export class AudioFileTranscriber {
     this.removeSessionListener = audio.onSessionEvent(event => {
       const belongsToSession = event.kind === 'session-created' || event.sessionId === this.session?.id;
       if (!belongsToSession) return;
+      if (event.kind === 'progress') {
+        this.callbacks.onProgress?.(event.progress, event.phase);
+      }
       this.callbacks.onSessionEvent?.(event);
       if (event.kind === 'completed' || event.kind === 'failed') {
         this.finishedByService = true;
@@ -84,19 +87,34 @@ export class AudioFileTranscriber {
       || (file as any).path
       || undefined;
 
+    console.log(`[AudioFileTranscriber] Starting transcription for: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB, path: ${filePath || 'in-memory'})`);
+
     const isWhisperDirect = input.providerId === BUILT_IN_WHISPER_ID && Boolean(filePath);
     if (isWhisperDirect) {
+      console.log(`[AudioFileTranscriber] Using Whisper Direct offline pipeline (tiginal-diarize)`);
       try {
         this.session = await audio.createSession({
           ...input,
           source: { kind: 'file', name: file.name, path: filePath },
         });
-        this.callbacks.onProgress?.(0.5);
         const sessionId = this.session?.id;
-        if (!this.cancelled && !this.finishedByService && sessionId) {
-          await audio.finishSession(sessionId);
+        if (!this.cancelled && sessionId) {
+          console.log(`[AudioFileTranscriber] Invoking finishSession for Whisper offline processing...`);
+          const finishResult = await audio.finishSession(sessionId);
+          console.log(`[AudioFileTranscriber] Whisper offline processing complete. Result:`, finishResult);
+          if (finishResult) {
+            this.callbacks.onProgress?.(1.0);
+            if (!this.finishedByService) {
+              this.callbacks.onSessionEvent?.({
+                kind: 'completed',
+                ...finishResult,
+              });
+              this.finishedByService = true;
+            }
+          }
         }
       } catch (error) {
+        console.error(`[AudioFileTranscriber] Whisper processing failed:`, error);
         const sessionId = this.session?.id;
         if (sessionId) await audio.abortSession(sessionId);
         throw error;
@@ -109,17 +127,33 @@ export class AudioFileTranscriber {
     }
 
     const { buffer, context } = await decodeFile(file);
+    console.log(`[AudioFileTranscriber] Decoded audio: ${buffer.duration.toFixed(1)}s, ${buffer.numberOfChannels}ch, ${buffer.sampleRate}Hz`);
     try {
       this.session = await audio.createSession({
         ...input,
         source: { kind: 'file', name: file.name, path: filePath },
       });
-      await this.sendBuffer(buffer);
       const sessionId = this.session?.id;
+      console.log(`[AudioFileTranscriber] Created session ${sessionId}. Streaming PCM frames...`);
+      const sendStart = Date.now();
+      await this.sendBuffer(buffer);
+      console.log(`[AudioFileTranscriber] Finished streaming PCM in ${((Date.now() - sendStart) / 1000).toFixed(1)}s. Waiting for speech server to finalize...`);
       if (!this.cancelled && !this.finishedByService && sessionId) {
-        await audio.finishSession(sessionId);
+        const finishResult = await audio.finishSession(sessionId);
+        console.log(`[AudioFileTranscriber] finishSession resolved.`);
+        if (finishResult) {
+          this.callbacks.onProgress?.(1.0);
+          if (!this.finishedByService) {
+            this.callbacks.onSessionEvent?.({
+              kind: 'completed',
+              ...finishResult,
+            });
+            this.finishedByService = true;
+          }
+        }
       }
     } catch (error) {
+      console.error(`[AudioFileTranscriber] Streaming transcription failed:`, error);
       const sessionId = this.session?.id;
       if (sessionId) await audio.abortSession(sessionId);
       throw error;

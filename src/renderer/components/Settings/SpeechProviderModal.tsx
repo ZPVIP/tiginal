@@ -137,7 +137,7 @@ export function SpeechProviderModal({
   ) => setForm(current => ({ ...current, [key]: value }));
 
   const updateOption = (
-    key: 'smooth' | 'mode' | 'systemPrompt' | 'latencyMode' | 'chunkSizeMs',
+    key: 'smooth' | 'mode' | 'systemPrompt' | 'latencyMode',
     value: boolean | string | number | null,
   ) => setForm(current => ({
     ...current,
@@ -290,41 +290,21 @@ export function SpeechProviderModal({
 
         {isT3PO ? (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              <label>
-                <span className={`${labelClass} flex items-center gap-1`}>
-                  Latency mode
-                  <InfoIcon title={'Controls when T3PO commits a translation.\nLow: commits earlier with less context, so translations appear sooner.\nNative: uses the model\'s own decision.\nHigh: waits for more source text, which adds delay but gives the model more context.\nThe audio workspace can override this for each session.'} />
-                </span>
-                <select
-                  className={inputClass}
-                  value={form.options?.latencyMode ?? 'native'}
-                  onChange={event => updateOption('latencyMode', latencyMode(event.target.value))}
-                >
-                  <option value="low">Low</option>
-                  <option value="native">Native</option>
-                  <option value="high">High</option>
-                </select>
-              </label>
-              <label>
-                <span className={`${labelClass} flex items-center gap-1`}>
-                  Chunk size (ms)
-                  <InfoIcon title="Audio streaming chunk duration in milliseconds (e.g. 160). When set, Tiginal generates chunk timeline, speaker diarization, and SRT subtitles. Leave empty to disable." />
-                </span>
-                <input
-                  className={inputClass}
-                  type="number"
-                  min="20"
-                  step="20"
-                  value={form.options?.chunkSizeMs ?? ''}
-                  placeholder="e.g. 160 (empty to disable)"
-                  onChange={event => updateOption(
-                    'chunkSizeMs',
-                    event.target.value ? Number.parseInt(event.target.value, 10) : null,
-                  )}
-                />
-              </label>
-            </div>
+            <label className="block">
+              <span className={`${labelClass} flex items-center gap-1`}>
+                Latency mode
+                <InfoIcon title={'Controls when T3PO commits a translation.\nLow: commits earlier with less context, so translations appear sooner.\nNative: uses the model\'s own decision.\nHigh: waits for more source text, which adds delay but gives the model more context.\nThe audio workspace can override this for each session.'} />
+              </span>
+              <select
+                className={inputClass}
+                value={form.options?.latencyMode ?? 'native'}
+                onChange={event => updateOption('latencyMode', latencyMode(event.target.value))}
+              >
+                <option value="low">Low</option>
+                <option value="native">Native</option>
+                <option value="high">High</option>
+              </select>
+            </label>
 
             <label className="block">
               <span className={`${labelClass} flex items-center gap-1`}>
@@ -382,40 +362,20 @@ export function SpeechProviderModal({
               />
             </label>
 
-            <div className="grid grid-cols-2 gap-3">
-              <label>
-                <span className={`${labelClass} flex items-center gap-1`}>
-                  Recognition mode
-                  <InfoIcon title="Slow holds back the last few tokens until they stabilize. Fast commits all text once it ends with punctuation, which lowers latency but can reduce accuracy." />
-                </span>
-                <select
-                  className={inputClass}
-                  value={form.options?.mode ?? 'slow'}
-                  onChange={event => updateOption('mode', recognitionMode(event.target.value))}
-                >
-                  <option value="slow">Slow</option>
-                  <option value="fast">Fast</option>
-                </select>
-              </label>
-              <label>
-                <span className={`${labelClass} flex items-center gap-1`}>
-                  Chunk size (ms)
-                  <InfoIcon title="R2T2 audio streaming chunk duration in milliseconds (typically 160). When set, Tiginal generates chunk timeline, speaker diarization, and SRT subtitles. Leave empty to disable." />
-                </span>
-                <input
-                  className={inputClass}
-                  type="number"
-                  min="20"
-                  step="20"
-                  value={form.options?.chunkSizeMs ?? ''}
-                  placeholder="e.g. 160 (empty to disable)"
-                  onChange={event => updateOption(
-                    'chunkSizeMs',
-                    event.target.value ? Number.parseInt(event.target.value, 10) : null,
-                  )}
-                />
-              </label>
-            </div>
+            <label className="block">
+              <span className={`${labelClass} flex items-center gap-1`}>
+                Recognition mode
+                <InfoIcon title="Slow holds back the last few tokens until they stabilize. Fast commits all text once it ends with punctuation, which lowers latency but can reduce accuracy." />
+              </span>
+              <select
+                className={inputClass}
+                value={form.options?.mode ?? 'slow'}
+                onChange={event => updateOption('mode', recognitionMode(event.target.value))}
+              >
+                <option value="slow">Slow</option>
+                <option value="fast">Fast</option>
+              </select>
+            </label>
 
             <div className="flex items-center gap-2 py-1 text-xs text-text-muted">
               <Toggle
