@@ -3,7 +3,7 @@
 English | [中文](README.zh.md)
 
 > **All-in-One AI-Powered Developer Workstation & Swiss Army Knife for the AI Era**  
-> Unifying an **Intelligent AI Agent + Audio & Speech Lab + Native Fast Terminal + Local Model Engine + Secret Vault** into a single cohesive experience—eliminating the friction of switching across terminals, web browsers, translation tools, and ad-hoc scripts.
+> Unifying an **Intelligent AI Agent + Audio & Speech Lab + Native Fast Terminal + Local Model Engine + Secret Vault** into a single cohesive experience, eliminating the friction of switching across terminals, web browsers, translation tools, and ad-hoc scripts.
 
 ---
 
@@ -25,8 +25,8 @@ English | [中文](README.zh.md)
 ### 2. 🎙️ Audio & Speech Lab
 - **All-Scenario Tri-Source Audio Capture**:
   - 🎤 **Microphone Capture**: Everyday voice notes and personal speaking.
-  - 🔊 **System Audio Recording**: Built on macOS ScreenCaptureKit—**no virtual audio drivers (such as BlackHole or Soundflower) needed** to record computer audio directly (video calls, webinars, podcasts, web streams).
-  - 🔀 **Mixed Audio Capture**: Records microphone voice + computer speaker playback simultaneously—the ultimate companion for two-way interviews, meetings, and tutorials.
+  - 🔊 **System Audio Recording**: Built on macOS ScreenCaptureKit, with **no virtual audio drivers (such as BlackHole or Soundflower) needed** to record computer audio directly (video calls, webinars, podcasts, web streams).
+  - 🔀 **Mixed Audio Capture**: Records microphone voice + computer speaker playback simultaneously, making it ideal for two-way interviews, meetings, and tutorials.
 - **Local Offline Whisper Transcription**:
   - Zero privacy leakage. Dispatches local lightweight and high-precision Whisper models directly on-device with no internet connectivity required.
 - **Remote / Self-Hosted Streaming STT (R2T2)**：
@@ -103,7 +103,7 @@ Download official prebuilt binaries from [GitHub Releases](https://github.com/ZP
 - Apple Silicon (M1/M2/M3/M4): `Tiginal-x.x.x-arm64.dmg`
 - Intel Macs: `Tiginal-x.x.x.dmg`
 
-Because the app is distributed with ad-hoc signing, macOS may gate the first launch. If prompted, go to **System Settings > Privacy & Security** and click **Open Anyway**. If macOS reports the bundle is damaged, run:
+macOS may gate the first launch if the build is not notarized or uses ad-hoc signing. If prompted, go to **System Settings > Privacy & Security** and click **Open Anyway**. If macOS reports the bundle is damaged, run:
 ```bash
 xattr -dr com.apple.quarantine /Applications/Tiginal.app
 ```
@@ -134,6 +134,54 @@ npm run dist
 ```
 
 Output packages will be generated inside the `release/` directory.
+
+### macOS signing and privacy permissions
+
+Use the same Apple signing identity for every build so Accessibility, Microphone, and Screen & System Audio Recording permissions remain valid after an update.
+
+```bash
+# List available signing identities
+security find-identity -v -p codesigning
+```
+
+If the Mac has multiple identities, copy the 40-character SHA-1 value for the identity you want. The SHA-1 value selects one identity without relying on its display name.
+
+Create `electron-builder.env` in the project root to keep the selection for future builds:
+
+```bash
+APPLE_SIGNING_IDENTITY=0123456789ABCDEF0123456789ABCDEF01234567
+```
+
+Electron Builder loads this file automatically when you run:
+
+```bash
+npm run dist
+```
+
+The repository ignores `electron-builder.env` because the selected identity is specific to one Mac. To use another identity for one build, set the variable in the command:
+
+```bash
+APPLE_SIGNING_IDENTITY="FEDCBA9876543210FEDCBA9876543210FEDCBA98" npm run dist
+```
+
+`APPLE_SIGNING_IDENTITY` has priority over `CSC_NAME` and automatic identity detection. A value from the shell takes priority over the same value in `electron-builder.env`. If neither variable is set, Tiginal selects a Developer ID or Apple Development identity from the keychain. It uses ad-hoc signing only when no valid identity exists.
+
+Verify the identity after the build:
+
+```bash
+codesign -dvvv -r- release/mac-arm64/Tiginal.app
+codesign -dvvv -r- release/mac/Tiginal.app
+```
+
+Keep the selected identity and bundle ID `com.tiginal.app` unchanged between builds. If you select another identity, macOS requires permission approval once for that identity. If macOS keeps an obsolete permission record, reset it before installing the new build:
+
+```bash
+tccutil reset Accessibility com.tiginal.app
+tccutil reset ScreenCapture com.tiginal.app
+tccutil reset Microphone com.tiginal.app
+```
+
+Development mode permissions belong to the terminal or IDE that launches Tiginal. Packaged app permissions belong to `Tiginal.app`.
 
 ---
 

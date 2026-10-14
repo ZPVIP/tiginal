@@ -34,6 +34,8 @@ interface ActiveSession {
   committedText: string;
   totalSamples: number;
   language: string;
+  diarize?: boolean;
+  generateSrt?: boolean;
   client: SpeechStreamClient | null;
   translator?: StreamingTranslator | null;
   emit: (event: AudioSessionEvent) => void;
@@ -148,6 +150,8 @@ export class AudioService {
       committedText: '',
       totalSamples: 0,
       language,
+      diarize: input.diarize,
+      generateSrt: input.generateSrt,
       client,
       translator,
       emit,
@@ -238,10 +242,14 @@ export class AudioService {
         if (isWhisper) {
           try {
             const lang = session.language || 'auto';
-            console.log(`[AudioService] Launching tiginal-diarize Whisper pipeline for ${recordingPath} (lang=${lang})`);
+            const shouldDiarize = session.diarize !== false;
+            const shouldGenerateSrt = session.generateSrt !== false;
+            console.log(`[AudioService] Launching tiginal-diarize Whisper pipeline for ${recordingPath} (lang=${lang}, diarize=${shouldDiarize}, srt=${shouldGenerateSrt})`);
             const whisperRes = await runTiginalDiarizePipeline(recordingPath, {
               transcribe: true,
               language: lang,
+              diarize: shouldDiarize,
+              generateSrt: shouldGenerateSrt,
               writeArtifacts: true,
               onProgress: (progress, phase) => {
                 session.emit({ kind: 'progress', sessionId, progress, phase });
@@ -265,11 +273,15 @@ export class AudioService {
             } else {
               console.warn('[AudioService] Whisper finished but returned empty transcript');
             }
-            if (whisperRes.diar_text) {
+            if (shouldDiarize && whisperRes.diar_text) {
               artifacts.speakers = whisperRes.diar_text;
+            } else if (!shouldDiarize) {
+              try { if (fs.existsSync(`${stem}-diar.txt`)) fs.unlinkSync(`${stem}-diar.txt`); } catch {}
             }
-            if (whisperRes.srt) {
+            if (shouldGenerateSrt && whisperRes.srt) {
               artifacts.srt = whisperRes.srt;
+            } else if (!shouldGenerateSrt) {
+              try { if (fs.existsSync(`${stem}.srt`)) fs.unlinkSync(`${stem}.srt`); } catch {}
             }
           } catch (whisperErr) {
             console.error('[AudioService] Whisper transcription pipeline failed:', whisperErr);
@@ -293,24 +305,37 @@ export class AudioService {
           }
 
           // 2. MMS-Align + Nemotron Diarization pipeline
-          try {
-            console.log(`[AudioService] Launching tiginal-diarize speaker diarization for ${recordingPath}`);
-            const pipelineResult = await runTiginalDiarizePipeline(recordingPath, {
-              transcriptPath: txtPath,
-              writeArtifacts: true,
-              onProgress: (progress, phase) => {
-                session.emit({ kind: 'progress', sessionId, progress, phase });
-              },
-            });
-            if (pipelineResult.diar_text) {
-              artifacts.speakers = pipelineResult.diar_text;
+          const shouldDiarize = session.diarize !== false;
+          const shouldGenerateSrt = session.generateSrt !== false;
+          if (shouldDiarize || shouldGenerateSrt) {
+            try {
+              console.log(`[AudioService] Launching tiginal-diarize speaker diarization for ${recordingPath}`);
+              const pipelineResult = await runTiginalDiarizePipeline(recordingPath, {
+                transcriptPath: txtPath,
+                diarize: shouldDiarize,
+                generateSrt: shouldGenerateSrt,
+                writeArtifacts: true,
+                onProgress: (progress, phase) => {
+                  session.emit({ kind: 'progress', sessionId, progress, phase });
+                },
+              });
+              if (shouldDiarize && pipelineResult.diar_text) {
+                artifacts.speakers = pipelineResult.diar_text;
+              } else if (!shouldDiarize) {
+                try { if (fs.existsSync(`${stem}-diar.txt`)) fs.unlinkSync(`${stem}-diar.txt`); } catch {}
+              }
+              if (shouldGenerateSrt && pipelineResult.srt) {
+                artifacts.srt = pipelineResult.srt;
+              } else if (!shouldGenerateSrt) {
+                try { if (fs.existsSync(`${stem}.srt`)) fs.unlinkSync(`${stem}.srt`); } catch {}
+              }
+              console.log(`[AudioService] Speaker diarization completed: turns=${pipelineResult.turns?.length || 0}`);
+            } catch (diarErr) {
+              console.warn('[AudioService] Speaker diarization pipeline skipped or failed:', diarErr);
             }
-            if (pipelineResult.srt) {
-              artifacts.srt = pipelineResult.srt;
-            }
-            console.log(`[AudioService] Speaker diarization completed: turns=${pipelineResult.turns?.length || 0}`);
-          } catch (diarErr) {
-            console.warn('[AudioService] Speaker diarization pipeline skipped or failed:', diarErr);
+          } else {
+            try { if (fs.existsSync(`${stem}-diar.txt`)) fs.unlinkSync(`${stem}-diar.txt`); } catch {}
+            try { if (fs.existsSync(`${stem}.srt`)) fs.unlinkSync(`${stem}.srt`); } catch {}
           }
         }
       }

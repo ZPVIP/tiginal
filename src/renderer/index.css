@@ -106,10 +106,18 @@
   grid-template-columns: minmax(300px, 330px) minmax(0, 1fr) minmax(0, 1fr);
 }
 
+.audio-workspace-grid.translation-hidden {
+  grid-template-columns: minmax(300px, 330px) minmax(0, 1fr);
+}
+
 @media (max-width: 900px) {
   .audio-workspace-grid {
     grid-template-columns: 280px minmax(360px, 1fr) minmax(360px, 1fr);
     overflow-x: auto;
+  }
+
+  .audio-workspace-grid.translation-hidden {
+    grid-template-columns: 280px minmax(360px, 1fr);
   }
 }
 

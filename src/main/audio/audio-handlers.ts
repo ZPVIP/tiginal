@@ -91,6 +91,8 @@ function parseCreateSessionInput(value: unknown): CreateAudioSessionInput {
   const bookedWords = Reflect.get(value, 'bookedWords');
   const source = parseAudioSource(Reflect.get(value, 'source'));
   const translation = parseSessionTranslation(Reflect.get(value, 'translation'));
+  const diarize = Reflect.get(value, 'diarize');
+  const generateSrt = Reflect.get(value, 'generateSrt');
   if (typeof providerId !== 'string' || !providerId.trim()) {
     throw new Error('Speech provider ID is required');
   }
@@ -102,6 +104,8 @@ function parseCreateSessionInput(value: unknown): CreateAudioSessionInput {
       : {}),
     source,
     ...(translation ? { translation } : {}),
+    ...(typeof diarize === 'boolean' ? { diarize } : {}),
+    ...(typeof generateSrt === 'boolean' ? { generateSrt } : {}),
   };
 }
 

@@ -208,3 +208,68 @@ test('AudioService.deleteRecordingArtifact deletes only the selected artifact fi
   assert.equal(afterTxt.transcript, undefined);
 });
 
+test('AudioService skips diarization and SRT when diarize and generateSrt are false', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tiginal-no-diar-test-'));
+  const userAudioDir = fs.mkdtempSync(path.join(os.tmpdir(), 'user-music-no-diar-'));
+  t.after(() => {
+    fs.rmSync(directory, { recursive: true, force: true });
+    fs.rmSync(userAudioDir, { recursive: true, force: true });
+  });
+
+  const userAudioPath = path.join(userAudioDir, 'sample.wav');
+  fs.writeFileSync(userAudioPath, 'dummy-audio');
+
+  const fakeProvider = {
+    id: 'prov-1',
+    name: 'R2T2',
+    protocol: 'r2t2',
+    defaultLanguage: 'en',
+    maxSessionSeconds: null,
+    options: {},
+  };
+
+  const fakeStore = {
+    require: () => ({ provider: fakeProvider, credential: null }),
+  };
+
+  const fakeRepo = {
+    insert: () => {},
+    updateStatus: () => {},
+    updateTranscript: () => {},
+    hasRecording: (p) => p === userAudioPath,
+  };
+
+  const { SpeechStreamClient } = require('../dist/main/main/audio/SpeechStreamClient.js');
+  t.mock.method(SpeechStreamClient.prototype, 'connect', async () => {});
+  t.mock.method(SpeechStreamClient.prototype, 'finish', async () => {});
+
+  const service = new AudioService(fakeStore, fakeRepo, directory);
+
+  const snapshot = await service.createSession(
+    {
+      providerId: 'prov-1',
+      source: { kind: 'file', name: 'sample.wav', path: userAudioPath },
+      diarize: false,
+      generateSrt: false,
+    },
+    () => {},
+  );
+
+  const activeSession = service['sessions'].get(snapshot.id);
+  assert.ok(activeSession);
+  activeSession.committedText = 'No diarization or srt needed.';
+
+  const result = await service.finishSession(snapshot.id);
+
+  const expectedTxt = path.join(userAudioDir, 'sample.txt');
+  const expectedDiar = path.join(userAudioDir, 'sample-diar.txt');
+  const expectedSrt = path.join(userAudioDir, 'sample.srt');
+
+  assert.equal(fs.existsSync(expectedTxt), true);
+  assert.equal(fs.existsSync(expectedDiar), false);
+  assert.equal(fs.existsSync(expectedSrt), false);
+  assert.equal(result.artifacts.speakers, undefined);
+  assert.equal(result.artifacts.srt, undefined);
+  assert.equal(result.artifacts.transcript, 'No diarization or srt needed.');
+});
+

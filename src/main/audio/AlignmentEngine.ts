@@ -262,6 +262,8 @@ export interface TiginalDiarizeOptions {
   whisperModelPath?: string;
   alignModelPath?: string;
   language?: string;
+  diarize?: boolean;
+  generateSrt?: boolean;
   writeArtifacts?: boolean;
   onProgress?: (progress: number, stage?: string) => void;
   signal?: AbortSignal;
@@ -312,6 +314,12 @@ export async function runTiginalDiarizePipeline(
       if (whisperModel && fs.existsSync(whisperModel)) {
         args.push('--whisper-model', whisperModel);
       }
+    }
+    if (options.diarize === false) {
+      args.push('--no-diarize');
+    }
+    if (options.generateSrt === false) {
+      args.push('--no-srt');
     }
     if (options.language) {
       args.push('-l', options.language);
@@ -370,7 +378,7 @@ export async function runTiginalDiarizePipeline(
         // tiginal-diarize pipeline order:
         // 1. Nemotron Diarization runs FIRST (0% - 25% of overall duration)
         const diarMatch = trimmed.match(/\[progress\]\s+diarization:\s*(\d+)/i);
-        if (diarMatch) {
+        if (diarMatch && options.diarize !== false) {
           const pct = Math.min(100, Math.max(0, parseInt(diarMatch[1], 10)));
           const overall = options.transcribe
             ? Math.min(0.25, Math.max(0.01, (pct / 100) * 0.25))
@@ -378,11 +386,13 @@ export async function runTiginalDiarizePipeline(
           reportProgress(overall, `Analyzing speakers (${pct}%)`);
         }
 
-        // 2. Whisper Transcription runs SECOND (25% - 95% of overall duration)
+        // 2. Whisper Transcription runs SECOND (25% - 95% of overall duration, or 1% - 95% if diarization skipped)
         const whisperMatch = trimmed.match(/\[progress\]\s+whisper:\s*(\d+)/i);
         if (whisperMatch) {
           const pct = Math.min(100, Math.max(0, parseInt(whisperMatch[1], 10)));
-          const overall = Math.min(0.95, Math.max(0.25, 0.25 + (pct / 100) * 0.70));
+          const overall = options.diarize === false
+            ? Math.min(0.95, Math.max(0.01, (pct / 100) * 0.95))
+            : Math.min(0.95, Math.max(0.25, 0.25 + (pct / 100) * 0.70));
           reportProgress(overall, `Transcribing speech (${pct}%)`);
         }
       }
@@ -407,14 +417,14 @@ export async function runTiginalDiarizePipeline(
         const rawJson = stdout.trim();
         const parsed = JSON.parse(rawJson);
         if (Array.isArray(parsed)) {
-          resolve({ turns: parsed as SpeakerTurn[] });
+          resolve({ turns: options.diarize === false ? [] : (parsed as SpeakerTurn[]) });
         } else if (parsed && typeof parsed === 'object') {
           resolve({
-            turns: parsed.turns || [],
+            turns: options.diarize === false ? [] : (parsed.turns || []),
             transcript: parsed.transcript,
             segments: parsed.segments,
-            diar_text: parsed.diar_text,
-            srt: parsed.srt,
+            diar_text: options.diarize === false ? undefined : parsed.diar_text,
+            srt: options.generateSrt === false ? undefined : parsed.srt,
           });
         } else {
           resolve({ turns: [] });

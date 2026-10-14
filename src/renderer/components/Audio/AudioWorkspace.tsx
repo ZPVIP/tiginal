@@ -153,6 +153,25 @@ export function AudioWorkspace() {
   const [artifacts, setArtifacts] = useState<AudioSessionArtifacts>({});
   const [transcriptTab, setTranscriptTab] = useState<TranscriptTab>('transcript');
   const [isDiarizing, setIsDiarizing] = useState(false);
+  const [diarize, setDiarizeState] = useState(() => {
+    const saved = localStorage.getItem('audio_diarize');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [generateSrt, setGenerateSrtState] = useState(() => {
+    const saved = localStorage.getItem('audio_generate_srt');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const setDiarize = useCallback((enabled: boolean) => {
+    setDiarizeState(enabled);
+    localStorage.setItem('audio_diarize', String(enabled));
+  }, []);
+
+  const setGenerateSrt = useCallback((enabled: boolean) => {
+    setGenerateSrtState(enabled);
+    localStorage.setItem('audio_generate_srt', String(enabled));
+  }, []);
+
   const [state, setState] = useState<WorkbenchState>({ kind: 'idle' });
 
   // Translation states
@@ -657,6 +676,8 @@ export function AudioWorkspace() {
           language,
           bookedWords: technicalTerms(terms),
           translation: translationConfig,
+          diarize,
+          generateSrt,
         },
         liveSource,
       );
@@ -684,6 +705,8 @@ export function AudioWorkspace() {
     translationEngineId,
     translationInstructions,
     translationLatency,
+    diarize,
+    generateSrt,
   ]);
 
   const startFileTranscription = useCallback(async () => {
@@ -729,6 +752,8 @@ export function AudioWorkspace() {
         language,
         bookedWords: technicalTerms(terms),
         translation: translationConfig,
+        diarize,
+        generateSrt,
       });
     } catch (error) {
       failWithTranscript(messageFromError(error));
@@ -754,6 +779,8 @@ export function AudioWorkspace() {
     translationEngineId,
     translationInstructions,
     translationLatency,
+    diarize,
+    generateSrt,
   ]);
 
   const start = useCallback(() => {
@@ -1040,7 +1067,7 @@ export function AudioWorkspace() {
           });
         }}
       />
-      <div className="audio-workspace-grid min-h-0 flex-1">
+      <div className={`audio-workspace-grid min-h-0 flex-1 ${!realtimeTranslation ? 'translation-hidden' : ''}`}>
         <AudioControlsPanel
           source={source}
           availableSources={availableSources}
@@ -1068,6 +1095,10 @@ export function AudioWorkspace() {
           onTargetLanguageChange={setTargetLanguage}
           realtimeTranslation={realtimeTranslation}
           onRealtimeTranslationChange={setRealtimeTranslation}
+          diarize={diarize}
+          onDiarizeChange={setDiarize}
+          generateSrt={generateSrt}
+          onGenerateSrtChange={setGenerateSrt}
           translationLatency={translationLatency}
           onTranslationLatencyChange={setTranslationLatency}
           translationInstructions={translationInstructions}
@@ -1108,36 +1139,38 @@ export function AudioWorkspace() {
           recordingPath={recordingPath}
           onDeleteArtifact={handleDeleteTranscriptArtifact}
         />
-        <TranslationEditor
-          committedText={committedTranslation}
-          editableText={editableTranslation}
-          editable={editable}
-          dirty={translationDirty}
-          isRealtimeActive={busy && realtimeTranslation && isWsEngine}
-          status={translationStatus}
-          error={translationError}
-          unsupportedStreaming={unsupportedStreaming}
-          isTranslating={isStaticTranslating}
-          translateDisabled={translateDisabled}
-          translateTooltip={translateTooltip}
-          targetLanguage={targetLanguage}
-          onChange={value => {
-            setEditableTranslation(value);
-            setTranslationDirty(true);
-          }}
-          onTranslate={() => void handleTranslateStatic()}
-          onCopy={() => {
-            const text = editable ? editableTranslation : committedTranslation;
-            if (text) void navigator.clipboard.writeText(text);
-          }}
-          onClear={() => {
-            setCommittedTranslation('');
-            setEditableTranslation('');
-            setTranslationDirty(false);
-            setTranslationStatus('idle');
-            setTranslationError(null);
-          }}
-        />
+        {realtimeTranslation && (
+          <TranslationEditor
+            committedText={committedTranslation}
+            editableText={editableTranslation}
+            editable={editable}
+            dirty={translationDirty}
+            isRealtimeActive={busy && realtimeTranslation && isWsEngine}
+            status={translationStatus}
+            error={translationError}
+            unsupportedStreaming={unsupportedStreaming}
+            isTranslating={isStaticTranslating}
+            translateDisabled={translateDisabled}
+            translateTooltip={translateTooltip}
+            targetLanguage={targetLanguage}
+            onChange={value => {
+              setEditableTranslation(value);
+              setTranslationDirty(true);
+            }}
+            onTranslate={() => void handleTranslateStatic()}
+            onCopy={() => {
+              const text = editable ? editableTranslation : committedTranslation;
+              if (text) void navigator.clipboard.writeText(text);
+            }}
+            onClear={() => {
+              setCommittedTranslation('');
+              setEditableTranslation('');
+              setTranslationDirty(false);
+              setTranslationStatus('idle');
+              setTranslationError(null);
+            }}
+          />
+        )}
       </div>
 
       <footer className="shrink-0 border-t border-border bg-surface/70 px-4 py-3">

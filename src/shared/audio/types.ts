@@ -243,6 +243,8 @@ export interface CreateAudioSessionInput {
   bookedWords?: string[];
   source: AudioSessionSource;
   translation?: AudioSessionTranslationConfig;
+  diarize?: boolean;
+  generateSrt?: boolean;
 }
 
 export interface AudioSessionSnapshot {

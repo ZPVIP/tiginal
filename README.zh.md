@@ -103,7 +103,7 @@ Tiginal 提供深度的个性化配置，释放百宝箱的全部潜能：
 - Apple Silicon (M1/M2/M3/M4): `Tiginal-x.x.x-arm64.dmg`
 - Intel 芯片: `Tiginal-x.x.x.dmg`
 
-由于应用采用了自签名，首次在 macOS 上启动时如遇系统拦截，请前往 **系统设置 > 隐私与安全性**，点击 **仍要打开**。若提示应用已损坏，可在终端执行：
+如果构建未经过公证或使用临时签名，macOS 可能会拦截首次启动。遇到提示时，请前往 **系统设置 > 隐私与安全性**，点击 **仍要打开**。若提示应用已损坏，可在终端执行：
 ```bash
 xattr -dr com.apple.quarantine /Applications/Tiginal.app
 ```
@@ -118,22 +118,70 @@ xattr -dr com.apple.quarantine /Applications/Tiginal.app
 需要环境：Node.js >= 22，Git。
 
 ```bash
-# 1. 克隆代码仓库
+# 1. Clone the repository
 git clone https://github.com/ZPVIP/tiginal.git
 cd tiginal
 
-# 2. 安装依赖并执行测试
+# 2. Install dependencies and run tests
 npm ci
 npm test
 
-# 3. 启动开发模式
+# 3. Start development mode
 npm start
 
-# 4. 构建打包分发文件
+# 4. Package distribution files
 npm run dist
 ```
 
 打包产物位于 `release/` 目录下。
+
+### macOS 签名与隐私权限
+
+每次构建都使用同一个 Apple 签名身份，Accessibility、Microphone 和 Screen & System Audio Recording 权限才能在更新后继续有效。
+
+```bash
+# List available signing identities
+security find-identity -v -p codesigning
+```
+
+如果当前 Mac 有多个签名身份，请复制目标身份对应的 40 位 SHA-1。使用 SHA-1 可以避免因显示名称相同而选错身份。
+
+在项目根目录创建 `electron-builder.env`，保存以后构建时使用的身份：
+
+```bash
+APPLE_SIGNING_IDENTITY=0123456789ABCDEF0123456789ABCDEF01234567
+```
+
+Electron Builder 会在执行以下命令时自动读取该文件：
+
+```bash
+npm run dist
+```
+
+仓库会忽略 `electron-builder.env`，因为签名身份属于当前 Mac 的本地配置。如需为某一次构建临时选择另一个身份，请执行：
+
+```bash
+APPLE_SIGNING_IDENTITY="FEDCBA9876543210FEDCBA9876543210FEDCBA98" npm run dist
+```
+
+`APPLE_SIGNING_IDENTITY` 的优先级高于 `CSC_NAME` 和自动身份检测。Shell 中的同名变量优先于 `electron-builder.env` 中的值。如果两个变量都没有设置，Tiginal 会从钥匙串中选择 Developer ID 或 Apple Development 身份。没有有效身份时才会使用临时签名。
+
+构建后检查实际使用的身份：
+
+```bash
+codesign -dvvv -r- release/mac-arm64/Tiginal.app
+codesign -dvvv -r- release/mac/Tiginal.app
+```
+
+后续构建应保持签名身份和 Bundle ID `com.tiginal.app` 不变。如果改用另一个身份，macOS 会要求为新身份重新授权一次。如果 macOS 仍保留旧的权限记录，请在安装新版本前重置：
+
+```bash
+tccutil reset Accessibility com.tiginal.app
+tccutil reset ScreenCapture com.tiginal.app
+tccutil reset Microphone com.tiginal.app
+```
+
+开发模式的权限属于启动 Tiginal 的终端或 IDE。安装版的权限属于 `Tiginal.app`。
 
 ---
 
