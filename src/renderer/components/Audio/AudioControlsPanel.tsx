@@ -267,12 +267,12 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
               />
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-text-main">生成 SRT 文件</span>
+              <span className="text-xs font-medium text-text-main">Generate SRT File</span>
               <Toggle
                 checked={props.generateSrt}
                 onChange={props.onGenerateSrtChange}
                 disabled={props.isActive}
-                label="生成 SRT 文件"
+                label="Generate SRT File"
                 size="small"
               />
             </div>
@@ -301,81 +301,7 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
           />
         </div>
 
-        {!props.realtimeTranslation ? (
-          <details className="group rounded-lg border border-border bg-surface p-2.5">
-            <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-medium text-text-sec outline-none [&::-webkit-details-marker]:hidden">
-              <span>Translation Settings</span>
-              <ChevronDown size={14} className="text-text-muted transition-transform group-open:rotate-180" />
-            </summary>
-            <div className="mt-2.5 space-y-3">
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-text-sec">Target & Engine</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <FancySelect
-                    value={props.targetLanguage}
-                    onChange={props.onTargetLanguageChange}
-                    options={targetLanguageOptions}
-                    buttonClassName="h-9"
-                    disabled={props.isActive}
-                  />
-                  <FancySelect
-                    value={props.translationEngineId}
-                    onChange={props.onTranslationEngineChange}
-                    options={[
-                      { value: '', label: 'None (Disabled)' },
-                      ...visibleCandidates.map(cand => ({
-                        value: cand.id,
-                        label: cand.label,
-                        description: cand.description,
-                      })),
-                    ]}
-                    placeholder="Select translation engine"
-                    buttonClassName="h-9"
-                    disabled={props.isActive}
-                  />
-                </div>
-              </div>
-
-              {isT3PO && (
-                <div>
-                  <div className="mb-1.5 flex items-center gap-1.5">
-                    <label className="text-xs font-medium text-text-sec">Translation Latency</label>
-                    <InfoIcon title={latencyDescription} />
-                  </div>
-                  <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-surface p-1">
-                    {latencyOptions.map(option => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        disabled={props.isActive}
-                        onClick={() => props.onTranslationLatencyChange(option.value)}
-                        className={`rounded px-2 py-1 text-center text-xs font-medium transition-colors ${
-                          props.translationLatency === option.value
-                            ? 'bg-primary text-primary-foreground shadow-sm'
-                            : 'text-text-muted hover:bg-surface-light hover:text-text-main'
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-text-sec">Translation Instructions</label>
-                <textarea
-                  value={props.translationInstructions}
-                  disabled={props.isActive}
-                  onChange={e => props.onTranslationInstructionsChange(e.target.value)}
-                  rows={3}
-                  placeholder="Optional custom translation constraints or prompt"
-                  className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-text-main placeholder:text-text-muted outline-none focus:border-primary disabled:opacity-60"
-                />
-              </div>
-            </div>
-          </details>
-        ) : (
+        {props.realtimeTranslation && (
           <div className="space-y-4">
             <div>
               <label className="mb-1.5 block text-xs font-medium text-text-sec">Translation</label>
@@ -458,7 +384,7 @@ export function AudioControlsPanel(props: AudioControlsPanelProps) {
             disabled={props.isActive}
             onChange={event => props.onTechnicalTermsChange(event.target.value)}
             rows={3}
-            placeholder="One term per line"
+            placeholder="One term per line (e.g. ChatGPT, Kubernetes)"
             className="mt-2 w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-text-main placeholder:text-text-muted outline-none focus:border-primary disabled:opacity-60"
           />
         </details>
