@@ -303,6 +303,7 @@ export interface AudioRendererApi {
   abortSession(sessionId: string): Promise<void>;
   deleteRecording(recordingPath: string): Promise<void>;
   deleteRecordingArtifact(recordingPath: string, artifactType: 'transcript' | 'speakers' | 'srt'): Promise<AudioSessionArtifacts>;
+  renameSpeaker(recordingPath: string, oldName: string, newName: string): Promise<AudioSessionArtifacts>;
   getRecordingUrl(recordingPath: string): Promise<string>;
   getRecordingArtifacts(recordingPath: string): Promise<AudioSessionArtifacts>;
   rediarizeRecording(recordingPath: string): Promise<AudioSessionArtifacts>;

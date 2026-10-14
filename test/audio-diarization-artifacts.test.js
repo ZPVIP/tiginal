@@ -9,6 +9,8 @@ const {
   buildDiarizedText,
   buildSrtContent,
   formatSrtTime,
+  replaceSpeakerInDiarText,
+  replaceSpeakerInSrtText,
 } = require('../dist/main/main/audio/AlignmentEngine.js');
 const { engineSpec } = require('../dist/main/main/models/EngineCatalog.js');
 
@@ -271,5 +273,68 @@ test('AudioService skips diarization and SRT when diarize and generateSrt are fa
   assert.equal(result.artifacts.speakers, undefined);
   assert.equal(result.artifacts.srt, undefined);
   assert.equal(result.artifacts.transcript, 'No diarization or srt needed.');
+});
+
+test('replaceSpeakerInDiarText replaces speaker labels without corrupting dialogue', () => {
+  const content = 'Speaker 1: Hello everyone.\n\nSpeaker 2: Speaker 1 was saying that we should start.\n\nSpeaker 1: Exactly.';
+  const updated = replaceSpeakerInDiarText(content, 'Speaker 1', 'Peng Zhang');
+  assert.equal(
+    updated,
+    'Peng Zhang: Hello everyone.\n\nSpeaker 2: Speaker 1 was saying that we should start.\n\nPeng Zhang: Exactly.'
+  );
+});
+
+test('replaceSpeakerInSrtText replaces speaker tags in subtitles', () => {
+  const srt = '1\n00:00:00,000 --> 00:00:01,000\n[Speaker 1] Hello world.\n\n2\n00:00:01,500 --> 00:00:02,500\n[Speaker 2] Hi there.';
+  const updated = replaceSpeakerInSrtText(srt, 'Speaker 1', 'Peng Zhang');
+  assert.ok(updated.includes('[Peng Zhang] Hello world.'));
+  assert.ok(updated.includes('[Speaker 2] Hi there.'));
+  assert.ok(updated.includes('00:00:00,000 --> 00:00:01,000'));
+});
+
+test('AudioService.renameSpeaker directly replaces in diar and srt files without extra files', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tiginal-audio-rename-'));
+  t.after(() => {
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  const stem = 'meeting_test';
+  const wavPath = path.join(directory, `${stem}.wav`);
+  const diarPath = path.join(directory, `${stem}-diar.txt`);
+  const srtPath = path.join(directory, `${stem}.srt`);
+  const txtPath = path.join(directory, `${stem}.txt`);
+
+  fs.writeFileSync(wavPath, 'RIFF');
+  fs.writeFileSync(txtPath, 'Good morning everyone.');
+  fs.writeFileSync(diarPath, 'Speaker 1: Good morning everyone.\n\nSpeaker 2: Good morning!');
+  fs.writeFileSync(srtPath, '1\n00:00:00,000 --> 00:00:01,000\n[Speaker 1] Good morning everyone.\n\n2\n00:00:01,200 --> 00:00:02,000\n[Speaker 2] Good morning!');
+
+  const fakeStore = { getProvider: () => null };
+  const fakeRepo = {
+    insertSession: () => {},
+    updateSession: () => {},
+    findSessionById: () => null,
+  };
+
+  const service = new AudioService(fakeStore, fakeRepo, directory);
+
+  const updatedArtifacts = service.renameSpeaker(wavPath, 'Speaker 1', 'Alice');
+
+  // Verify file contents on disk directly modified
+  const newDiarContent = fs.readFileSync(diarPath, 'utf-8');
+  assert.ok(newDiarContent.includes('Alice: Good morning everyone.'));
+  assert.ok(newDiarContent.includes('Speaker 2: Good morning!'));
+
+  const newSrtContent = fs.readFileSync(srtPath, 'utf-8');
+  assert.ok(newSrtContent.includes('[Alice] Good morning everyone.'));
+  assert.ok(newSrtContent.includes('[Speaker 2] Good morning!'));
+
+  // Verify returned artifacts
+  assert.equal(updatedArtifacts.speakers, newDiarContent);
+  assert.equal(updatedArtifacts.srt, newSrtContent);
+
+  // Verify NO extra files created
+  const files = fs.readdirSync(directory);
+  assert.deepEqual(files.sort(), [`${stem}.srt`, `${stem}.txt`, `${stem}.wav`, `${stem}-diar.txt`].sort());
 });
 

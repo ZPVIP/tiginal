@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertCircle, LoaderCircle, Sparkles, Trash2, X } from 'lucide-react';
+import { AlertCircle, Check, LoaderCircle, Pencil, Sparkles, Trash2, User, Users, X } from 'lucide-react';
 import type { AudioSessionArtifacts } from '../../../shared/audio/types';
 import { CopyButton } from '../ui/CopyButton';
 
@@ -20,6 +20,24 @@ export function getTabFileName(recordingPath: string, tab: TranscriptTab): strin
   }
 }
 
+export function extractUniqueSpeakers(diarText?: string): string[] {
+  if (!diarText) return [];
+  const speakers: string[] = [];
+  const paragraphs = diarText.split(/\n\s*\n/);
+  for (const para of paragraphs) {
+    const firstLine = para.trim().split('\n')[0];
+    if (!firstLine) continue;
+    const colonIdx = firstLine.indexOf(':');
+    if (colonIdx > 0) {
+      const spk = firstLine.slice(0, colonIdx).trim();
+      if (spk && spk.length < 50 && !speakers.includes(spk)) {
+        speakers.push(spk);
+      }
+    }
+  }
+  return speakers;
+}
+
 interface TranscriptEditorProps {
   committedText: string;
   partialText: string;
@@ -36,6 +54,7 @@ interface TranscriptEditorProps {
   onRediarize?(): void;
   onCancelDiarize?(): void;
   onTabChange?(tab: TranscriptTab): void;
+  onRenameSpeaker?(oldName: string, newName: string): Promise<void> | void;
   onChange(value: string): void;
   onCopy?(): void;
   onClear(): void;
@@ -47,6 +66,20 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
   const [internalTab, setInternalTab] = useState<TranscriptTab>('transcript');
   const selectedTab = props.activeTab ?? internalTab;
   const setTab = props.onTabChange ?? setInternalTab;
+
+  const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
+  const [editSpeakerValue, setEditSpeakerValue] = useState<string>('');
+
+  const uniqueSpeakers = extractUniqueSpeakers(props.artifacts?.speakers);
+
+  const handleSaveRename = async (oldName: string, newName: string) => {
+    const trimmed = newName.trim();
+    setEditingSpeaker(null);
+    if (!trimmed || trimmed === oldName) return;
+    if (props.onRenameSpeaker) {
+      await props.onRenameSpeaker(oldName, trimmed);
+    }
+  };
 
   const tabs: Array<{ id: TranscriptTab; label: string; enabled: boolean; tooltip: string }> = [
     {
@@ -215,6 +248,74 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
         </div>
       </header>
 
+      {(currentTab === 'speakers' || currentTab === 'srt') && uniqueSpeakers.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/70 bg-surface/40 px-4 py-2 shrink-0">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-text-muted select-none mr-0.5">
+            <Users size={13} className="text-primary" />
+            <span>Speakers:</span>
+          </div>
+          {uniqueSpeakers.map(speaker => {
+            const isEditing = editingSpeaker === speaker;
+            return isEditing ? (
+              <form
+                key={speaker}
+                onSubmit={e => {
+                  e.preventDefault();
+                  void handleSaveRename(speaker, editSpeakerValue);
+                }}
+                className="flex items-center gap-1"
+              >
+                <input
+                  type="text"
+                  value={editSpeakerValue}
+                  onChange={e => setEditSpeakerValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') {
+                      setEditingSpeaker(null);
+                    }
+                  }}
+                  onBlur={() => {
+                    void handleSaveRename(speaker, editSpeakerValue);
+                  }}
+                  className="h-6 w-28 rounded-md border border-primary bg-background px-2 text-xs text-text-main shadow-2xs focus:outline-none focus:ring-1 focus:ring-primary"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  title="Save name"
+                  className="rounded p-0.5 text-primary hover:bg-primary/10 transition-colors"
+                >
+                  <Check size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingSpeaker(null)}
+                  title="Cancel"
+                  className="rounded p-0.5 text-text-muted hover:bg-surface-light transition-colors"
+                >
+                  <X size={13} />
+                </button>
+              </form>
+            ) : (
+              <button
+                key={speaker}
+                type="button"
+                onClick={() => {
+                  setEditingSpeaker(speaker);
+                  setEditSpeakerValue(speaker);
+                }}
+                title={`Click to rename "${speaker}" in diarization and SRT`}
+                className="group flex items-center gap-1.5 rounded-md border border-border/70 bg-surface/70 px-2.5 py-1 text-xs text-text-main shadow-2xs hover:border-primary/60 hover:bg-surface hover:text-primary transition-all"
+              >
+                <User size={11} className="text-primary/70 group-hover:text-primary transition-colors" />
+                <span className="font-medium">{speaker}</span>
+                <Pencil size={10} className="text-text-muted opacity-40 group-hover:opacity-100 group-hover:text-primary transition-opacity ml-0.5" />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="min-h-0 min-w-0 flex-1 w-full overflow-hidden p-4">
         {currentTab === 'transcript' ? (
           props.editable ? (
@@ -245,7 +346,29 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
             className="h-full min-h-48 w-full max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words break-all rounded-xl border border-border bg-surface/60 p-4 text-sm leading-6 text-text-main"
             style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', overflowX: 'hidden' }}
           >
-            {props.artifacts?.speakers || 'No speaker diarization available.'}
+            {props.artifacts?.speakers ? (
+              props.artifacts.speakers.split(/\n\s*\n/).map((para, idx) => {
+                const trimmed = para.trim();
+                const colonIdx = trimmed.indexOf(':');
+                if (colonIdx > 0 && colonIdx < 50) {
+                  const spk = trimmed.slice(0, colonIdx).trim();
+                  const body = trimmed.slice(colonIdx + 1);
+                  return (
+                    <div key={idx} className="mb-4 last:mb-0">
+                      <span className="font-semibold text-primary select-none">{spk}:</span>
+                      <span>{body}</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={idx} className="mb-4 last:mb-0">
+                    {trimmed}
+                  </div>
+                );
+              })
+            ) : (
+              'No speaker diarization available.'
+            )}
           </div>
         ) : (
           <pre

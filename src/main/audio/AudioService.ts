@@ -19,6 +19,8 @@ import type { SpeechProviderStore } from './SpeechProviderStore';
 import type { TranslationService } from './TranslationService';
 import type { StreamingTranslator } from './T3POWebSocketTranslator';
 import {
+  replaceSpeakerInDiarText,
+  replaceSpeakerInSrtText,
   runTiginalDiarizePipeline,
 } from './AlignmentEngine';
 import { suppressRepetitiveLoops } from '../../shared/audio/textUtils';
@@ -436,6 +438,43 @@ export class AudioService {
       } catch (err) {
         console.error(`Failed to delete recording artifact ${fileToDelete}:`, err);
         throw err;
+      }
+    }
+
+    return this.getRecordingArtifacts(recordingPath);
+  }
+
+  renameSpeaker(recordingPath: string, oldName: string, newName: string): AudioSessionArtifacts {
+    const target = path.resolve(recordingPath);
+    if (!this.isAllowedAudioPath(target)) {
+      throw new Error('Recording path is outside the Tiginal audio directory');
+    }
+    const oldTrimmed = oldName.trim();
+    const newTrimmed = newName.trim();
+    if (!oldTrimmed || !newTrimmed || oldTrimmed === newTrimmed) {
+      return this.getRecordingArtifacts(recordingPath);
+    }
+
+    const stem = target.replace(/(-diar)?\.[^/.]+$/i, '');
+    const diarPath = `${stem}-diar.txt`;
+    if (fs.existsSync(diarPath)) {
+      try {
+        const content = fs.readFileSync(diarPath, 'utf-8');
+        const updated = replaceSpeakerInDiarText(content, oldTrimmed, newTrimmed);
+        fs.writeFileSync(diarPath, updated, 'utf-8');
+      } catch (err) {
+        console.error(`Failed to update speaker name in ${diarPath}:`, err);
+      }
+    }
+
+    const srtPath = `${stem}.srt`;
+    if (fs.existsSync(srtPath)) {
+      try {
+        const content = fs.readFileSync(srtPath, 'utf-8');
+        const updated = replaceSpeakerInSrtText(content, oldTrimmed, newTrimmed);
+        fs.writeFileSync(srtPath, updated, 'utf-8');
+      } catch (err) {
+        console.error(`Failed to update speaker name in ${srtPath}:`, err);
       }
     }
 

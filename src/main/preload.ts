@@ -50,6 +50,8 @@ const audio: AudioRendererApi = {
   deleteRecording: (recordingPath: string) => ipcRenderer.invoke('audio:delete-recording', recordingPath),
   deleteRecordingArtifact: (recordingPath: string, artifactType: 'transcript' | 'speakers' | 'srt') =>
     ipcRenderer.invoke('audio:delete-recording-artifact', { recordingPath, artifactType }),
+  renameSpeaker: (recordingPath: string, oldName: string, newName: string) =>
+    ipcRenderer.invoke('audio:rename-speaker', { recordingPath, oldName, newName }),
   getRecordingUrl: (recordingPath: string) => ipcRenderer.invoke('audio:get-recording-url', recordingPath),
   getRecordingArtifacts: (recordingPath: string) => ipcRenderer.invoke('audio:get-recording-artifacts', recordingPath),
   rediarizeRecording: (recordingPath: string) => ipcRenderer.invoke('audio:rediarize-recording', recordingPath),

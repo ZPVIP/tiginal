@@ -937,6 +937,20 @@ export function AudioWorkspace() {
     setTranscriptTab('transcript');
   }, [busy, recordingPath, resetTranscript]);
 
+  const handleRenameSpeaker = useCallback(async (oldName: string, newName: string) => {
+    if (!recordingPath) return;
+    try {
+      const audio = window.electron?.audio;
+      if (!audio) return;
+      const updated = await audio.renameSpeaker(recordingPath, oldName, newName);
+      if (updated) {
+        setArtifacts(updated);
+      }
+    } catch (err) {
+      console.error('Failed to rename speaker:', err);
+    }
+  }, [recordingPath]);
+
   const copyTranscript = useCallback(() => {
     const text = editable ? editableText : `${committedText}${partialText}`;
     if (text) void navigator.clipboard.writeText(text);
@@ -1138,6 +1152,7 @@ export function AudioWorkspace() {
           onClear={clearTranscript}
           recordingPath={recordingPath}
           onDeleteArtifact={handleDeleteTranscriptArtifact}
+          onRenameSpeaker={handleRenameSpeaker}
         />
         {realtimeTranslation && (
           <TranslationEditor

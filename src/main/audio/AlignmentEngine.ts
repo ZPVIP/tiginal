@@ -493,3 +493,39 @@ export function buildSrtContent(segments: readonly DiarizedSegment[]): string {
 
   return blocks.join('\n');
 }
+
+export function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Replaces a speaker label in diarized text (-diar.txt).
+ * Only matches speaker prefixes at paragraph/line starts (e.g. `Speaker 1:` -> `Peng Zhang:`),
+ * safely ignoring any mentions of the speaker name within the spoken dialogue.
+ */
+export function replaceSpeakerInDiarText(content: string, oldName: string, newName: string): string {
+  const oldTrimmed = oldName.trim();
+  const newTrimmed = newName.trim();
+  if (!content || !oldTrimmed || !newTrimmed || oldTrimmed === newTrimmed) {
+    return content;
+  }
+  const escaped = escapeRegExp(oldTrimmed);
+  return content.replace(new RegExp(`(^|\\n)${escaped}:`, 'g'), `$1${newTrimmed}:`);
+}
+
+/**
+ * Replaces a speaker label in SRT subtitle content (.srt).
+ * Matches speaker tags like `[Speaker 1]` or `[Speaker 1]:` or line-start `Speaker 1:`.
+ */
+export function replaceSpeakerInSrtText(content: string, oldName: string, newName: string): string {
+  const oldTrimmed = oldName.trim();
+  const newTrimmed = newName.trim();
+  if (!content || !oldTrimmed || !newTrimmed || oldTrimmed === newTrimmed) {
+    return content;
+  }
+  const escaped = escapeRegExp(oldTrimmed);
+  let result = content.replace(new RegExp(`\\[${escaped}\\]:`, 'g'), `[${newTrimmed}]:`);
+  result = result.replace(new RegExp(`\\[${escaped}\\]`, 'g'), `[${newTrimmed}]`);
+  result = result.replace(new RegExp(`(^|\\n)${escaped}:`, 'g'), `$1${newTrimmed}:`);
+  return result;
+}

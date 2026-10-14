@@ -291,6 +291,22 @@ export function setupAudioHandlers(): void {
     }
     return getAudioService().deleteRecordingArtifact(recordingPath, artifactType);
   });
+  ipcMain.handle('audio:rename-speaker', (_event, value: unknown) => {
+    if (!value || typeof value !== 'object') throw new Error('Invalid arguments');
+    const recordingPath = Reflect.get(value, 'recordingPath');
+    const oldName = Reflect.get(value, 'oldName');
+    const newName = Reflect.get(value, 'newName');
+    if (typeof recordingPath !== 'string' || !recordingPath.trim()) {
+      throw new Error('Recording path is required');
+    }
+    if (typeof oldName !== 'string' || !oldName.trim()) {
+      throw new Error('Old speaker name is required');
+    }
+    if (typeof newName !== 'string' || !newName.trim()) {
+      throw new Error('New speaker name is required');
+    }
+    return getAudioService().renameSpeaker(recordingPath, oldName, newName);
+  });
   ipcMain.handle('audio:get-recording-url', (_event, value: unknown) => {
     if (typeof value !== 'string' || !value.trim()) throw new Error('Recording path is required');
     return toRecordingUrl(value);
