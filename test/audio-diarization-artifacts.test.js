@@ -338,3 +338,29 @@ test('AudioService.renameSpeaker directly replaces in diar and srt files without
   assert.deepEqual(files.sort(), [`${stem}.srt`, `${stem}.txt`, `${stem}.wav`, `${stem}-diar.txt`].sort());
 });
 
+const { parseSrtTimeToSeconds, parseSrtBlocks } = require('../dist/main/shared/audio/textUtils.js');
+
+test('parseSrtTimeToSeconds correctly converts SRT timestamps to float seconds', () => {
+  assert.equal(parseSrtTimeToSeconds('00:00:00,000'), 0);
+  assert.equal(parseSrtTimeToSeconds('00:00:01,250'), 1.25);
+  assert.equal(parseSrtTimeToSeconds('00:01:05,432'), 65.432);
+  assert.equal(parseSrtTimeToSeconds('01:00:00,000'), 3600);
+  assert.equal(parseSrtTimeToSeconds('00:02:10.500'), 130.5);
+});
+
+test('parseSrtBlocks parses SRT text into interactive subtitle blocks', () => {
+  const srt = `1\n00:00:01,230 --> 00:00:04,560\n[Speaker 1] Good morning everyone.\n\n2\n00:00:05,100 --> 00:00:08,200\n[Speaker 2] Thanks for having me.`;
+  const blocks = parseSrtBlocks(srt);
+  assert.equal(blocks.length, 2);
+  assert.equal(blocks[0].index, '1');
+  assert.equal(blocks[0].startTime, '00:00:01,230');
+  assert.equal(blocks[0].endTime, '00:00:04,560');
+  assert.equal(blocks[0].startSeconds, 1.23);
+  assert.equal(blocks[0].text, '[Speaker 1] Good morning everyone.');
+
+  assert.equal(blocks[1].index, '2');
+  assert.equal(blocks[1].startTime, '00:00:05,100');
+  assert.equal(blocks[1].startSeconds, 5.1);
+  assert.equal(blocks[1].text, '[Speaker 2] Thanks for having me.');
+});
+

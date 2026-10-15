@@ -133,3 +133,75 @@ export function cleanSegmentText(text: string): string {
   const suppressed = suppressRepetitiveLoops(text);
   return suppressed.replace(/^[.,;:，。；：\s]+/, '').trim();
 }
+
+/**
+ * Parses SRT timestamp string ("HH:MM:SS,mmm" or "HH:MM:SS.mmm") into seconds as a float.
+ */
+export function parseSrtTimeToSeconds(timeStr: string): number {
+  const parts = timeStr.trim().replace(',', '.').split(':');
+  if (parts.length === 3) {
+    const hours = parseFloat(parts[0]) || 0;
+    const minutes = parseFloat(parts[1]) || 0;
+    const seconds = parseFloat(parts[2]) || 0;
+    return Math.max(0, hours * 3600 + minutes * 60 + seconds);
+  } else if (parts.length === 2) {
+    const minutes = parseFloat(parts[0]) || 0;
+    const seconds = parseFloat(parts[1]) || 0;
+    return Math.max(0, minutes * 60 + seconds);
+  }
+  return 0;
+}
+
+export interface SrtBlock {
+  index: string;
+  startTime: string;
+  endTime: string;
+  startSeconds: number;
+  endSeconds: number;
+  text: string;
+}
+
+/**
+ * Parses standard SRT subtitle format content into structured subtitle blocks.
+ */
+export function parseSrtBlocks(content?: string): SrtBlock[] {
+  if (!content) return [];
+  const rawBlocks = content.trim().split(/\n\s*\n/);
+  const blocks: SrtBlock[] = [];
+
+  for (const block of rawBlocks) {
+    const lines = block.trim().split('\n');
+    if (lines.length < 2) continue;
+
+    let index = '';
+    let timeLine = '';
+    let textStartIndex = 1;
+
+    if (/^\d+$/.test(lines[0].trim())) {
+      index = lines[0].trim();
+      timeLine = lines[1] || '';
+      textStartIndex = 2;
+    } else {
+      timeLine = lines[0] || '';
+      textStartIndex = 1;
+    }
+
+    const timeMatch = timeLine.match(/(\d{1,2}:\d{2}:\d{2}[,\.]\d{1,3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[,\.]\d{1,3})/);
+    if (!timeMatch) continue;
+
+    const startTime = timeMatch[1];
+    const endTime = timeMatch[2];
+    const text = lines.slice(textStartIndex).join('\n').trim();
+
+    blocks.push({
+      index,
+      startTime,
+      endTime,
+      startSeconds: parseSrtTimeToSeconds(startTime),
+      endSeconds: parseSrtTimeToSeconds(endTime),
+      text,
+    });
+  }
+
+  return blocks;
+}

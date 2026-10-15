@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertCircle, Check, LoaderCircle, Pencil, Sparkles, Trash2, User, Users, X } from 'lucide-react';
+import { AlertCircle, Check, LoaderCircle, Pencil, Play, Sparkles, Trash2, User, Users, X } from 'lucide-react';
 import type { AudioSessionArtifacts } from '../../../shared/audio/types';
 import { CopyButton } from '../ui/CopyButton';
 
@@ -38,6 +38,31 @@ export function extractUniqueSpeakers(diarText?: string): string[] {
   return speakers;
 }
 
+import { parseSrtBlocks, parseSrtTimeToSeconds, type SrtBlock } from '../../../shared/audio/textUtils';
+export { parseSrtBlocks, parseSrtTimeToSeconds, type SrtBlock };
+
+function renderSubtitleText(text: string) {
+  const bracketMatch = text.match(/^(\[[^\]]+\]:?)\s*(.*)/s);
+  if (bracketMatch) {
+    return (
+      <>
+        <span className="font-semibold text-primary mr-1.5 select-none">{bracketMatch[1]}</span>
+        <span>{bracketMatch[2]}</span>
+      </>
+    );
+  }
+  const colonMatch = text.match(/^([^:\n]+:)\s*(.*)/s);
+  if (colonMatch && colonMatch[1].length < 40) {
+    return (
+      <>
+        <span className="font-semibold text-primary mr-1.5 select-none">{colonMatch[1]}</span>
+        <span>{colonMatch[2]}</span>
+      </>
+    );
+  }
+  return <span>{text}</span>;
+}
+
 interface TranscriptEditorProps {
   committedText: string;
   partialText: string;
@@ -55,6 +80,7 @@ interface TranscriptEditorProps {
   onCancelDiarize?(): void;
   onTabChange?(tab: TranscriptTab): void;
   onRenameSpeaker?(oldName: string, newName: string): Promise<void> | void;
+  onSeekTime?(timeInSeconds: number): void;
   onChange(value: string): void;
   onCopy?(): void;
   onClear(): void;
@@ -71,6 +97,7 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
   const [editSpeakerValue, setEditSpeakerValue] = useState<string>('');
 
   const uniqueSpeakers = extractUniqueSpeakers(props.artifacts?.speakers);
+  const parsedSrtBlocks = parseSrtBlocks(props.artifacts?.srt);
 
   const handleSaveRename = async (oldName: string, newName: string) => {
     const trimmed = newName.trim();
@@ -371,12 +398,49 @@ export function TranscriptEditor(props: TranscriptEditorProps) {
             )}
           </div>
         ) : (
-          <pre
-            className="h-full min-h-48 w-full max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words break-all rounded-xl border border-border bg-surface/60 p-4 font-mono text-xs leading-5 text-text-main"
+          <div
+            className="h-full min-h-48 w-full max-w-full overflow-y-auto overflow-x-hidden p-4 rounded-xl border border-border bg-surface/60 text-sm leading-6 text-text-main"
             style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', overflowX: 'hidden' }}
           >
-            {props.artifacts?.srt || 'No SRT subtitles available.'}
-          </pre>
+            {parsedSrtBlocks.length > 0 ? (
+              <div className="flex flex-col gap-2.5">
+                {parsedSrtBlocks.map((block, idx) => (
+                  <div
+                    key={block.index || idx}
+                    className="group flex flex-col gap-1.5 rounded-lg border border-border/70 bg-surface/40 p-3 hover:border-primary/40 hover:bg-surface/70 transition-all"
+                  >
+                    <div className="flex items-center gap-2">
+                      {block.index && (
+                        <span className="font-mono text-[11px] text-text-muted select-none">
+                          #{block.index}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => props.onSeekTime?.(block.startSeconds)}
+                        title={`Click to jump audio to ${block.startTime}`}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border/80 bg-surface-light px-2 py-0.5 font-mono text-[11px] text-text-main hover:border-primary hover:bg-primary/10 hover:text-primary transition-all cursor-pointer font-medium"
+                      >
+                        <Play size={10} className="fill-current text-primary" />
+                        <span>{block.startTime}</span>
+                        <span className="text-text-muted">→</span>
+                        <span className="text-text-muted">{block.endTime}</span>
+                      </button>
+                    </div>
+                    <div className="text-sm leading-6 text-text-main whitespace-pre-wrap break-words">
+                      {renderSubtitleText(block.text)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : props.artifacts?.srt ? (
+              <pre className="font-mono text-xs leading-5 whitespace-pre-wrap break-words">
+                {props.artifacts.srt}
+              </pre>
+            ) : (
+              <span className="text-text-muted">No SRT subtitles available.</span>
+            )}
+          </div>
         )}
       </div>
     </section>

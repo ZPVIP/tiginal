@@ -161,6 +161,7 @@ export function AudioWorkspace() {
     const saved = localStorage.getItem('audio_generate_srt');
     return saved !== null ? saved === 'true' : true;
   });
+  const [seekTarget, setSeekTarget] = useState<{ time: number; timestamp: number } | null>(null);
 
   const setDiarize = useCallback((enabled: boolean) => {
     setDiarizeState(enabled);
@@ -951,6 +952,10 @@ export function AudioWorkspace() {
     }
   }, [recordingPath]);
 
+  const handleSeekTime = useCallback((timeInSeconds: number) => {
+    setSeekTarget({ time: timeInSeconds, timestamp: Date.now() });
+  }, []);
+
   const copyTranscript = useCallback(() => {
     const text = editable ? editableText : `${committedText}${partialText}`;
     if (text) void navigator.clipboard.writeText(text);
@@ -1153,6 +1158,7 @@ export function AudioWorkspace() {
           recordingPath={recordingPath}
           onDeleteArtifact={handleDeleteTranscriptArtifact}
           onRenameSpeaker={handleRenameSpeaker}
+          onSeekTime={handleSeekTime}
         />
         {realtimeTranslation && (
           <TranslationEditor
@@ -1235,7 +1241,7 @@ export function AudioWorkspace() {
             <LiveWaveformCanvas peaks={livePeaks} active />
           </div>
         ) : playerUrl ? (
-          <AudioWaveformPlayer audioUrl={playerUrl} />
+          <AudioWaveformPlayer audioUrl={playerUrl} seekTarget={seekTarget} />
         ) : (
           <div className="flex h-16 items-center justify-center gap-2 rounded-lg bg-surface-light text-xs text-text-muted">
             <Waves size={16} /> The audio waveform will appear here.

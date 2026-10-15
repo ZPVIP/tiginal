@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Pause, Play, Volume2 } from 'lucide-react';
 import WaveSurfer from 'wavesurfer.js';
 
-interface AudioWaveformPlayerProps {
+export interface AudioWaveformPlayerProps {
   audioUrl: string;
+  seekTarget?: { time: number; timestamp: number } | null;
 }
 
 function formatTime(value: number): string {
@@ -14,13 +15,31 @@ function formatTime(value: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-export function AudioWaveformPlayer({ audioUrl }: AudioWaveformPlayerProps) {
+export function AudioWaveformPlayer({ audioUrl, seekTarget }: AudioWaveformPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const waveSurferRef = useRef<WaveSurfer | null>(null);
+  const pendingSeekRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
+
+  useEffect(() => {
+    if (!seekTarget) return;
+    const ws = waveSurferRef.current;
+    if (!ws) {
+      pendingSeekRef.current = seekTarget.time;
+      return;
+    }
+    const wasPlaying = ws.isPlaying();
+    ws.setTime(seekTarget.time);
+    setCurrentTime(seekTarget.time);
+    if (wasPlaying) {
+      void ws.play();
+    } else {
+      ws.pause();
+    }
+  }, [seekTarget]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -46,7 +65,14 @@ export function AudioWaveformPlayer({ audioUrl }: AudioWaveformPlayerProps) {
     waveSurferRef.current = waveSurfer;
 
     const subscriptions = [
-      waveSurfer.on('ready', value => setDuration(value)),
+      waveSurfer.on('ready', value => {
+        setDuration(value);
+        if (pendingSeekRef.current !== null) {
+          waveSurfer.setTime(pendingSeekRef.current);
+          setCurrentTime(pendingSeekRef.current);
+          pendingSeekRef.current = null;
+        }
+      }),
       waveSurfer.on('timeupdate', value => setCurrentTime(value)),
       waveSurfer.on('play', () => setIsPlaying(true)),
       waveSurfer.on('pause', () => setIsPlaying(false)),
