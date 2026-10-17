@@ -236,10 +236,23 @@ function usesBundledTrialCredential(row: SpeechProviderRow): boolean {
     && row.endpoint === BUILT_IN_R2T2_TRIAL_ENDPOINT;
 }
 
+export interface LocalModelSupervisorLike {
+  list(): Array<{
+    id: string;
+    displayName: string;
+    endpoint: string | null;
+    status: string;
+    engineId: string;
+    parameters?: Record<string, unknown>;
+    startedAt?: number | null;
+  }>;
+}
+
 export class SpeechProviderStore {
   constructor(
     private readonly db: Database.Database,
     private readonly cryptoService: CryptoService,
+    private readonly getLocalSupervisor?: () => LocalModelSupervisorLike,
   ) {}
 
   list(): SpeechProvider[] {
@@ -250,8 +263,7 @@ export class SpeechProviderStore {
       FROM speech_providers
       ORDER BY built_in_kind IS NULL, name COLLATE NOCASE
     `).all();
-    // One unreadable row must not hide every other provider.
-    return rows.flatMap(row => {
+    const stored = rows.flatMap(row => {
       try {
         return [publicProvider(parseSpeechProviderRow(row))];
       } catch (error) {
@@ -260,6 +272,37 @@ export class SpeechProviderStore {
         return [];
       }
     });
+
+    const localProviders: SpeechProvider[] = [];
+    if (this.getLocalSupervisor) {
+      try {
+        const instances = this.getLocalSupervisor().list();
+        for (const inst of instances) {
+          if (inst.status !== 'running' && inst.status !== 'starting') continue;
+          if (inst.engineId !== 'r2t2-runtime') continue;
+          const endpoint = inst.endpoint || `ws://127.0.0.1:${inst.parameters?.port || 8272}/asr`;
+          localProviders.push({
+            id: `local-model:${inst.id}`,
+            name: inst.displayName,
+            protocol: 'r2t2-rstream',
+            endpoint,
+            authMode: 'none',
+            hasCredential: true,
+            builtInKind: null,
+            userModified: false,
+            maxSessionSeconds: null,
+            defaultLanguage: typeof inst.parameters?.defaultLanguage === 'string' && inst.parameters.defaultLanguage ? inst.parameters.defaultLanguage : 'zh',
+            options: defaultSpeechProviderOptions(),
+            createdAt: inst.startedAt ?? Date.now(),
+            updatedAt: inst.startedAt ?? Date.now(),
+          });
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return [...localProviders, ...stored];
   }
 
   add(input: SpeechProviderInput): SpeechProvider {
@@ -322,11 +365,17 @@ export class SpeechProviderStore {
   }
 
   delete(id: string): void {
+    if (id.startsWith('local-model:')) {
+      throw new Error('Local model services must be stopped or deleted in Settings -> Run Models');
+    }
     this.requireRow(id);
     this.db.prepare('DELETE FROM speech_providers WHERE id = ?').run(id);
   }
 
   resolveForTest(input: SpeechProviderInput): ResolvedSpeechProvider {
+    if (input.id && input.id.startsWith('local-model:')) {
+      return this.require(input.id);
+    }
     const normalized = normalizeSpeechEndpoint(input.endpoint);
     const existingRow = input.id ? this.requireRow(input.id) : null;
     const suppliedCredential = input.credential ?? normalized.queryToken;
@@ -368,6 +417,37 @@ export class SpeechProviderStore {
   }
 
   require(id: string): ResolvedSpeechProvider {
+    if (id.startsWith('local-model:')) {
+      const instanceId = id.slice('local-model:'.length);
+      const instances = this.getLocalSupervisor?.().list() ?? [];
+      const inst = instances.find(item => item.id === instanceId || `local-model:${item.id}` === id);
+      if (!inst) throw new Error(`Local model service "${id}" not found`);
+      if (inst.status !== 'running' && inst.status !== 'starting') {
+        throw new Error(`Local service "${inst.displayName}" is not running (status: ${inst.status}). Please start it in Settings -> Run Models.`);
+      }
+      if (inst.engineId !== 'r2t2-runtime') {
+        throw new Error(`Local service "${inst.displayName}" was started with engine "${inst.engineId}" (e.g. llama-server), which does not support speech recognition. Please start it under "Confucius4 R2T2 Runtime" (r2t2-ws) in Settings -> Run Models.`);
+      }
+      const endpoint = inst.endpoint || `ws://127.0.0.1:${inst.parameters?.port || 8272}/asr`;
+      return {
+        provider: {
+          id: `local-model:${inst.id}`,
+          name: inst.displayName,
+          protocol: 'r2t2-rstream',
+          endpoint,
+          authMode: 'none',
+          hasCredential: true,
+          builtInKind: null,
+          userModified: false,
+          maxSessionSeconds: null,
+          defaultLanguage: typeof inst.parameters?.defaultLanguage === 'string' && inst.parameters.defaultLanguage ? inst.parameters.defaultLanguage : 'zh',
+          options: defaultSpeechProviderOptions(),
+          createdAt: inst.startedAt ?? Date.now(),
+          updatedAt: inst.startedAt ?? Date.now(),
+        },
+        credential: null,
+      };
+    }
     if (id === BUILT_IN_WHISPER_ID) {
       try {
         const row = this.requireRow(id);

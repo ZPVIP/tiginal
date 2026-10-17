@@ -7,7 +7,7 @@ import {
   type SpeechSessionOptions,
 } from '../../../shared/audio/r2t2';
 import type { SpeechProvider, TranscriptEvent } from '../../../shared/audio/types';
-import { smartJoinText, separateGluedWords } from '../../../shared/audio/textUtils';
+import { smartJoinText, separateGluedWords, suppressRepetitiveLoops } from '../../../shared/audio/textUtils';
 import {
   isRecord,
   numberField,
@@ -47,10 +47,52 @@ function firstRecognitionText(record: Record<string, unknown>, keys: readonly st
 function appendRecognitionText(state: SpeechProtocolState, incoming: string): TranscriptEvent | null {
   if (!incoming) return null;
   const cleanedIncoming = separateGluedWords(incoming);
-  const previous = state.committedText;
-  if (previous.endsWith(cleanedIncoming)) return null;
-  const fullText = cleanedIncoming.startsWith(previous) ? cleanedIncoming : smartJoinText(previous, cleanedIncoming);
-  const delta = fullText.slice(previous.length);
+  if (!cleanedIncoming) return null;
+
+  if (state.completedHistory === undefined) {
+    state.completedHistory = '';
+    state.currentUtterance = '';
+  }
+
+  // 1. If incoming is identical to current utterance, no new content
+  if (state.currentUtterance && cleanedIncoming === state.currentUtterance) {
+    return null;
+  }
+
+  // 2. If incoming extends the whole session history (whole-session cumulative mode)
+  if (state.committedText && cleanedIncoming.startsWith(state.committedText)) {
+    const delta = cleanedIncoming.slice(state.committedText.length);
+    if (!delta) return null;
+    state.committedText = suppressRepetitiveLoops(cleanedIncoming, 3);
+    state.currentUtterance = state.committedText;
+    state.completedHistory = '';
+    return { kind: 'committed', text: delta, fullText: state.committedText };
+  }
+
+  // 3. If incoming extends current utterance (per-utterance cumulative mode, like r2t2-ws)
+  if (state.currentUtterance && cleanedIncoming.startsWith(state.currentUtterance)) {
+    const rawDelta = cleanedIncoming.slice(state.currentUtterance.length);
+    state.currentUtterance = cleanedIncoming;
+    const rawFull = smartJoinText(state.completedHistory, state.currentUtterance);
+    const fullText = suppressRepetitiveLoops(rawFull, 3);
+    const delta = fullText.startsWith(state.committedText)
+      ? fullText.slice(state.committedText.length)
+      : rawDelta;
+    if (!delta) return null;
+    state.committedText = fullText;
+    return { kind: 'committed', text: delta, fullText };
+  }
+
+  // 4. New utterance started! (Commit previous utterance into history)
+  if (state.currentUtterance) {
+    state.completedHistory = smartJoinText(state.completedHistory, state.currentUtterance);
+  }
+  state.currentUtterance = cleanedIncoming;
+  const rawFull = smartJoinText(state.completedHistory, state.currentUtterance);
+  const fullText = suppressRepetitiveLoops(rawFull, 3);
+  const delta = fullText.startsWith(state.committedText)
+    ? fullText.slice(state.committedText.length)
+    : cleanedIncoming;
   if (!delta) return null;
   state.committedText = fullText;
   return { kind: 'committed', text: delta, fullText };

@@ -139,6 +139,7 @@ function ModelLaunchRow({
   const locked = running || stopping;
   const selectedModel = models.find(model => model.path === modelPath);
   const commandLine = instance?.commandLine;
+  const isEngineCompatible = !selectedModel || selectedModel.compatibleEngineIds.includes(engine.id);
 
   return (
     <div className="border-b border-border px-3 py-3 last:border-b-0">
@@ -187,9 +188,9 @@ function ModelLaunchRow({
         </label>
         <button
           type="button"
-          disabled={busy || stopping || !modelPath || !displayName.trim() || engine.status.kind !== 'available'}
+          disabled={busy || stopping || !modelPath || !displayName.trim() || engine.status.kind !== 'available' || !isEngineCompatible}
           onClick={() => void onStart({ engineId: engine.id, modelPath, displayName, parameters }, instance?.id)}
-          title={running ? 'Restart service' : 'Start service'}
+          title={!isEngineCompatible ? 'Model is incompatible with this engine' : running ? 'Restart service' : 'Start service'}
           className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy
@@ -234,9 +235,14 @@ function ModelLaunchRow({
           {instance.error && <span className="text-accent-danger">{instance.error}</span>}
         </div>
       )}
+      {selectedModel && !isEngineCompatible && (
+        <div className="mt-2 text-[11px] text-amber-500">
+          ⚠️ Incompatible Engine: This model requires <strong>{selectedModel.compatibleEngineIds.join(', ')}</strong>, but this service was configured with <strong>{engine.name}</strong>. Please delete this service, switch the Model engine at the top to <strong>{selectedModel.compatibleEngineIds.join(', ')}</strong>, and start it there.
+        </div>
+      )}
       {consoleOpen && (
         <pre className="mt-3 h-60 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-background p-3 font-mono text-[11px] leading-4 text-text-muted">
-          {logs.length > 0 ? logs.join('\n') : 'No console output.'}
+          {logs.length > 0 ? logs.join('\n') : (commandLine ? `$ ${commandLine}\n\nNo console output yet.` : 'No console output.')}
         </pre>
       )}
     </div>
@@ -265,10 +271,17 @@ export function RunModelsSettings() {
         api.scanDownloadedModels(),
         api.listModelInstances(),
       ]);
+      const readyModels = downloaded.filter(model => model.complete);
       setEngines(engineResult.engines);
-      setModels(downloaded.filter(model => model.complete));
+      setModels(readyModels);
       setInstances(running);
-      setSelectedEngineId(current => current ?? engineResult.engines[0]?.id ?? null);
+      setSelectedEngineId(current => {
+        if (current) return current;
+        const matchingEngine = engineResult.engines.find(e =>
+          e.status.kind === 'available' && readyModels.some(m => m.compatibleEngineIds.includes(e.id)),
+        );
+        return matchingEngine?.id ?? engineResult.engines[0]?.id ?? null;
+      });
     } catch (loadError) {
       setError(errorMessage(loadError));
     } finally {
@@ -286,9 +299,12 @@ export function RunModelsSettings() {
   }, [engines, selectedEngineId]);
 
   useEffect(() => {
-    if (!instances.some(instance => instance.status === 'starting' || instance.status === 'running' || instance.status === 'stopping')) return;
-    const timer = window.setInterval(() => {
-      void window.electron?.models.listModelInstances().then(setInstances);
+    const timer = window.setInterval(async () => {
+      const next = await window.electron?.models.listModelInstances();
+      if (next) {
+        setInstances(next);
+        window.dispatchEvent(new CustomEvent('speech-providers-updated'));
+      }
     }, 1200);
     return () => window.clearInterval(timer);
   }, [instances]);
@@ -309,6 +325,7 @@ export function RunModelsSettings() {
       if (instanceId) await api.restartModel(instanceId, input);
       else await api.startModel(input);
       setInstances(await api.listModelInstances());
+      window.dispatchEvent(new CustomEvent('speech-providers-updated'));
       if (!instanceId) setDraftKey(current => current + 1);
     } catch (startError) {
       setError(errorMessage(startError));
@@ -325,6 +342,7 @@ export function RunModelsSettings() {
     try {
       await api.stopModel(id);
       setInstances(await api.listModelInstances());
+      window.dispatchEvent(new CustomEvent('speech-providers-updated'));
     } catch (stopError) {
       setError(errorMessage(stopError));
     } finally {
@@ -342,6 +360,7 @@ export function RunModelsSettings() {
     try {
       await api.deleteModelService(id);
       setInstances(await api.listModelInstances());
+      window.dispatchEvent(new CustomEvent('speech-providers-updated'));
     } catch (deleteError) {
       setError(errorMessage(deleteError));
     } finally {

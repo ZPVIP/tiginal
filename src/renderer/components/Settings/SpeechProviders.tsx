@@ -162,6 +162,11 @@ export function SpeechProviders() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium text-text-main">{provider.name}</span>
+                  {provider.id.startsWith('local-model:') && (
+                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      Local Runtime
+                    </span>
+                  )}
                 </div>
                 <p className="truncate text-[10px] text-text-muted">
                   {provider.endpoint} | {provider.protocol} | {provider.maxSessionSeconds === null ? 'No time limit' : `${provider.maxSessionSeconds}s limit`}
@@ -182,22 +187,26 @@ export function SpeechProviders() {
                   {recordingProviderId === provider.id ? <Square size={14} /> : <Mic size={14} />}
                 </button>
               )}
-              <button
-                type="button"
-                title="Edit streaming provider"
-                onClick={() => void editProvider(provider)}
-                className="rounded-lg p-1.5 text-text-muted hover:bg-surface-hover hover:text-text-main"
-              >
-                <Edit2 size={14} />
-              </button>
-              <button
-                type="button"
-                title="Delete streaming provider"
-                onClick={() => void deleteProvider(provider)}
-                className="rounded-lg p-1.5 text-text-muted hover:bg-red-400/10 hover:text-red-400"
-              >
-                <Trash2 size={14} />
-              </button>
+              {!provider.id.startsWith('local-model:') && (
+                <>
+                  <button
+                    type="button"
+                    title="Edit streaming provider"
+                    onClick={() => void editProvider(provider)}
+                    className="rounded-lg p-1.5 text-text-muted hover:bg-surface-hover hover:text-text-main"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    title="Delete streaming provider"
+                    onClick={() => void deleteProvider(provider)}
+                    className="rounded-lg p-1.5 text-text-muted hover:bg-red-400/10 hover:text-red-400"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </>
+              )}
             </div>
           </div>
         ))}

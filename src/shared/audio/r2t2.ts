@@ -12,6 +12,8 @@ export interface SpeechProtocolState {
   committedText: string;
   partialText: string;
   eosSent: boolean;
+  completedHistory?: string;
+  currentUtterance?: string;
 }
 
 export interface SpeechSessionOptions {

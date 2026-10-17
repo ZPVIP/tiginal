@@ -235,6 +235,8 @@ export class AudioService {
 
       const artifacts: AudioSessionArtifacts = {};
       let transcriptText = suppressRepetitiveLoops(session.committedText || '');
+      session.committedText = transcriptText;
+      this.repository.updateTranscript(sessionId, transcriptText);
       artifacts.transcript = transcriptText;
 
       if (recordingPath) {

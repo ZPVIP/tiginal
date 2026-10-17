@@ -30,7 +30,7 @@ let audioService: AudioService | null = null;
 let translationService: TranslationService | null = null;
 
 function providerStore(): SpeechProviderStore {
-  return new SpeechProviderStore(getDatabase().getDb(), getCrypto());
+  return new SpeechProviderStore(getDatabase().getDb(), getCrypto(), () => getModelRuntimeSupervisor());
 }
 
 export function getTranslationService(): TranslationService {

@@ -142,6 +142,50 @@ test('llama launch plans use argument arrays and reject unapproved flags', () =>
   );
 });
 
+test('r2t2 launch plan formats r2t2-ws CLI flags, auto-detects mmproj, and provides ws endpoint', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tiginal-r2t2-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const modelFile = path.join(root, 'Confucius4-R2T2-Q4_K_M.gguf');
+  const mmprojFile = path.join(root, 'mmproj-Confucius4-R2T2-Q8_0.gguf');
+  fs.writeFileSync(modelFile, Buffer.alloc(10));
+  fs.writeFileSync(mmprojFile, Buffer.alloc(10));
+
+  const spec = engine('r2t2-runtime');
+  assert.equal(spec.probes[0].commandCandidates.includes('r2t2-ws'), true);
+
+  const input = {
+    engineId: 'r2t2-runtime',
+    modelPath: modelFile,
+    displayName: 'Local R2T2 ASR',
+    parameters: {},
+  };
+  const parameters = normalizeEngineParameters('r2t2-runtime', {
+    host: '127.0.0.1',
+    port: 8272,
+    defaultLanguage: 'Chinese',
+    chunkMs: 160,
+    mode: 'slow',
+    gpuLayers: -1,
+  });
+
+  const plan = buildLaunchPlan('r2t2-runtime', '/opt/homebrew/bin/r2t2-ws', input, parameters);
+  assert.equal(plan.command, '/opt/homebrew/bin/r2t2-ws');
+  assert.deepEqual(plan.args.slice(0, 4), ['--model', modelFile, '--mmproj', mmprojFile]);
+  assert.equal(plan.args.includes('--chunk-ms'), true);
+  assert.equal(plan.args.includes('160'), true);
+  assert.equal(plan.args.includes('--mode'), true);
+  assert.equal(plan.args.includes('slow'), true);
+  assert.equal(plan.args.includes('--auth'), true);
+  assert.equal(plan.args.includes('off'), true);
+  assert.equal(plan.endpoint, 'ws://127.0.0.1:8272/asr');
+
+  const formatted = formatLaunchCommand(plan, 'darwin');
+  assert.equal(formatted.includes('/opt/homebrew/bin/r2t2-ws'), true);
+  assert.equal(formatted.includes('--model'), true);
+  assert.equal(formatted.includes('--mmproj'), true);
+});
+
 test('model scanner recognizes managed and Hugging Face cache layouts', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tiginal-model-scan-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -175,7 +219,7 @@ test('model scanner recognizes managed and Hugging Face cache layouts', t => {
   const speech = models.find(model => model.repoId === 'netease-youdao/Confucius4-R2T2');
   assert.equal(speech.revision, 'revision-1');
   assert.equal(speech.capabilities.includes('microphone-stream'), true);
-  assert.deepEqual(speech.compatibleEngineIds, ['r2t2-runtime', 'vllm']);
+  assert.deepEqual(speech.compatibleEngineIds, ['r2t2-runtime']);
 });
 
 test('model scanner recognizes multiple GGUF files in a single directory', t => {

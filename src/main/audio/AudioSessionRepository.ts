@@ -23,6 +23,15 @@ export class AudioSessionRepository {
 
   insert(record: NewAudioSessionRecord): void {
     const timestamp = record.startedAt.getTime();
+    let speechProviderId: string | null = null;
+    if (record.providerId && !record.providerId.startsWith('local-model:')) {
+      try {
+        const row = this.db.prepare('SELECT 1 FROM speech_providers WHERE id = ?').get(record.providerId);
+        if (row) speechProviderId = record.providerId;
+      } catch {
+        speechProviderId = null;
+      }
+    }
     this.db.prepare(`
       INSERT INTO audio_sessions (
         id, source_kind, source_path, recording_path, speech_provider_id, recognition_language,
@@ -33,7 +42,7 @@ export class AudioSessionRepository {
       record.source.kind,
       record.source.kind === 'file' ? (record.source.path || record.source.name) : null,
       record.recordingPath,
-      record.providerId,
+      speechProviderId,
       record.language,
       record.startedAt.toISOString(),
       record.startedAt.getTimezoneOffset(),

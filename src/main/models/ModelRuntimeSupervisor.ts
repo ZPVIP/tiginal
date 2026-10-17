@@ -106,6 +106,11 @@ function numberParameter(parameters: EngineParameters, key: string): number {
   return value;
 }
 
+function optionalNumberParameter(parameters: EngineParameters, key: string): number | null {
+  const value = parameters[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function booleanParameter(parameters: EngineParameters, key: string): boolean {
   return parameters[key] === true;
 }
@@ -176,6 +181,26 @@ function additionalLlamaArguments(value: string): string[] {
     index += 1;
   }
   return result;
+}
+
+function findR2T2Mmproj(modelPath: string, specifiedMmproj?: string): string | null {
+  if (specifiedMmproj && specifiedMmproj.trim()) {
+    return specifiedMmproj.trim();
+  }
+  try {
+    const isFile = fs.existsSync(modelPath) && fs.statSync(modelPath).isFile();
+    const dir = isFile ? path.dirname(modelPath) : modelPath;
+    if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+      const candidates = fs.readdirSync(dir);
+      const match = candidates.find(name => name.startsWith('mmproj') && name.endsWith('.gguf'));
+      if (match) {
+        return path.join(dir, match);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
 export function buildLaunchPlan(
@@ -258,24 +283,63 @@ export function buildLaunchPlan(
       endpoint,
     };
   }
-  const backend = stringParameter(parameters, 'backend');
-  return {
-    command: executablePath,
-    args: [
-      '--backend', backend,
-      '--model', input.modelPath,
-      '--host', host,
-      '--port', String(numberParameter(parameters, 'port')),
-      '--language', stringParameter(parameters, 'defaultLanguage'),
-      '--chunk-size', String(numberParameter(parameters, 'chunkSize')),
-      '--mode', stringParameter(parameters, 'inferenceMode'),
-      '--gpu-id', String(numberParameter(parameters, 'gpuId')),
-      ...(stringParameter(parameters, 'ggufPath') ? ['--gguf', stringParameter(parameters, 'ggufPath')] : []),
-      ...(stringParameter(parameters, 'mmprojPath') ? ['--mmproj', stringParameter(parameters, 'mmprojPath')] : []),
-      ...(stringParameter(parameters, 'vadModelPath') ? ['--vad-model', stringParameter(parameters, 'vadModelPath')] : []),
-    ],
-    endpoint,
-  };
+  if (engineId === 'r2t2-runtime') {
+    const isLegacyServer = path.basename(executablePath).toLowerCase().startsWith('r2t2-server')
+      && typeof parameters.backend === 'string';
+    if (isLegacyServer) {
+      const backend = stringParameter(parameters, 'backend');
+      return {
+        command: executablePath,
+        args: [
+          '--backend', backend,
+          '--model', input.modelPath,
+          '--host', host,
+          '--port', String(numberParameter(parameters, 'port')),
+          '--language', stringParameter(parameters, 'defaultLanguage'),
+          '--chunk-size', String(numberParameter(parameters, 'chunkSize')),
+          '--mode', stringParameter(parameters, 'inferenceMode'),
+          '--gpu-id', String(numberParameter(parameters, 'gpuId')),
+          ...(stringParameter(parameters, 'ggufPath') ? ['--gguf', stringParameter(parameters, 'ggufPath')] : []),
+          ...(stringParameter(parameters, 'mmprojPath') ? ['--mmproj', stringParameter(parameters, 'mmprojPath')] : []),
+          ...(stringParameter(parameters, 'vadModelPath') ? ['--vad-model', stringParameter(parameters, 'vadModelPath')] : []),
+        ],
+        endpoint: host && port ? `ws://${host}:${port}/asr` : null,
+      };
+    }
+
+    const mmproj = findR2T2Mmproj(input.modelPath, stringParameter(parameters, 'mmprojPath'));
+    const chunkMs = parameters.chunkMs !== undefined ? numberParameter(parameters, 'chunkMs') : 160;
+    const mode = stringParameter(parameters, 'mode') || 'slow';
+    const language = stringParameter(parameters, 'defaultLanguage') || 'Chinese';
+    const gpuLayers = parameters.gpuLayers !== undefined ? numberParameter(parameters, 'gpuLayers') : -1;
+    const threads = optionalNumberParameter(parameters, 'threads');
+    const portVal = port !== null ? port : 8272;
+
+    const isDir = fs.existsSync(input.modelPath) && fs.statSync(input.modelPath).isDirectory();
+    const modelArgs = isDir && !mmproj
+      ? ['--gguf-dir', input.modelPath]
+      : [
+          '--model', input.modelPath,
+          ...(mmproj ? ['--mmproj', mmproj] : []),
+        ];
+
+    return {
+      command: executablePath,
+      args: [
+        ...modelArgs,
+        '--host', host || '127.0.0.1',
+        '--port', String(portVal),
+        '--language', language,
+        '--chunk-ms', String(chunkMs),
+        '--mode', mode,
+        '--gpu-layers', String(gpuLayers),
+        ...(threads !== null ? ['--threads', String(threads)] : []),
+        '--auth', 'off',
+      ],
+      endpoint: `ws://${host || '127.0.0.1'}:${portVal}/asr`,
+    };
+  }
+  throw new Error(`Unsupported model engine: ${engineId}`);
 }
 
 function waitForExit(child: ActiveChildProcess, timeoutMs: number): Promise<boolean> {
@@ -424,7 +488,13 @@ export class ModelRuntimeSupervisor {
   }
 
   logs(id: string): string[] {
-    return this.runtimeLogs.get(id) ?? [];
+    const existing = this.runtimeLogs.get(id);
+    if (existing && existing.length > 0) return existing;
+    const instance = this.runtimeState.get(id);
+    if (instance?.commandLine) {
+      return [`$ ${instance.commandLine}`, '', 'Process is not running.'];
+    }
+    return [];
   }
 
   async disposeAll(): Promise<void> {
@@ -511,13 +581,61 @@ export class ModelRuntimeSupervisor {
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const logs: string[] = [];
+    const logs: string[] = [`$ ${commandLine}`, ''];
     const processInfo: ActiveProcess = { child, instance, logs, stopping: false };
     this.active.set(id, processInfo);
     this.runtimeState.set(id, instance);
     this.runtimeLogs.set(id, logs);
+    let outputBuffer = '';
+    const inspectOutput = (text: string) => {
+      outputBuffer += text;
+      if (outputBuffer.length > 32 * 1024) {
+        outputBuffer = outputBuffer.slice(-16 * 1024);
+      }
+      const urlMatch = outputBuffer.match(/ws:\/\/[a-zA-Z0-9._-]+:(\d+)\/asr/);
+      if (urlMatch) {
+        const actualPort = Number(urlMatch[1]);
+        if (actualPort && processInfo.instance.parameters.port !== actualPort) {
+          processInfo.instance = {
+            ...processInfo.instance,
+            endpoint: urlMatch[0],
+            parameters: {
+              ...processInfo.instance.parameters,
+              port: actualPort,
+            },
+          };
+          this.runtimeState.set(id, processInfo.instance);
+        }
+      }
+      if (outputBuffer.includes('"event"') && outputBuffer.includes('"ready"')) {
+        try {
+          const match = outputBuffer.match(/\{[\s\S]*?"event"\s*:\s*"ready"[\s\S]*?\}/);
+          if (match) {
+            const data = JSON.parse(match[0]);
+            if (data.port) {
+              const actualPort = Number(data.port);
+              const actualHost = data.host || '127.0.0.1';
+              const rstreamUrl = data.rstreamUrl || `ws://${actualHost}:${actualPort}/asr`;
+              processInfo.instance = {
+                ...processInfo.instance,
+                endpoint: rstreamUrl,
+                parameters: {
+                  ...processInfo.instance.parameters,
+                  port: actualPort,
+                },
+              };
+              this.runtimeState.set(id, processInfo.instance);
+            }
+          }
+        } catch {
+          // ignore parse errors
+        }
+      }
+    };
     const appendLogs = (chunk: Buffer) => {
-      processInfo.logs.push(...chunk.toString('utf8').split(/\r?\n/).filter(Boolean));
+      const text = chunk.toString('utf8');
+      inspectOutput(text);
+      processInfo.logs.push(...text.split(/\r?\n/).filter(Boolean));
       if (processInfo.logs.length > MAX_LOG_LINES) {
         processInfo.logs.splice(0, processInfo.logs.length - MAX_LOG_LINES);
       }

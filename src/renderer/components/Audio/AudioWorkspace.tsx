@@ -580,7 +580,7 @@ export function AudioWorkspace() {
     }
 
     if (event.kind === 'completed') {
-      const finalText = committedTextRef.current || event.artifacts?.transcript || '';
+      const finalText = event.artifacts?.transcript || committedTextRef.current || '';
       committedTextRef.current = finalText;
       captureRef.current = null;
       setEditableText(finalText);

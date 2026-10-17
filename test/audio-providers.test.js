@@ -271,3 +271,83 @@ test('an unreadable provider row is skipped instead of hiding every provider', (
   }
   assert.match(warnings[0], /Skipping speech provider legacy/);
 });
+
+test('SpeechProviderStore includes running local model instances and resolves them', () => {
+  const supervisor = {
+    list() {
+      return [
+        {
+          id: 'inst-1',
+          displayName: 'My Confucius4 R2T2',
+          endpoint: 'ws://127.0.0.1:8272/asr',
+          status: 'running',
+          engineId: 'r2t2-runtime',
+          parameters: { port: 8272, defaultLanguage: 'Chinese' },
+          startedAt: 1000,
+        },
+        {
+          id: 'inst-2',
+          displayName: 'Stopped R2T2',
+          endpoint: null,
+          status: 'stopped',
+          engineId: 'r2t2-runtime',
+          parameters: { port: 8273 },
+        },
+      ];
+    },
+  };
+  const { db } = createStore();
+  const store = new SpeechProviderStore(db, {
+    encryptCredential: v => v,
+    decryptCredential: v => v,
+  }, () => supervisor);
+
+  const list = store.list();
+  const local = list.find(p => p.id === 'local-model:inst-1');
+  assert.ok(local);
+  assert.equal(local.name, 'My Confucius4 R2T2');
+  assert.equal(local.endpoint, 'ws://127.0.0.1:8272/asr');
+  assert.equal(local.protocol, 'r2t2-rstream');
+  assert.equal(list.some(p => p.id === 'local-model:inst-2'), false);
+
+  const resolved = store.require('local-model:inst-1');
+  assert.equal(resolved.provider.name, 'My Confucius4 R2T2');
+  assert.equal(resolved.provider.endpoint, 'ws://127.0.0.1:8272/asr');
+
+  assert.throws(
+    () => store.require('local-model:inst-2'),
+    /not running/,
+  );
+});
+
+test('AudioSessionRepository allows local-model provider ID without violating foreign key constraint', () => {
+  const { AudioSessionRepository } = require('../dist/main/main/audio/AudioSessionRepository.js');
+  let inserted = null;
+  const fakeDb = {
+    prepare(sql) {
+      if (sql.includes('SELECT 1 FROM speech_providers')) {
+        return { get: () => undefined };
+      }
+      if (sql.includes('INSERT INTO audio_sessions')) {
+        return {
+          run(...args) {
+            inserted = args;
+          },
+        };
+      }
+      throw new Error(`Unexpected sql: ${sql}`);
+    },
+  };
+  const repo = new AudioSessionRepository(fakeDb);
+  repo.insert({
+    id: 'session-1',
+    source: { kind: 'file', path: '/audio/test.wav', name: 'test.wav' },
+    recordingPath: '/recordings/test.wav',
+    providerId: 'local-model:inst-1',
+    language: 'zh',
+    startedAt: new Date(),
+  });
+  assert.ok(inserted);
+  // speech_provider_id is argument index 4
+  assert.equal(inserted[4], null);
+});

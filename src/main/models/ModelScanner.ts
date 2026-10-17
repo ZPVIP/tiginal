@@ -120,9 +120,7 @@ function compatibleEngines(
 ): ModelEngineId[] {
   const normalized = name.toLowerCase();
   if (normalized.includes('r2t2')) {
-    return format === 'gguf'
-      ? ['r2t2-runtime', 'llama.cpp']
-      : ['r2t2-runtime', 'vllm'];
+    return ['r2t2-runtime'];
   }
   if (capabilities.includes('speech-recognition')) {
     return format === 'mlx' ? ['mlx-audio'] : ['whisper.cpp'];
